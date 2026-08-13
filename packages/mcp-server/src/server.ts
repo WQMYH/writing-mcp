@@ -9,7 +9,7 @@ import { InkosAdapter } from "@writing-mcp/adapter-inkos";
 const diagnosticSchema=z.object({code:z.string(),message:z.string(),path:z.string().optional()});
 const evidenceSchema=z.object({documentRef:z.string(),relativePath:z.string(),startLine:z.number(),endLine:z.number(),excerpt:z.string()});
 const itemSchema=z.object({ref:z.string(),kind:z.string(),title:z.string(),score:z.number(),sourceKind:z.enum(["native","deterministic","heuristic"]),confidence:z.number(),evidence:evidenceSchema,path:z.array(z.string()).optional()});
-const candidateSchema=z.object({workRef:z.string(),title:z.string(),rootPath:z.string(),adapter:z.enum(["inkos","generic"]),capabilities:z.array(z.string())});
+const candidateSchema=z.object({workRef:z.string(),title:z.string(),rootPath:z.string(),sourcePath:z.string().optional(),adapter:z.enum(["inkos","generic"]),capabilities:z.array(z.string())});
 const errorSchema=z.object({code:z.string(),message:z.string(),recovery:z.string().optional()});
 const envelope=<T extends z.ZodType>(data:T)=>z.object({result:z.discriminatedUnion("ok",[z.object({ok:z.literal(true),data}),z.object({ok:z.literal(false),error:errorSchema})])});
 const resolveSchema=envelope(z.object({status:z.enum(["resolved","ambiguous","unsupported"]),workRef:z.string().optional(),candidates:z.array(candidateSchema),diagnostics:z.array(diagnosticSchema)}));

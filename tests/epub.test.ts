@@ -21,12 +21,12 @@ describe("generic EPUB technical validation",()=>{
   });
 
   test("rejects malformed packages without returning partial documents",async()=>{
-    const cases:Array<[string,Buffer,RegExp]>=[
-      ["invalid ZIP",Buffer.from("not-a-zip"),/zip|central directory|corrupted/i],
-      ["missing container",await fixtureZip({container:false,opf:true,chapters:true}),/container does not declare/i],
-      ["missing OPF",await fixtureZip({container:true,opf:false,chapters:true}),/OPF package is missing/i],
-      ["missing spine documents",await fixtureZip({container:true,opf:true,chapters:false}),/no readable spine chapters/i]
+    const cases:Array<[string,Buffer,string]>=[
+      ["invalid ZIP",Buffer.from("not-a-zip"),"EPUB_INVALID_ZIP"],
+      ["missing container",await fixtureZip({container:false,opf:true,chapters:true}),"EPUB_CONTAINER_MISSING"],
+      ["missing OPF",await fixtureZip({container:true,opf:false,chapters:true}),"EPUB_OPF_MISSING"],
+      ["missing spine documents",await fixtureZip({container:true,opf:true,chapters:false}),"EPUB_NO_READABLE_SPINE"]
     ];
-    for(const [name,data,pattern] of cases){const dir=await mkdtemp(join(tmpdir(),"writing-mcp-epub-invalid-"));const path=join(dir,"invalid.epub");await writeFile(path,data);const adapter=new GenericAdapter();try{const [candidate]=await adapter.discover(path);await expect(adapter.load(candidate!),name).rejects.toThrow(pattern);}finally{await rm(dir,{recursive:true,force:true});}}
+    for(const [name,data,code] of cases){const dir=await mkdtemp(join(tmpdir(),"writing-mcp-epub-invalid-"));const path=join(dir,"invalid.epub");await writeFile(path,data);const adapter=new GenericAdapter();try{const [candidate]=await adapter.discover(path);await expect(adapter.load(candidate!),name).rejects.toMatchObject({code});}finally{await rm(dir,{recursive:true,force:true});}}
   });
 });

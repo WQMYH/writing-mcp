@@ -14,7 +14,7 @@ describe("M1 authorized path boundary",()=>{
 
   test("rejects a directory symlink or junction that escapes the selected work",async()=>{
     const root=await mkdtemp(join(tmpdir(),"writing-mcp-root-"));const work=join(root,"novel");const outside=await mkdtemp(join(tmpdir(),"writing-mcp-outside-"));await mkdir(work);await writeFile(join(work,"chapter.md"),"# 第一章\n安全内容");await writeFile(join(outside,"secret.md"),"# 外部文本\n不得读取");
-    try{await symlink(outside,join(work,"escaped"),process.platform==="win32"?"junction":"dir");const adapter=new GenericAdapter();await expect(adapter.discover(work)).resolves.toEqual([]);}
+    try{await symlink(outside,join(work,"escaped"),process.platform==="win32"?"junction":"dir");const adapter=new GenericAdapter();await expect(adapter.discover(work)).rejects.toMatchObject({code:"PATH_NOT_ALLOWED"});}
     finally{await rm(root,{recursive:true,force:true});await rm(outside,{recursive:true,force:true});}
   });
 

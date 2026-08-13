@@ -5,7 +5,7 @@ export type SourceKind = "native" | "deterministic" | "heuristic";
 
 export interface Diagnostic { code: string; message: string; path?: string }
 export interface WorkCandidate {
-  workRef: string; title: string; rootPath: string; adapter: AdapterKind; capabilities: string[];
+  workRef: string; title: string; rootPath: string; sourcePath?: string; adapter: AdapterKind; capabilities: string[];
 }
 export interface ResolveResult {
   status: "resolved" | "ambiguous" | "unsupported";

@@ -1,0 +1,18 @@
+import { cp, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { describe, expect, test } from "vitest";
+import { WritingService } from "@writing-mcp/core";
+import { GenericAdapter } from "@writing-mcp/adapter-generic";
+import { InkosAdapter } from "@writing-mcp/adapter-inkos";
+
+describe("M1 resolution matrix",()=>{
+  test.each([["empty directory",null],["unsupported extension","notes.pdf"]])("returns unsupported for %s",async(_case,file)=>{const dir=await mkdtemp(join(tmpdir(),"writing-mcp-unsupported-"));if(file)await writeFile(join(dir,file),"not supported");const service=new WritingService([new InkosAdapter(),new GenericAdapter()]);try{const result=await service.resolve(dir);expect(result.status).toBe("unsupported");expect(result.diagnostics[0]?.code).toBe("UNSUPPORTED_SOURCE");}finally{service.close();await rm(dir,{recursive:true,force:true});}});
+
+  test("returns all InkOS books without guessing",async()=>{const dir=await mkdtemp(join(tmpdir(),"writing-mcp-multi-"));await writeFile(join(dir,"inkos.json"),"{}");await mkdir(join(dir,"books"));await cp(new URL("../fixtures/inkos-minimal/books/tower",import.meta.url),join(dir,"books","one"),{recursive:true});await cp(new URL("../fixtures/inkos-legacy/books/legacy",import.meta.url),join(dir,"books","two"),{recursive:true});const service=new WritingService([new InkosAdapter(),new GenericAdapter()]);try{const result=await service.resolve(dir);expect(result.status).toBe("ambiguous");expect(result.workRef).toBeUndefined();expect(result.candidates.map(c=>c.title).sort()).toEqual(["塔影","旧塔纪事"]);}finally{service.close();await rm(dir,{recursive:true,force:true});}});
+
+  test("direct files in one directory get distinct works and load only themselves",async()=>{const dir=await mkdtemp(join(tmpdir(),"writing-mcp-files-"));const a=join(dir,"a.md"),b=join(dir,"b.txt");await writeFile(a,"# A\nalpha only");await writeFile(b,"B beta only");const adapter=new GenericAdapter();try{const [ca]=await adapter.discover(a),[cb]=await adapter.discover(b);expect(ca?.workRef).not.toBe(cb?.workRef);expect((await adapter.load(ca!)).documents.map(d=>d.relativePath)).toEqual(["a.md"]);expect((await adapter.load(cb!)).documents.map(d=>d.relativePath)).toEqual(["b.txt"]);}finally{await rm(dir,{recursive:true,force:true});}});
+
+  test("loads legacy InkOS paths with stable kinds and chapter number",async()=>{const source=fileURLToPath(new URL("../fixtures/inkos-legacy",import.meta.url));const adapter=new InkosAdapter();const [candidate]=await adapter.discover(source);const first=await adapter.load(candidate!),second=await adapter.load(candidate!);expect(first.documents.map(d=>d.kind).sort()).toEqual(["chapter","character","outline"]);expect(first.documents.find(d=>d.kind==="chapter")?.chapterNumber).toBe(12);expect(first.documents.map(d=>d.documentRef)).toEqual(second.documents.map(d=>d.documentRef));});
+});
