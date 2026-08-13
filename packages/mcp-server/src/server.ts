@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { delimiter } from "node:path";
 import { WritingService } from "@writing-mcp/core";
 import { GenericAdapter } from "@writing-mcp/adapter-generic";
 import { InkosAdapter } from "@writing-mcp/adapter-inkos";
@@ -16,7 +17,7 @@ const indexSchema=envelope(z.object({workRef:z.string(),revision:z.number(),sche
 const exploreSchema=envelope(z.object({workRef:z.string(),revision:z.number(),freshness:z.literal("fresh"),operation:z.enum(["search","entity","neighborhood","timeline","document","stats"]),results:z.array(itemSchema),ambiguous:z.array(itemSchema),truncated:z.boolean(),diagnostics:z.array(diagnosticSchema)}));
 const contextSchema=envelope(z.object({status:z.enum(["complete","truncated","budget_unsatisfiable"]),workRef:z.string(),revision:z.number(),budgetTokens:z.number(),usedTokens:z.number(),estimated:z.boolean(),estimator:z.string(),blocks:z.array(itemSchema.extend({layer:z.enum(["L0","L1","L2","L3"]),tokens:z.number(),required:z.boolean()})),omitted:z.array(z.object({ref:z.string(),reason:z.string(),tokens:z.number()})),diagnostics:z.array(diagnosticSchema)}));
 
-export function createService(){return new WritingService([new InkosAdapter(),new GenericAdapter()]);}
+export function createService(){const roots=(process.env.WRITING_MCP_ROOTS??"").split(delimiter).map(value=>value.trim()).filter(Boolean);return new WritingService([new InkosAdapter(),new GenericAdapter()],roots);}
 const success=(value:Record<string,unknown>)=>{const result={ok:true as const,data:value};return{content:[{type:"text" as const,text:"```json\n"+JSON.stringify(value,null,2)+"\n```"}],structuredContent:{result}};};
 const failure=(error:unknown)=>{const detail={code:typeof error==="object"&&error&&"code" in error?String(error.code):"INTERNAL_ERROR",message:error instanceof Error?error.message:"Unexpected error",recovery:"Check the work reference and source path, then retry."};return{content:[{type:"text" as const,text:`Error ${detail.code}: ${detail.message}`}],structuredContent:{result:{ok:false as const,error:detail}},isError:true};};
 const handle=async(action:()=>Promise<unknown>)=>{try{return success(await action() as Record<string,unknown>);}catch(error){return failure(error);}};

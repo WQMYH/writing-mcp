@@ -3,8 +3,9 @@ import { WritingStore } from "./store.js";
 
 export class WritingService {
   private readonly works=new Map<string,WorkCandidate>(); private readonly stores=new Map<string,WritingStore>();
-  constructor(private readonly adapters:WorkAdapter[]){}
+  constructor(private readonly adapters:WorkAdapter[],private readonly authorizedRoots?:string[]){}
   async resolve(sourcePath:string,adapterHint?:AdapterKind):Promise<ResolveResult>{
+    if(this.authorizedRoots){const {assertAuthorizedPath}=await import("./ids.js");sourcePath=await assertAuthorizedPath(sourcePath,this.authorizedRoots);}
     const selected=adapterHint?this.adapters.filter(a=>a.kind===adapterHint):this.adapters.filter(a=>a.kind!=="generic");
     let candidates=(await Promise.all(selected.map(a=>a.discover(sourcePath)))).flat();
     if(!adapterHint&&candidates.length===0){const fallback=this.adapters.filter(a=>a.kind==="generic");candidates=(await Promise.all(fallback.map(a=>a.discover(sourcePath)))).flat();}

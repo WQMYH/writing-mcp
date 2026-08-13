@@ -1,15 +1,15 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import JSZip from "jszip";
-import { safeRealpath, stableId, type ParsedWork, type SourceDocument, type WorkAdapter, type WorkCandidate } from "@writing-mcp/core";
+import { assertWithin, safeRealpath, stableId, type ParsedWork, type SourceDocument, type WorkAdapter, type WorkCandidate } from "@writing-mcp/core";
 
 const supported = new Set([".md", ".markdown", ".txt", ".epub"]);
 const titleOf = (path: string, content: string) => content.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? basename(path, extname(path));
 const chapterOf = (title: string) => Number(title.match(/(?:第\s*)?(\d+)\s*(?:章|chapter)?/i)?.[1]) || undefined;
 
-async function filesUnder(path: string): Promise<string[]> {
-  const info = await stat(path); if (info.isFile()) return supported.has(extname(path).toLowerCase()) ? [path] : [];
-  const out: string[] = []; for (const entry of await readdir(path, { withFileTypes: true })) { if (entry.name.startsWith(".") || entry.name === "node_modules") continue; const child=join(path,entry.name); if(entry.isDirectory()) out.push(...await filesUnder(child)); else if(supported.has(extname(entry.name).toLowerCase())) out.push(child); } return out.sort();
+async function filesUnder(path: string,root?:string,visited=new Set<string>()): Promise<string[]> {
+  const real=await safeRealpath(path),safeRoot=root??real;assertWithin(safeRoot,real);if(visited.has(real))return[];visited.add(real);const info = await stat(real); if (info.isFile()) return supported.has(extname(real).toLowerCase()) ? [real] : [];
+  const out: string[] = []; for (const entry of await readdir(real, { withFileTypes: true })) { if (entry.name.startsWith(".") || entry.name === "node_modules") continue; const child=join(real,entry.name);const childReal=await safeRealpath(child);assertWithin(safeRoot,childReal);if(entry.isDirectory()) out.push(...await filesUnder(childReal,safeRoot,visited)); else if(supported.has(extname(entry.name).toLowerCase())) out.push(childReal); } return out.sort();
 }
 
 async function epubDocuments(path:string,root:string):Promise<SourceDocument[]>{const data=await readFile(path);const zip=await JSZip.loadAsync(data);const container=await zip.file("META-INF/container.xml")?.async("string");const opfPath=container?.match(/full-path=["']([^"']+)/)?.[1];if(!opfPath)throw new Error("EPUB container does not declare an OPF package");const opf=await zip.file(opfPath)?.async("string");if(!opf)throw new Error("EPUB OPF package is missing");const manifest=new Map<string,string>();for(const m of opf.matchAll(/<item\b[^>]*\bid=["']([^"']+)["'][^>]*\bhref=["']([^"']+)["'][^>]*>/gi))manifest.set(m[1]!,m[2]!);const ids=[...opf.matchAll(/<itemref\b[^>]*\bidref=["']([^"']+)["']/gi)].map(m=>m[1]!);const opfDir=dirname(opfPath).replaceAll("\\","/");const info=await stat(path);const docs:SourceDocument[]=[];for(let i=0;i<ids.length;i++){const href=manifest.get(ids[i]!);if(!href)continue;const entryPath=join(opfDir,decodeURIComponent(href.split("#")[0]!)).replaceAll("\\","/");const html=await zip.file(entryPath)?.async("string");if(!html)continue;const content=html.replace(/<script[\s\S]*?<\/script>/gi,"").replace(/<style[\s\S]*?<\/style>/gi,"").replace(/<br\s*\/?\s*>/gi,"\n").replace(/<\/p>|<\/h[1-6]>/gi,"\n").replace(/<[^>]+>/g,"").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/\n{3,}/g,"\n\n").trim();if(!content)continue;const title=content.split("\n").find(Boolean)?.slice(0,100)??`Chapter ${i+1}`;const rel=`${relative(root,path).replaceAll("\\","/")}#${entryPath}`;docs.push({documentRef:stableId("doc",path,entryPath),relativePath:rel,absolutePath:path,title,kind:"chapter",content,chapterNumber:chapterOf(title)??i+1,sourceMtimeMs:info.mtimeMs,sourceSize:info.size});}if(!docs.length)throw new Error("EPUB contains no readable spine chapters");return docs;}

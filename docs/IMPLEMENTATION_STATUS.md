@@ -21,7 +21,7 @@ pnpm start
 
 实现中断后，依次运行 `pnpm build`、`pnpm benchmark` 和 `pnpm test`。三者都通过后，才可继续增加功能。
 
-最近验证：2026-08-13，构建通过；30/30 基准任务、10/10 事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；6 个测试文件、8 个测试通过。
+最近验证：2026-08-13，构建通过；30/30 基准任务、10/10 事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；7 个测试文件、11 个测试通过。
 
 ## 已实现闭环
 
@@ -45,7 +45,7 @@ pnpm start
 | 里程碑 | 状态 | 已完成 | 未完成门禁 |
 |---|---|---|---|
 | M0 | 已完成 | 版本化协议/存储合同、四工具 schema、四类最小 fixture、30 个任务、Token/事实基线、EPUB 技术验证、两项 ADR | 无 |
-| M1 | 进行中 | InkOS/通用适配器、稳定 work/document/span ID | 授权 roots 配置、junction/symlink 测试、完整 InkOS 新旧 fixture、损坏 EPUB 诊断 |
+| M1 | 进行中 | InkOS/通用适配器、稳定 work/document/span ID、显式授权 roots、realpath 与 symlink/junction 越界防护 | 单书/多书/空目录诊断、完整 InkOS 新旧 fixture、诊断代码冻结 |
 | M2 | 进行中 | SQLite/FTS5、增量文档、revision、基础图谱 | schema 兼容检测/迁移、临时库原子替换、unresolved mention 实际填充、更多节点关系 |
 | M3 | 进行中 | search/entity/neighborhood/document/stats 基础查询 | 真正的 0～3 跳 BFS、timeline、fan-out/全局上限、歧义模型和完整重排 |
 | M4 | 进行中 | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
@@ -62,6 +62,7 @@ M0 已满足计划完成条件。M1～M5 仍未完成；现有成果仍是跨里
 - M0 基线：整书估算 166 Token，10/10 预期事实召回，证据覆盖 100%，三项上下文任务平均 64.33 Token，降幅 61.24%。
 - EPUB：正常双章节 spine，以及损坏 ZIP、缺 container、缺 OPF、无可读 spine 四类失败。
 - InkOS：静态最小 fixture 的稳定作品引用、原生文档类型和章节编号。
+- 路径安全：MCP 缺少授权 roots 时拒绝访问，入口越界及作品目录内 symlink/junction 越界均被阻止。
 
 ## 已知限制
 

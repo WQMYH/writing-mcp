@@ -10,7 +10,7 @@ describe("MCP stdio transport",()=>{
     const dir=await mkdtemp(join(tmpdir(),"writing-mcp-stdio-"));
     const source=join(dir,"novel");await cp(new URL("../fixtures/generic-novel",import.meta.url),source,{recursive:true});
     const client=new Client({name:"writing-mcp-test",version:"0.1.0"});
-    const transport=new StdioClientTransport({command:process.execPath,args:[resolve("packages/mcp-server/dist/index.js")]});
+    const transport=new StdioClientTransport({command:process.execPath,args:[resolve("packages/mcp-server/dist/index.js")],env:{...process.env,WRITING_MCP_ROOTS:dir} as Record<string,string>});
     try{
       await client.connect(transport);
       const listed=await client.listTools();expect(listed.tools.map(t=>t.name).sort()).toEqual(["writing_context","writing_explore","writing_index","writing_resolve"]);expect(listed.tools.every(t=>t.outputSchema)).toBe(true);

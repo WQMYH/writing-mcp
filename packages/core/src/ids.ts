@@ -14,3 +14,10 @@ export function assertWithin(root: string, target: string): void {
   if (rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !resolve(rel).startsWith(sep))) return;
   throw Object.assign(new Error(`Path escapes authorized root: ${target}`), { code: "PATH_NOT_ALLOWED" });
 }
+
+export async function assertAuthorizedPath(target:string,authorizedRoots:string[]):Promise<string>{
+  if(!authorizedRoots.length)throw Object.assign(new Error("No authorized writing roots configured"),{code:"AUTHORIZED_ROOTS_REQUIRED"});
+  const realTarget=await safeRealpath(target);const roots=await Promise.all(authorizedRoots.map(safeRealpath));
+  if(roots.some(root=>{try{assertWithin(root,realTarget);return true;}catch{return false;}}))return realTarget;
+  throw Object.assign(new Error(`Path is outside authorized writing roots: ${target}`),{code:"PATH_NOT_ALLOWED"});
+}
