@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { splitDocument, estimateTokens } from "./text.js";
@@ -14,6 +14,7 @@ const asNumber = (value: unknown) => typeof value === "bigint" ? Number(value) :
 export class WritingStore {
   private db?: DatabaseSync;
   private indexPath?: string;
+  private schemaVersionOnDisk=0;
   constructor(private readonly work: ParsedWork) {}
 
   private async open(): Promise<DatabaseSync> {
@@ -24,6 +25,14 @@ export class WritingStore {
     this.indexPath = join(dir, "index.sqlite");
     const db = new DatabaseSync(this.indexPath);
     db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
+    this.schemaVersionOnDisk=asNumber((db.prepare("PRAGMA user_version").get() as Record<string,unknown>).user_version);
+    if(this.schemaVersionOnDisk!==0&&this.schemaVersionOnDisk!==SCHEMA_VERSION){this.db=db;return db;}
+    this.initializeSchema(db);
+    this.db = db;
+    return db;
+  }
+
+  private initializeSchema(db:DatabaseSync):void{
     db.exec(`
       CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS revisions(id INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL,stats_json TEXT NOT NULL);
@@ -39,16 +48,18 @@ export class WritingStore {
       CREATE INDEX IF NOT EXISTS idx_mentions_entity ON mentions(entity_ref);
       CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_ref);
       CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_ref);
+      PRAGMA user_version=${SCHEMA_VERSION};
     `);
-    this.db = db;
-    return db;
   }
 
+  private async rebuildIncompatibleSchema():Promise<DatabaseSync>{const path=this.indexPath!;this.db?.close();this.db=undefined;for(const suffix of ["","-wal","-shm"])await rm(path+suffix,{force:true});this.schemaVersionOnDisk=0;return this.open();}
+
   async index(mode: "status" | "incremental" | "rebuild"): Promise<IndexResult> {
-    const started = performance.now(); const db = await this.open();
+    const started = performance.now(); let db = await this.open();const diagnostics:IndexResult["diagnostics"]=[];
+    if(this.schemaVersionOnDisk!==0&&this.schemaVersionOnDisk!==SCHEMA_VERSION){if(mode==="status")return{workRef:this.work.workRef,revision:0,schemaVersion:SCHEMA_VERSION,freshness:"incompatible",stats:{added:0,updated:0,deleted:0,skipped:0,documents:0,spans:0,entities:0,edges:0},diagnostics:[{code:"INDEX_SCHEMA_INCOMPATIBLE",message:`Index schema ${this.schemaVersionOnDisk} is incompatible with ${SCHEMA_VERSION}`}],elapsedMs:performance.now()-started};const previous=this.schemaVersionOnDisk;db=await this.rebuildIncompatibleSchema();mode="rebuild";diagnostics.push({code:"INDEX_SCHEMA_REBUILT",message:`Rebuilt derived index schema ${previous} as ${SCHEMA_VERSION}`});}
     const revisionRow = db.prepare("SELECT COALESCE(MAX(id),0) id FROM revisions").get() as Record<string, unknown>;
     const currentRevision = asNumber(revisionRow.id);
-    if (mode === "status") return { workRef: this.work.workRef, revision: currentRevision, schemaVersion: SCHEMA_VERSION, freshness: currentRevision ? "fresh" : "missing", stats: { added: 0, updated: 0, deleted: 0, skipped: 0, ...this.counts() }, diagnostics: [], elapsedMs: performance.now()-started };
+    if (mode === "status") return { workRef: this.work.workRef, revision: currentRevision, schemaVersion: SCHEMA_VERSION, freshness: currentRevision ? "fresh" : "missing", stats: { added: 0, updated: 0, deleted: 0, skipped: 0, ...this.counts() }, diagnostics, elapsedMs: performance.now()-started };
     const existing = new Map<string,string>();
     if(mode!=="rebuild")for (const row of db.prepare("SELECT document_ref,content_hash FROM documents").all() as Array<Record<string,unknown>>) existing.set(String(row.document_ref),String(row.content_hash));
     let added=0,updated=0,skipped=0,deleted=0;
@@ -73,13 +84,13 @@ export class WritingStore {
       db.prepare("INSERT OR REPLACE INTO metadata VALUES('schema_version',?)").run(String(SCHEMA_VERSION));
       db.exec("COMMIT");
       const revision=asNumber((db.prepare("SELECT MAX(id) id FROM revisions").get() as Record<string,unknown>).id);
-      return {workRef:this.work.workRef,revision,schemaVersion:SCHEMA_VERSION,freshness:"fresh",stats,diagnostics:[],elapsedMs:performance.now()-started};
+      return {workRef:this.work.workRef,revision,schemaVersion:SCHEMA_VERSION,freshness:"fresh",stats,diagnostics,elapsedMs:performance.now()-started};
     } catch(error){db.exec("ROLLBACK");throw error;}
   }
 
-  private deleteDocument(db:DatabaseSync,ref:string){const spanRefs=(db.prepare("SELECT span_ref FROM spans WHERE document_ref=?").all(ref) as Array<Record<string,unknown>>).map(r=>String(r.span_ref));for(const s of spanRefs){db.prepare("DELETE FROM spans_fts WHERE span_ref=?").run(s);db.prepare("DELETE FROM mentions WHERE span_ref=?").run(s);db.prepare("DELETE FROM edges WHERE span_ref=?").run(s);db.prepare("DELETE FROM aliases WHERE entity_ref IN (SELECT entity_ref FROM entities WHERE span_ref=?)").run(s);db.prepare("DELETE FROM entities WHERE span_ref=?").run(s);}db.prepare("DELETE FROM documents WHERE document_ref=?").run(ref);}
-  private rebuildEntities(db:DatabaseSync){db.exec("DELETE FROM mentions;DELETE FROM edges WHERE kind!='contains';DELETE FROM aliases;DELETE FROM entities;");const chars=db.prepare("SELECT s.span_ref,s.heading,s.content FROM spans s JOIN documents d ON d.document_ref=s.document_ref WHERE d.kind='character'").all() as Array<Record<string,unknown>>;for(const row of chars){const name=String(row.heading).replace(/^#+\s*/,"").trim();if(!name||/^(角色|人物|characters?)$/i.test(name))continue;const ref=stableId("entity","Character",name.toLowerCase());db.prepare("INSERT OR IGNORE INTO entities VALUES(?,?,?,?,?,?,?)").run(ref,"Character",name,name.toLowerCase(),"native",1,String(row.span_ref));db.prepare("INSERT OR IGNORE INTO aliases VALUES(?,?,?)").run(ref,name,name.toLowerCase());}
-    const entities=db.prepare("SELECT entity_ref,name,normalized_name FROM entities").all() as Array<Record<string,unknown>>;const spans=db.prepare("SELECT s.span_ref,s.content,d.document_ref,d.kind FROM spans s JOIN documents d ON d.document_ref=s.document_ref").all() as Array<Record<string,unknown>>;for(const s of spans)for(const e of entities){const name=String(e.name);let pos=String(s.content).indexOf(name);if(pos<0)continue;const m=stableId("mention",String(s.span_ref),String(e.entity_ref),String(pos));db.prepare("INSERT OR IGNORE INTO mentions VALUES(?,?,?,?,?,?,?)").run(m,String(e.entity_ref),String(s.span_ref),pos,pos+name.length,"deterministic",1);db.prepare("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,?,?,?)").run(stableId("edge",String(e.entity_ref),String(s.document_ref),"appears_in"),String(e.entity_ref),String(s.document_ref),"appears_in","deterministic",1,String(s.span_ref));}}
+  private deleteDocument(db:DatabaseSync,ref:string){const spanRefs=(db.prepare("SELECT span_ref FROM spans WHERE document_ref=?").all(ref) as Array<Record<string,unknown>>).map(r=>String(r.span_ref));for(const s of spanRefs){db.prepare("DELETE FROM spans_fts WHERE span_ref=?").run(s);db.prepare("DELETE FROM mentions WHERE span_ref=?").run(s);db.prepare("DELETE FROM unresolved_mentions WHERE span_ref=?").run(s);db.prepare("DELETE FROM edges WHERE span_ref=?").run(s);db.prepare("DELETE FROM aliases WHERE entity_ref IN (SELECT entity_ref FROM entities WHERE span_ref=?)").run(s);db.prepare("DELETE FROM entities WHERE span_ref=?").run(s);}db.prepare("DELETE FROM documents WHERE document_ref=?").run(ref);}
+  private rebuildEntities(db:DatabaseSync){db.exec("DELETE FROM mentions;DELETE FROM unresolved_mentions;DELETE FROM edges WHERE kind!='contains';DELETE FROM aliases;DELETE FROM entities;");const chars=db.prepare("SELECT s.span_ref,s.heading,s.content FROM spans s JOIN documents d ON d.document_ref=s.document_ref WHERE d.kind='character'").all() as Array<Record<string,unknown>>;for(const row of chars){const name=String(row.heading).replace(/^#+\s*/,"").trim();if(!name||/^(角色|人物|characters?)$/i.test(name))continue;const ref=stableId("entity","Character",name.toLowerCase());db.prepare("INSERT OR IGNORE INTO entities VALUES(?,?,?,?,?,?,?)").run(ref,"Character",name,name.toLowerCase(),"native",1,String(row.span_ref));db.prepare("INSERT OR IGNORE INTO aliases VALUES(?,?,?)").run(ref,name,name.toLowerCase());}
+    const entities=db.prepare("SELECT entity_ref,name,normalized_name FROM entities").all() as Array<Record<string,unknown>>;const byName=new Map(entities.map(e=>[String(e.normalized_name),e]));const spans=db.prepare("SELECT s.span_ref,s.content,d.document_ref,d.kind FROM spans s JOIN documents d ON d.document_ref=s.document_ref").all() as Array<Record<string,unknown>>;for(const s of spans){for(const e of entities){const name=String(e.name);let pos=String(s.content).indexOf(name);if(pos<0)continue;const m=stableId("mention",String(s.span_ref),String(e.entity_ref),String(pos));db.prepare("INSERT OR IGNORE INTO mentions VALUES(?,?,?,?,?,?,?)").run(m,String(e.entity_ref),String(s.span_ref),pos,pos+name.length,"deterministic",1);db.prepare("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,?,?,?)").run(stableId("edge",String(e.entity_ref),String(s.document_ref),"appears_in"),String(e.entity_ref),String(s.document_ref),"appears_in","deterministic",1,String(s.span_ref));}for(const match of String(s.content).matchAll(/\[\[([^\[\]\n]{1,100})\]\]/g)){const text=match[1]!.trim(),entity=byName.get(text.toLowerCase());if(entity)continue;db.prepare("INSERT OR IGNORE INTO unresolved_mentions VALUES(?,?,?,?)").run(stableId("unresolved",String(s.span_ref),text,String(match.index)),text,String(s.span_ref),"NO_MATCHING_ENTITY");}}}
   private counts(db=this.db!){const n=(t:string)=>asNumber((db.prepare(`SELECT COUNT(*) n FROM ${t}`).get() as Record<string,unknown>).n);return {documents:n("documents"),spans:n("spans"),entities:n("entities"),edges:n("edges")};}
 
   async explore(operation:ExploreOperation,query="",limit=20,maxHops=2):Promise<ExploreResult>{const db=await this.open();const revision=asNumber((db.prepare("SELECT COALESCE(MAX(id),0) id FROM revisions").get() as Record<string,unknown>).id);let rows:Array<Record<string,unknown>>=[];

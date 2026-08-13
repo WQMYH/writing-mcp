@@ -1,0 +1,18 @@
+import { DatabaseSync } from "node:sqlite";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { describe, expect, test } from "vitest";
+import { stableId, WritingStore, type ParsedWork, type SourceDocument } from "@writing-mcp/core";
+
+const document=(workRef:string,relativePath:string,content:string,ordinal=0):SourceDocument=>({documentRef:stableId("doc",workRef,String(ordinal)),relativePath,absolutePath:relativePath,title:`Document ${ordinal}`,kind:"document",content,sourceMtimeMs:1,sourceSize:content.length});
+const workAt=(rootPath:string,documents:SourceDocument[]):ParsedWork=>({workRef:stableId("work","test",rootPath),title:"Test",rootPath,adapter:"generic",capabilities:[],documents});
+const indexPath=(work:ParsedWork)=>join(work.rootPath,".writing-index",work.workRef.replace(":","-"),"index.sqlite");
+
+describe("M2 index lifecycle",()=>{
+  test("status reports an incompatible schema and incremental explicitly rebuilds it",async()=>{const root=await mkdtemp(join(tmpdir(),"writing-mcp-schema-"));const work=workAt(root,[]);const dir=join(root,".writing-index",work.workRef.replace(":","-"));await mkdir(dir,{recursive:true});const seeded=new DatabaseSync(join(dir,"index.sqlite"));seeded.exec("PRAGMA user_version=999; CREATE TABLE obsolete(value TEXT);");seeded.close();const store=new WritingStore(work);try{const status=await store.index("status");expect(status.freshness).toBe("incompatible");expect(status.diagnostics[0]?.code).toBe("INDEX_SCHEMA_INCOMPATIBLE");const rebuilt=await store.index("incremental");expect(rebuilt.freshness).toBe("fresh");expect(rebuilt.diagnostics[0]?.code).toBe("INDEX_SCHEMA_REBUILT");const db=new DatabaseSync(indexPath(work),{readOnly:true});try{expect((db.prepare("PRAGMA user_version").get() as {user_version:number}).user_version).toBe(1);expect(()=>db.prepare("SELECT * FROM obsolete").all()).toThrow();}finally{db.close();}}finally{store.close();await rm(root,{recursive:true,force:true});}});
+
+  test("a failed incremental transaction preserves the previous revision and documents",async()=>{const root=await mkdtemp(join(tmpdir(),"writing-mcp-rollback-"));const ref=stableId("work","test",root);const valid=workAt(root,[document(ref,"one.md","stable content")]);const firstStore=new WritingStore(valid);let revision=0;try{revision=(await firstStore.index("rebuild")).revision;}finally{firstStore.close();}const invalid=workAt(root,[document(ref,"duplicate.md","new one",1),document(ref,"duplicate.md","new two",2)]);const failingStore=new WritingStore(invalid);try{await expect(failingStore.index("incremental")).rejects.toThrow();}finally{failingStore.close();}const db=new DatabaseSync(indexPath(valid),{readOnly:true});try{expect(Number((db.prepare("SELECT MAX(id) id FROM revisions").get() as {id:number}).id)).toBe(revision);expect((db.prepare("SELECT relative_path FROM documents").all() as Array<{relative_path:string}>).map(row=>row.relative_path)).toEqual(["one.md"]);}finally{db.close();await rm(root,{recursive:true,force:true});}});
+
+  test("records bracket references that cannot resolve to a known entity",async()=>{const root=await mkdtemp(join(tmpdir(),"writing-mcp-unresolved-"));const ref=stableId("work","test",root);const work=workAt(root,[document(ref,"notes.md","调查目标是 [[未知人物]]。")]);const store=new WritingStore(work);try{await store.index("rebuild");}finally{store.close();}const db=new DatabaseSync(indexPath(work),{readOnly:true});try{expect(db.prepare("SELECT text,reason FROM unresolved_mentions").all()).toEqual([{text:"未知人物",reason:"NO_MATCHING_ENTITY"}]);}finally{db.close();await rm(root,{recursive:true,force:true});}});
+});

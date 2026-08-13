@@ -21,7 +21,7 @@ pnpm start
 
 实现中断后，依次运行 `pnpm build`、`pnpm benchmark` 和 `pnpm test`。三者都通过后，才可继续增加功能。
 
-最近验证：2026-08-13，构建通过；30/30 基准任务、10/10 事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；8 个测试文件、16 个测试通过。
+最近验证：2026-08-13，构建通过；30/30 基准任务、10/10 事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；9 个测试文件、19 个测试通过。
 
 ## 已实现闭环
 
@@ -46,7 +46,7 @@ pnpm start
 |---|---|---|---|
 | M0 | 已完成 | 版本化协议/存储合同、四工具 schema、四类最小 fixture、30 个任务、Token/事实基线、EPUB 技术验证、两项 ADR | 无 |
 | M1 | 已完成 | 授权 roots、realpath/链接防护、稳定候选与引用、单/多书诊断、InkOS 新旧结构、Markdown/TXT/EPUB、损坏 EPUB 错误码 | 无 |
-| M2 | 进行中 | SQLite/FTS5、增量文档、revision、基础图谱 | schema 兼容检测/迁移、临时库原子替换、unresolved mention 实际填充、更多节点关系 |
+| M2 | 进行中 | SQLite/FTS5、增量文档、revision、事务回滚、schema 不兼容检测/显式重建、`unresolved_mentions` 实际填充 | 扩展最小节点/关系、删除索引完整重建与生命周期门禁汇总 |
 | M3 | 进行中 | search/entity/neighborhood/document/stats 基础查询 | 真正的 0～3 跳 BFS、timeline、fan-out/全局上限、歧义模型和完整重排 |
 | M4 | 进行中 | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
 | M5 | 进行中 | stdio、四工具注册、structuredContent、outputSchema、统一结果/错误信封、协议测试 | 真实 InkOS/EPUB 回归、客户端安装与故障文档 |
@@ -65,6 +65,7 @@ M0、M1 已满足计划完成条件。M2～M5 仍未完成；现有成果仍是�
 - 路径安全：MCP 缺少授权 roots 时拒绝访问，入口越界及作品目录内 symlink/junction 越界均被阻止。
 - 作品识别：覆盖单书、多书歧义、空目录、不支持扩展名、同目录直接文件隔离和 InkOS 新旧结构。
 - 稳定诊断：`AUTHORIZED_ROOTS_REQUIRED`、`PATH_NOT_ALLOWED` 以及四类 EPUB 确定性错误码。
+- 索引生命周期：不兼容 schema 只读报告/显式重建、失败事务保留上一 revision、未解析方括号引用入库。
 
 ## 已知限制
 
