@@ -1,7 +1,7 @@
 # Writing MCP MVP 实施状态
 
 > 检查点时间：2026-08-14
-> 当前状态：M0、M1 已完成，M2 进行中；整体仍是可演示 MVP，尚未达到 `Writing_MCP_Server_v2.md` 的 v1 完整验收标准。
+> 当前状态：M0、M1 已完成，M2 进行中（M2.1 schema/原子替换已完成）；整体仍是可演示 MVP，尚未达到 `Writing_MCP_Server_v2.md` 的 v1 完整验收标准。
 
 ## 恢复入口
 
@@ -48,7 +48,7 @@ pnpm start
 |---|---|---|---|
 | M0 | 已完成 | 版本化协议/存储合同、四工具 schema、四类最小 fixture、30 个任务、Token/事实基线、EPUB 技术验证、两项 ADR | 无 |
 | M1 | 已完成 | 授权 roots、realpath/链接防护、稳定候选与引用、单/多书诊断、InkOS 新旧结构、Markdown/TXT/EPUB、损坏 EPUB 错误码 | 无 |
-| M2 | 进行中（M2.1 校准） | SQLite/FTS5、增量/revision/回滚、schema 检测与重建、未解析引用、基础原生节点/确定性关系、缓存删除等价重建 | schema v2；临时数据库验证后原子替换；关系确定性属性；实体/事实/关系的内容哈希、适用章节/叙事时间与 revision；`works`/revision 表命名与合同对齐；未实现关系的延期 ADR |
+| M2 | 进行中 | SQLite/FTS5、schema v2、works/index_revisions、证据哈希/属性/时态/revision、临时库验证后原子替换、未实现关系延期 ADR | 增量派生关系按影响范围更新，避免每次文档变化无条件全图重建；补对应复杂度与稳定 revision 回归 |
 | M3 | 待开始（已有纵向切片） | search/entity/neighborhood/document/stats 基础查询 | 真正的 0～3 跳 BFS、timeline、fan-out/全局上限、歧义模型和完整重排 |
 | M4 | 待开始（已有纵向切片） | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
 | M5 | 待开始（已有纵向切片） | stdio、四工具注册、structuredContent、outputSchema、统一结果/错误信封、协议测试 | 真实 InkOS/EPUB 回归、客户端安装与故障文档 |
@@ -84,10 +84,8 @@ M0、M1 已满足计划完成条件。M2 曾因纵向切片测试通过而被过
 
 ## 下一步
 
-继续 M2，完成以下门禁后才能进入 M3：
+继续 M2，完成以下剩余门禁后才能进入 M3：
 
-1. 完整重建先写临时数据库，验证成功后原子替换有效索引。
-2. 将索引升级为 schema v2，对齐 `works`、revision 记录以及实体/边的证据、哈希、确定性属性、章节/叙事时间范围和 revision 字段。
-3. 补齐计划要求的 v1 关系类型；缺少确定性源数据的关系通过版本化 ADR 明确延期及兼容策略，不得用推测填充。
-4. M2.1 完成并通过迁移、原子替换和时间有效性测试后，才开始 M3 正式 BFS。
-5. M3 实施时同步修复 `Evidence.documentRef`、避免查询期全量重解析，并建立约 10 万字符开发性能 fixture；不得把这些风险继续推迟到 M5。
+1. 将实体、mention、未解析引用和非结构边改为按受影响文档/实体更新，不再无条件清空全图。
+2. 验证单章变化不会重写无关文档的派生记录，删除或重命名实体时仍能修复跨文档 mention。
+3. M2 完成后才开始 M3 正式 BFS；M3 同步修复 `Evidence.documentRef`、查询期全量解析和约 10 万字符开发性能 fixture。

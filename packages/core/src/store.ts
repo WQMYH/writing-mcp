@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { splitDocument, estimateTokens } from "./text.js";
 import { stableId } from "./ids.js";
 import type { ContextBlock, ContextPacket, ExploreItem, ExploreOperation, ExploreResult, IndexResult, ParsedWork } from "./types.js";
@@ -16,14 +16,14 @@ export class WritingStore {
   private db?: DatabaseSync;
   private indexPath?: string;
   private schemaVersionOnDisk=0;
-  constructor(private readonly work: ParsedWork) {}
+  constructor(private readonly work: ParsedWork,private readonly forcedIndexPath?:string,private readonly directRebuild=false) {}
 
   private async open(): Promise<DatabaseSync> {
     if (this.db) return this.db;
     const dir = join(this.work.rootPath, ".writing-index", this.work.workRef.replace(":", "-"));
     await mkdir(dir, { recursive: true });
     await writeFile(join(this.work.rootPath, ".writing-index", ".gitignore"), "*\n!.gitignore\n", { flag: "w" });
-    this.indexPath = join(dir, "index.sqlite");
+    this.indexPath = this.forcedIndexPath??join(dir, "index.sqlite");
     const db = new DatabaseSync(this.indexPath);
     db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
     this.schemaVersionOnDisk=asNumber((db.prepare("PRAGMA user_version").get() as Record<string,unknown>).user_version);
@@ -61,11 +61,26 @@ export class WritingStore {
     `);
   }
 
-  private async rebuildIncompatibleSchema():Promise<DatabaseSync>{const path=this.indexPath!;this.db?.close();this.db=undefined;for(const suffix of ["","-wal","-shm"])await rm(path+suffix,{force:true});this.schemaVersionOnDisk=0;return this.open();}
+  private async atomicRebuild(previousSchema?:number):Promise<IndexResult>{
+    const activePath=this.indexPath!,temporaryPath=join(dirname(activePath),`index.${randomUUID()}.tmp.sqlite`),backupPath=`${activePath}.previous`;
+    const temporary=new WritingStore(this.work,temporaryPath,true);
+    try{
+      const result=await temporary.index("rebuild");temporary.validateBuiltIndex();temporary.close();
+      this.close();await rm(backupPath,{force:true});
+      let backedUp=false;
+      try{await stat(activePath);await rename(activePath,backupPath);backedUp=true;}catch(error){if(!(typeof error==="object"&&error&&"code" in error&&error.code==="ENOENT"))throw error;}
+      try{await rename(temporaryPath,activePath);}catch(error){if(backedUp)await rename(backupPath,activePath);throw error;}
+      await rm(backupPath,{force:true});this.schemaVersionOnDisk=0;
+      return{...result,diagnostics:[...result.diagnostics,...(previousSchema==null?[]:[{code:"INDEX_SCHEMA_REBUILT",message:`Rebuilt derived index schema ${previousSchema} as ${SCHEMA_VERSION}`}]) ]};
+    }finally{temporary.close();for(const suffix of ["","-wal","-shm"])await rm(temporaryPath+suffix,{force:true});}
+  }
+
+  private validateBuiltIndex():void{const db=this.db!;const integrity=String((db.prepare("PRAGMA integrity_check").get() as Record<string,unknown>).integrity_check);if(integrity!=="ok")throw Object.assign(new Error(`Temporary index integrity check failed: ${integrity}`),{code:"INDEX_VALIDATION_FAILED"});const version=asNumber((db.prepare("PRAGMA user_version").get() as Record<string,unknown>).user_version);if(version!==SCHEMA_VERSION)throw Object.assign(new Error(`Temporary index schema is ${version}, expected ${SCHEMA_VERSION}`),{code:"INDEX_VALIDATION_FAILED"});const required=["works","index_revisions","documents","spans","spans_fts","entities","aliases","mentions","edges","unresolved_mentions"];const tables=new Set((db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view')").all() as Array<Record<string,unknown>>).map(row=>String(row.name)));for(const table of required)if(!tables.has(table))throw Object.assign(new Error(`Temporary index is missing ${table}`),{code:"INDEX_VALIDATION_FAILED"});const revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions WHERE status='valid'").get() as Record<string,unknown>).revision);if(revision<1)throw Object.assign(new Error("Temporary index has no valid revision"),{code:"INDEX_VALIDATION_FAILED"});db.prepare("SELECT span_ref FROM spans LIMIT 1").all();}
 
   async index(mode: "status" | "incremental" | "rebuild"): Promise<IndexResult> {
     const started = performance.now(); let db = await this.open();const diagnostics:IndexResult["diagnostics"]=[];
-    if(this.schemaVersionOnDisk!==0&&this.schemaVersionOnDisk!==SCHEMA_VERSION){if(mode==="status")return{workRef:this.work.workRef,revision:0,schemaVersion:SCHEMA_VERSION,freshness:"incompatible",stats:{added:0,updated:0,deleted:0,skipped:0,documents:0,spans:0,entities:0,edges:0},diagnostics:[{code:"INDEX_SCHEMA_INCOMPATIBLE",message:`Index schema ${this.schemaVersionOnDisk} is incompatible with ${SCHEMA_VERSION}`}],elapsedMs:performance.now()-started};const previous=this.schemaVersionOnDisk;db=await this.rebuildIncompatibleSchema();mode="rebuild";diagnostics.push({code:"INDEX_SCHEMA_REBUILT",message:`Rebuilt derived index schema ${previous} as ${SCHEMA_VERSION}`});}
+    if(this.schemaVersionOnDisk!==0&&this.schemaVersionOnDisk!==SCHEMA_VERSION){if(mode==="status")return{workRef:this.work.workRef,revision:0,schemaVersion:SCHEMA_VERSION,freshness:"incompatible",stats:{added:0,updated:0,deleted:0,skipped:0,documents:0,spans:0,entities:0,edges:0},diagnostics:[{code:"INDEX_SCHEMA_INCOMPATIBLE",message:`Index schema ${this.schemaVersionOnDisk} is incompatible with ${SCHEMA_VERSION}`}],elapsedMs:performance.now()-started};return this.atomicRebuild(this.schemaVersionOnDisk);}
+    if(mode==="rebuild"&&!this.directRebuild)return this.atomicRebuild();
     const revisionRow = db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string, unknown>;
     const currentRevision = asNumber(revisionRow.revision);
     if (mode === "status") return { workRef: this.work.workRef, revision: currentRevision, schemaVersion: SCHEMA_VERSION, freshness: currentRevision ? "fresh" : "missing", stats: { added: 0, updated: 0, deleted: 0, skipped: 0, ...this.counts() }, diagnostics, elapsedMs: performance.now()-started };
