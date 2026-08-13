@@ -45,6 +45,18 @@ Required uniqueness:
 
 Schema v1 is rebuildable derived state. It never owns source-of-truth writing data.
 
+## SQLite schema v2 amendment
+
+Schema v2 is the active implementation contract. It is an incompatible upgrade from schema v1; existing derived indexes are rebuilt from source files rather than semantically migrated.
+
+- `works` records the work, adapter, canonical source-path hash, schema/software versions, and current valid revision.
+- `index_revisions` records source snapshot hash, build statistics, validity status, and software version.
+- entities and edges add evidence content hash, optional chapter-reference validity range, optional narrative time, deterministic `properties_json`, and revision.
+- mentions and unresolved mentions add revision.
+- v2 adds indexes for source spans, endpoints/kinds, validity ranges, and revisions.
+
+See `docs/adr/0003-schema-v2-temporal-evidence.md` for compatibility and scope decisions.
+
 ## MCP result rules
 
 - Every call returns Markdown `content` and a JSON `structuredContent` envelope.
@@ -68,3 +80,4 @@ The frozen fixture baseline is 166 estimated full-book tokens, 10/10 expected fa
 
 - `docs/adr/0001-deterministic-local-core.md`: local deterministic TypeScript core and disposable index.
 - `docs/adr/0002-epub-jszip.md`: JSZip 3.x under its MIT option, supported EPUB boundary and failure behavior.
+- `docs/adr/0003-schema-v2-temporal-evidence.md`: incompatible derived-index upgrade, chapter-reference validity, and deferred semantic relationships.
