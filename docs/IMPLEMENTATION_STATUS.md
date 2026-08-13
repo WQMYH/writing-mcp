@@ -1,7 +1,7 @@
 # Writing MCP MVP 实施状态
 
-> 检查点时间：2026-08-13  
-> 当前状态：M0～M2 已完成；整体仍是可演示 MVP，尚未达到 `Writing_MCP_Server_v2.md` 的 v1 完整验收标准。
+> 检查点时间：2026-08-14
+> 当前状态：M0、M1 已完成，M2 进行中；整体仍是可演示 MVP，尚未达到 `Writing_MCP_Server_v2.md` 的 v1 完整验收标准。
 
 ## 恢复入口
 
@@ -21,7 +21,7 @@ pnpm start
 
 实现中断后，依次运行 `pnpm build`、`pnpm benchmark` 和 `pnpm test`。三者都通过后，才可继续增加功能。
 
-最近验证：2026-08-13，构建通过；30/30 基准任务、10/10 事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；9 个测试文件、21 个测试通过。
+最近验证：2026-08-14，构建通过；30/30 基准任务、10/10 事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；9 个测试文件、22 个测试通过。
 
 ## 已实现闭环
 
@@ -46,12 +46,12 @@ pnpm start
 |---|---|---|---|
 | M0 | 已完成 | 版本化协议/存储合同、四工具 schema、四类最小 fixture、30 个任务、Token/事实基线、EPUB 技术验证、两项 ADR | 无 |
 | M1 | 已完成 | 授权 roots、realpath/链接防护、稳定候选与引用、单/多书诊断、InkOS 新旧结构、Markdown/TXT/EPUB、损坏 EPUB 错误码 | 无 |
-| M2 | 已完成 | SQLite/FTS5、增量/revision/回滚、schema 检测与重建、未解析引用、原生节点和确定性关系、缓存删除等价重建 | 无 |
-| M3 | 进行中 | search/entity/neighborhood/document/stats 基础查询 | 真正的 0～3 跳 BFS、timeline、fan-out/全局上限、歧义模型和完整重排 |
-| M4 | 进行中 | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
-| M5 | 进行中 | stdio、四工具注册、structuredContent、outputSchema、统一结果/错误信封、协议测试 | 真实 InkOS/EPUB 回归、客户端安装与故障文档 |
+| M2 | 进行中 | SQLite/FTS5、增量/revision/回滚、schema 检测与重建、未解析引用、基础原生节点/确定性关系、缓存删除等价重建 | 临时数据库验证后原子替换；完整 v1 关系集合；实体/事实/关系的内容哈希、适用范围与 revision 证据字段；`works`/revision 表命名与计划合同对齐 |
+| M3 | 待开始（已有纵向切片） | search/entity/neighborhood/document/stats 基础查询 | 真正的 0～3 跳 BFS、timeline、fan-out/全局上限、歧义模型和完整重排 |
+| M4 | 待开始（已有纵向切片） | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
+| M5 | 待开始（已有纵向切片） | stdio、四工具注册、structuredContent、outputSchema、统一结果/错误信封、协议测试 | 真实 InkOS/EPUB 回归、客户端安装与故障文档 |
 
-M0～M2 已满足计划完成条件。M3～M5 仍未完成；现有成果仍是跨里程碑的“纵向切片 MVP”，不能据此宣称 Writing MCP v1 已完成。
+M0、M1 已满足计划完成条件。M2 曾因纵向切片测试通过而被过早标记完成，2026-08-14 审查后已纠正为进行中。M3～M5 仍未完成；现有成果不能据此宣称 Writing MCP v1 已完成。
 
 ## 当前测试覆盖
 
@@ -81,8 +81,8 @@ M0～M2 已满足计划完成条件。M3～M5 仍未完成；现有成果仍是�
 
 ## 下一步
 
-进入 M3，但只在检索与多跳探索门禁全部满足后标记完成：
+继续 M2，完成以下门禁后才能进入 M3：
 
-1. 实现真正的 0～3 跳有界 BFS、fan-out 与全局访问上限。
-2. 为 timeline 建立独立确定性语义。
-3. 完成歧义候选、稳定重排和路径证据测试。
+1. 完整重建先写临时数据库，验证成功后原子替换有效索引。
+2. 对齐 `works`、revision 记录以及实体/边的证据、哈希、范围和 revision 字段。
+3. 补齐计划要求的 v1 关系类型，或通过版本化 ADR 明确延期及兼容策略。

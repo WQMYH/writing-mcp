@@ -2,10 +2,17 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
-import { assertAuthorizedPath, WritingService } from "@writing-mcp/core";
+import { assertAuthorizedPath, assertWithin, WritingService } from "@writing-mcp/core";
 import { GenericAdapter } from "@writing-mcp/adapter-generic";
 
 describe("M1 authorized path boundary",()=>{
+  test("accepts descendants and rejects siblings without depending on the process cwd",()=>{
+    const root=join(tmpdir(),"writing-mcp-boundary-root");
+    expect(()=>assertWithin(root,join(root,"books","novel.md"))).not.toThrow();
+    expect(()=>assertWithin(root,root)).not.toThrow();
+    expect(()=>assertWithin(root,join(root,"..","outside.md"))).toThrow(expect.objectContaining({code:"PATH_NOT_ALLOWED"}));
+  });
+
   test("requires configured roots and rejects source paths outside them",async()=>{
     const root=await mkdtemp(join(tmpdir(),"writing-mcp-root-"));const outside=await mkdtemp(join(tmpdir(),"writing-mcp-outside-"));
     try{await expect(assertAuthorizedPath(root,[])).rejects.toMatchObject({code:"AUTHORIZED_ROOTS_REQUIRED"});await expect(assertAuthorizedPath(outside,[root])).rejects.toMatchObject({code:"PATH_NOT_ALLOWED"});await expect(assertAuthorizedPath(root,[root])).resolves.toBeTruthy();}
