@@ -23,6 +23,9 @@ importers:
       '@writing-mcp/core':
         specifier: workspace:*
         version: link:packages/core
+      jszip:
+        specifier: ^3.10.1
+        version: 3.10.1
       typescript:
         specifier: ^5.9.2
         version: 5.9.2

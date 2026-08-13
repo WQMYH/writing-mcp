@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "corpus": "fixtures/generic-novel",
+  "estimator": "mixed-cjk-v1",
+  "expectedFacts": [
+    { "id": "f01", "query": "林秋 雨夜", "expect": "林秋在雨夜抵达北塔" },
+    { "id": "f02", "query": "铜钥匙 档案室", "expect": "铜钥匙可以打开地下档案室" },
+    { "id": "f03", "query": "月纹 旧徽章", "expect": "月纹的旧徽章" },
+    { "id": "f04", "query": "林秋 铜钥匙", "expect": "林秋使用铜钥匙" },
+    { "id": "f05", "query": "周岚 地下档案室", "expect": "没有见到周岚" },
+    { "id": "f06", "query": "北塔 十年前", "expect": "北塔曾在十年前失火" },
+    { "id": "f07", "query": "林秋 调查员", "expect": "林秋是调查员" },
+    { "id": "f08", "query": "林秋 随身携带", "expect": "随身携带一枚铜钥匙" },
+    { "id": "f09", "query": "周岚 旧友", "expect": "周岚是林秋的旧友" },
+    { "id": "f10", "query": "周岚 守护", "expect": "负责守护北塔" }
+  ],
+  "contextTasks": [
+    { "id": "ctx01", "query": "月纹 旧徽章", "budgetTokens": 120, "expect": "月纹的旧徽章" },
+    { "id": "ctx02", "query": "十年前 失火", "budgetTokens": 120, "expect": "十年前失火" },
+    { "id": "ctx03", "query": "周岚 旧友", "budgetTokens": 120, "expect": "林秋的旧友" }
+  ],
+  "gates": {
+    "minimumFactRecall": 0.9,
+    "minimumEvidenceCoverage": 1,
+    "minimumTokenReduction": 0.6
+  }
+}

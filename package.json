@@ -3,20 +3,23 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.21.0",
-  "engines": { "node": ">=24 <25" },
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run",
-    "benchmark": "vitest run tests/benchmark.test.ts",
+    "benchmark": "pnpm build && node scripts/run-benchmark.mjs",
     "check": "tsc -b --pretty false",
     "start": "node packages/mcp-server/dist/index.js"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@types/node": "^24.10.0",
     "@writing-mcp/adapter-generic": "workspace:*",
     "@writing-mcp/adapter-inkos": "workspace:*",
     "@writing-mcp/core": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@types/node": "^24.10.0",
+    "jszip": "^3.10.1",
     "typescript": "^5.9.2",
     "vitest": "^4.0.0"
   }

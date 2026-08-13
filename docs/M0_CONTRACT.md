@@ -57,6 +57,14 @@ Schema v1 is rebuildable derived state. It never owns source-of-truth writing da
 ## Benchmark gate
 
 - Dataset: `benchmarks/m0.json`, exactly 30 machine-readable tasks.
+- Fact/token baseline: `benchmarks/baseline.json`; runner: `scripts/run-benchmark.mjs`.
 - M0 gate: 100% pass on the deterministic fixture.
 - The fixture gate validates test infrastructure, not the final product claim.
 - The v1 product gates (90% fact recall, 100% evidence coverage, 60% token reduction) require representative real-work corpora in later milestones.
+
+The frozen fixture baseline is 166 estimated full-book tokens, 10/10 expected facts recalled, 100% evidence coverage, and 64.33 average context tokens across three tasks (61.24% reduction). These numbers are reproducible engineering gates, not claims about real novels.
+
+## Versioned decisions
+
+- `docs/adr/0001-deterministic-local-core.md`: local deterministic TypeScript core and disposable index.
+- `docs/adr/0002-epub-jszip.md`: JSZip 3.x under its MIT option, supported EPUB boundary and failure behavior.

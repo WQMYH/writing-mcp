@@ -1,7 +1,7 @@
 # Writing MCP MVP 实施状态
 
 > 检查点时间：2026-08-13  
-> 当前状态：可演示 MVP，尚未达到 `Writing_MCP_Server_v2.md` 的完整验收标准。
+> 当前状态：M0 已完成；整体仍是可演示 MVP，尚未达到 `Writing_MCP_Server_v2.md` 的 v1 完整验收标准。
 
 ## 恢复入口
 
@@ -21,7 +21,7 @@ pnpm start
 
 实现中断后，依次运行 `pnpm build`、`pnpm benchmark` 和 `pnpm test`。三者都通过后，才可继续增加功能。
 
-最近验证：2026-08-13，构建通过；30/30 基准任务通过；3 个测试文件、4 个测试通过。
+最近验证：2026-08-13，构建通过；30/30 基准任务、10/10 事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；6 个测试文件、8 个测试通过。
 
 ## 已实现闭环
 
@@ -44,14 +44,14 @@ pnpm start
 
 | 里程碑 | 状态 | 已完成 | 未完成门禁 |
 |---|---|---|---|
-| M0 | 进行中 | 工程、核心类型、SQLite v1 schema、协议合同、四工具 output schema、30 个基准任务及评分门禁 | 全书 Token 基线与预期事实集、EPUB 异常样本、关键决策 ADR |
+| M0 | 已完成 | 版本化协议/存储合同、四工具 schema、四类最小 fixture、30 个任务、Token/事实基线、EPUB 技术验证、两项 ADR | 无 |
 | M1 | 进行中 | InkOS/通用适配器、稳定 work/document/span ID | 授权 roots 配置、junction/symlink 测试、完整 InkOS 新旧 fixture、损坏 EPUB 诊断 |
 | M2 | 进行中 | SQLite/FTS5、增量文档、revision、基础图谱 | schema 兼容检测/迁移、临时库原子替换、unresolved mention 实际填充、更多节点关系 |
 | M3 | 进行中 | search/entity/neighborhood/document/stats 基础查询 | 真正的 0～3 跳 BFS、timeline、fan-out/全局上限、歧义模型和完整重排 |
 | M4 | 进行中 | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
 | M5 | 进行中 | stdio、四工具注册、structuredContent、outputSchema、统一结果/错误信封、协议测试 | 真实 InkOS/EPUB 回归、客户端安装与故障文档 |
 
-任何里程碑当前都不能标记为 `complete`。现有成果是跨里程碑的“纵向切片 MVP”。
+M0 已满足计划完成条件。M1～M5 仍未完成；现有成果仍是跨里程碑的“纵向切片 MVP”，不能据此宣称 Writing MCP v1 已完成。
 
 ## 当前测试覆盖
 
@@ -59,6 +59,9 @@ pnpm start
 - 适配器优先级：InkOS 根目录不会同时被 generic fallback 报为第二个作品。
 - MCP stdio：枚举四工具、确认输出模式，顺序调用 resolve/index/explore/context，并验证结构化错误信封。
 - M0 基准：固定 fixture 上 30 个检索、实体、邻域、文档、统计和上下文任务全部命中且具有证据。
+- M0 基线：整书估算 166 Token，10/10 预期事实召回，证据覆盖 100%，三项上下文任务平均 64.33 Token，降幅 61.24%。
+- EPUB：正常双章节 spine，以及损坏 ZIP、缺 container、缺 OPF、无可读 spine 四类失败。
+- InkOS：静态最小 fixture 的稳定作品引用、原生文档类型和章节编号。
 
 ## 已知限制
 
@@ -72,9 +75,8 @@ pnpm start
 
 ## 下一步
 
-继续 M0，不直接宣称进入下一里程碑完成态：
+进入 M1，但只在作品识别与适配器门禁全部满足后标记完成：
 
-1. 建立代表性全书 Token 基线与预期事实集，区分 fixture 门禁和产品验收指标。
-2. 建立 InkOS、EPUB、安全路径和预算失败 fixtures，重点补损坏 EPUB 与路径越界。
-3. 为关键协议、存储与许可决策补 ADR。
-4. 用扩展基准结果决定多跳、排序和上下文层级的具体参数。
+1. 实现显式授权 roots、realpath 与 junction/symlink 越界防护。
+2. 补单书、多书、空目录和不支持格式诊断测试。
+3. 扩展 InkOS 新旧目录 fixtures，并冻结损坏作品的诊断代码。
