@@ -1,0 +1,21 @@
+import { readFile, readdir, stat } from "node:fs/promises";
+import { basename, dirname, extname, join, relative } from "node:path";
+import JSZip from "jszip";
+import { safeRealpath, stableId, type ParsedWork, type SourceDocument, type WorkAdapter, type WorkCandidate } from "@writing-mcp/core";
+
+const supported = new Set([".md", ".markdown", ".txt", ".epub"]);
+const titleOf = (path: string, content: string) => content.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? basename(path, extname(path));
+const chapterOf = (title: string) => Number(title.match(/(?:第\s*)?(\d+)\s*(?:章|chapter)?/i)?.[1]) || undefined;
+
+async function filesUnder(path: string): Promise<string[]> {
+  const info = await stat(path); if (info.isFile()) return supported.has(extname(path).toLowerCase()) ? [path] : [];
+  const out: string[] = []; for (const entry of await readdir(path, { withFileTypes: true })) { if (entry.name.startsWith(".") || entry.name === "node_modules") continue; const child=join(path,entry.name); if(entry.isDirectory()) out.push(...await filesUnder(child)); else if(supported.has(extname(entry.name).toLowerCase())) out.push(child); } return out.sort();
+}
+
+async function epubDocuments(path:string,root:string):Promise<SourceDocument[]>{const data=await readFile(path);const zip=await JSZip.loadAsync(data);const container=await zip.file("META-INF/container.xml")?.async("string");const opfPath=container?.match(/full-path=["']([^"']+)/)?.[1];if(!opfPath)throw new Error("EPUB container does not declare an OPF package");const opf=await zip.file(opfPath)?.async("string");if(!opf)throw new Error("EPUB OPF package is missing");const manifest=new Map<string,string>();for(const m of opf.matchAll(/<item\b[^>]*\bid=["']([^"']+)["'][^>]*\bhref=["']([^"']+)["'][^>]*>/gi))manifest.set(m[1]!,m[2]!);const ids=[...opf.matchAll(/<itemref\b[^>]*\bidref=["']([^"']+)["']/gi)].map(m=>m[1]!);const opfDir=dirname(opfPath).replaceAll("\\","/");const info=await stat(path);const docs:SourceDocument[]=[];for(let i=0;i<ids.length;i++){const href=manifest.get(ids[i]!);if(!href)continue;const entryPath=join(opfDir,decodeURIComponent(href.split("#")[0]!)).replaceAll("\\","/");const html=await zip.file(entryPath)?.async("string");if(!html)continue;const content=html.replace(/<script[\s\S]*?<\/script>/gi,"").replace(/<style[\s\S]*?<\/style>/gi,"").replace(/<br\s*\/?\s*>/gi,"\n").replace(/<\/p>|<\/h[1-6]>/gi,"\n").replace(/<[^>]+>/g,"").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/\n{3,}/g,"\n\n").trim();if(!content)continue;const title=content.split("\n").find(Boolean)?.slice(0,100)??`Chapter ${i+1}`;const rel=`${relative(root,path).replaceAll("\\","/")}#${entryPath}`;docs.push({documentRef:stableId("doc",path,entryPath),relativePath:rel,absolutePath:path,title,kind:"chapter",content,chapterNumber:chapterOf(title)??i+1,sourceMtimeMs:info.mtimeMs,sourceSize:info.size});}return docs;}
+
+export class GenericAdapter implements WorkAdapter {
+  readonly kind="generic" as const;
+  async discover(sourcePath:string):Promise<WorkCandidate[]>{try{const real=await safeRealpath(sourcePath);const files=await filesUnder(real);if(!files.length)return[];const root=(await stat(real)).isDirectory()?real:dirname(real);const title=(await stat(real)).isDirectory()?basename(real):basename(real,extname(real));return[{workRef:stableId("work","generic",root),title,rootPath:root,adapter:this.kind,capabilities:["documents","full_text","epub"]}];}catch{return[];}}
+  async load(candidate:WorkCandidate):Promise<ParsedWork>{const files=await filesUnder(candidate.rootPath);const documents:SourceDocument[]=[];for(const file of files){if(extname(file).toLowerCase()===".epub"){documents.push(...await epubDocuments(file,candidate.rootPath));continue;}const content=await readFile(file,"utf8");const info=await stat(file);const title=titleOf(file,content);const label=(file+" "+title).toLowerCase();const kind=/chapter|章节|第\s*\d+\s*章/i.test(label)?"chapter":/characters?|角色|人物/.test(label)?"character":"document";documents.push({documentRef:stableId("doc",candidate.workRef,relative(candidate.rootPath,file)),relativePath:relative(candidate.rootPath,file).replaceAll("\\","/"),absolutePath:file,title,kind,content,chapterNumber:chapterOf(title),sourceMtimeMs:info.mtimeMs,sourceSize:info.size});}return{...candidate,documents};}
+}

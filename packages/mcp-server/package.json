@@ -1,0 +1,5 @@
+{
+  "name": "@writing-mcp/server", "version": "0.1.0", "private": true, "type": "module",
+  "bin": { "writing-mcp": "dist/index.js" }, "main": "dist/index.js", "types": "dist/index.d.ts",
+  "dependencies": { "@modelcontextprotocol/sdk": "^1.30.0", "@writing-mcp/core": "workspace:*", "@writing-mcp/adapter-generic": "workspace:*", "@writing-mcp/adapter-inkos": "workspace:*", "zod": "^4.4.0" }
+}

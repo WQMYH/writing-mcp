@@ -1,0 +1,15 @@
+import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { describe, expect, test } from "vitest";
+import { WritingService } from "@writing-mcp/core";
+import { GenericAdapter } from "@writing-mcp/adapter-generic";
+import { InkosAdapter } from "@writing-mcp/adapter-inkos";
+
+describe("writing MCP MVP",()=>{
+  test("prefers the InkOS adapter over the generic fallback",async()=>{const dir=await mkdtemp(join(tmpdir(),"writing-mcp-inkos-"));try{await writeFile(join(dir,"inkos.json"),"{}");await cp(new URL("../fixtures/generic-novel",import.meta.url),join(dir,"books","demo"),{recursive:true});await writeFile(join(dir,"books","demo","book.json"),JSON.stringify({id:"demo",title:"演示书"}));const service=new WritingService([new InkosAdapter(),new GenericAdapter()]);try{const resolved=await service.resolve(dir);expect(resolved.status).toBe("resolved");expect(resolved.candidates).toHaveLength(1);expect(resolved.candidates[0]!.adapter).toBe("inkos");}finally{service.close();}}finally{await rm(dir,{recursive:true,force:true});}});
+  test("resolve → index → explore → context",async()=>{const dir=await mkdtemp(join(tmpdir(),"writing-mcp-"));const service=new WritingService([new InkosAdapter(),new GenericAdapter()]);try{const source=join(dir,"novel");await cp(new URL("../fixtures/generic-novel",import.meta.url),source,{recursive:true});const resolved=await service.resolve(source);expect(resolved.status).toBe("resolved");const workRef=resolved.workRef!;const indexed=await service.index(workRef,"rebuild");expect(indexed.stats.documents).toBe(3);expect(indexed.stats.spans).toBeGreaterThan(2);const explored=await service.explore(workRef,"search","铜钥匙",10,2);expect(explored.results.length).toBeGreaterThan(0);expect(explored.results[0]!.evidence.excerpt).toContain("铜钥匙");const packet=await service.context(workRef,"北塔 铜钥匙",300);expect(packet.usedTokens).toBeLessThanOrEqual(300);expect(packet.blocks.length).toBeGreaterThan(0);
+      const unchanged=await service.index(workRef,"incremental");expect(unchanged.revision).toBe(indexed.revision);const entity=await service.explore(workRef,"entity","林秋",10,2);expect(entity.results.some(r=>r.title==="林秋")).toBe(true);const nearby=await service.explore(workRef,"neighborhood","林秋",10,2);expect(nearby.results.length).toBeGreaterThan(1);
+      const chapter=join(source,"chapter-02.md");await writeFile(chapter,(await readFile(chapter,"utf8"))+"\n林秋发现周岚留下的纸条。\n");const changed=await service.index(workRef,"incremental");expect(changed.stats.updated).toBe(1);expect(changed.revision).toBeGreaterThan(indexed.revision);
+    }finally{service.close();await rm(dir,{recursive:true,force:true});}});
+});
