@@ -21,7 +21,7 @@ pnpm start
 
 实现中断后，依次运行 `pnpm build`、`pnpm benchmark` 和 `pnpm test`。三者都通过后，才可继续增加功能。
 
-最近验证：2026-08-14，构建通过；30/30 基准任务、10/10 事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；9 个测试文件、26 个测试通过。
+最近验证：2026-08-14，构建通过；30/30 基准任务、10/10 事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；10 个测试文件、27 个测试通过。
 
 ## 已实现闭环
 
@@ -49,7 +49,7 @@ pnpm start
 | M0 | 已完成 | 版本化协议/存储合同、四工具 schema、四类最小 fixture、30 个任务、Token/事实基线、EPUB 技术验证、两项 ADR | 无 |
 | M1 | 已完成 | 授权 roots、realpath/链接防护、稳定候选与引用、单/多书诊断、InkOS 新旧结构、Markdown/TXT/EPUB、损坏 EPUB 错误码 | 无 |
 | M2 | 已完成 | SQLite/FTS5、schema v2、works/index_revisions、证据哈希/属性/时态/revision、临时库验证后原子替换、未实现关系延期 ADR、按受影响文档/实体增量刷新派生图、稳定 revision 回归 | 无 |
-| M3 | 进行中（已有纵向切片） | search/entity/neighborhood/document/stats 基础查询 | 真正的 0～3 跳 BFS、timeline、fan-out/全局上限、歧义模型和完整重排 |
+| M3 | 进行中 | search/entity/neighborhood/document/stats 基础查询、0～3 跳稳定 BFS、逐边路径证据、64 fan-out/512 节点上限、检索指标、正确 documentRef | timeline、歧义模型、章节时态过滤、完整重排和开发性能 fixture |
 | M4 | 待开始（已有纵向切片） | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
 | M5 | 待开始（已有纵向切片） | stdio、四工具注册、structuredContent、outputSchema、统一结果/错误信封、协议测试 | 真实 InkOS/EPUB 回归、客户端安装与故障文档 |
 
@@ -75,7 +75,6 @@ M0～M2 已满足计划完成条件。M2 的完成以原子重建、受影响范
 
 ## 已知限制
 
-- `maxHops` 参数目前尚未驱动真正的多跳 BFS；neighborhood 只有基础一跳扩展。
 - `timeline` 目前没有独立语义实现。
 - `taskType` 尚未改变上下文来源策略。
 - 角色提取只覆盖角色类文档的 heading，尚无别名解析和未解析 mention 生成。
@@ -85,4 +84,4 @@ M0～M2 已满足计划完成条件。M2 的完成以原子重建、受影响范
 
 ## 下一步
 
-继续 M3：实现正式 0～3 跳 BFS、fan-out/全局上限、timeline 与歧义/重排模型；同步修复 `Evidence.documentRef`、查询期全量解析和约 10 万字符开发性能 fixture。
+继续 M3：实现 timeline、歧义/重排模型、章节时态过滤，并消除查询期全量实体解析，补约 10 万字符开发性能 fixture。

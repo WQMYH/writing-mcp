@@ -30,6 +30,12 @@ Moving a work or document intentionally changes its reference. Editing content w
 - Initial ranking: exact entity match 2; partial entity match 1; FTS uses BM25; graph expansion result 0.5.
 - Source trust order: native > deterministic > heuristic.
 
+### M3 query-limit amendment (2026-08-14)
+
+- Neighborhood traversal uses stable breadth-first expansion for 0 to 3 hops.
+- Per-node fan-out is capped at 64 edges and a query visits at most 512 distinct nodes.
+- Each traversed step returns edge direction and source evidence; results also report candidate, returned, visited, hop, omission, truncation, and elapsed-time metrics.
+
 ## SQLite schema v1
 
 Required tables: `metadata`, `revisions`, `documents`, `spans`, `spans_fts`, `entities`, `aliases`, `mentions`, `edges`, `unresolved_mentions`.
