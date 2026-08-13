@@ -96,6 +96,10 @@ export class WritingStore {
     try {
       if(mode==="rebuild")db.exec("DELETE FROM mentions; DELETE FROM edges; DELETE FROM aliases; DELETE FROM entities; DELETE FROM spans_fts; DELETE FROM spans; DELETE FROM documents;");
       const revision=asNumber((db.prepare("INSERT INTO index_revisions(created_at,source_snapshot_hash,stats_json,status,software_version) VALUES(?,?,?,?,?) RETURNING revision").get(new Date().toISOString(),snapshotHash,"{}","building",SOFTWARE_VERSION) as Record<string,unknown>).revision);
+      const changedDocumentRefs=new Set<string>([...currentHashes.keys()].filter(ref=>mode==="rebuild"||existing.get(ref)!==currentHashes.get(ref)));
+      for(const ref of existing.keys())if(!currentHashes.has(ref))changedDocumentRefs.add(ref);
+      const previousEntityNames=mode==="rebuild"?new Set<string>():this.entityNamesForDocuments(db,changedDocumentRefs);
+      const chapterStructureChanged=mode==="rebuild"||this.documentsContainKind(db,changedDocumentRefs,"chapter")||this.work.documents.some(doc=>changedDocumentRefs.has(doc.documentRef)&&doc.kind==="chapter");
       const present = new Set<string>();
       for (const doc of this.work.documents) {
         present.add(doc.documentRef); const contentHash=currentHashes.get(doc.documentRef)!;
@@ -106,7 +110,8 @@ export class WritingStore {
         for(const span of spans){db.prepare("INSERT INTO spans VALUES(?,?,?,?,?,?,?)").run(span.spanRef,span.documentRef,span.ordinal,span.startLine,span.endLine,span.heading,span.content);db.prepare("INSERT INTO spans_fts VALUES(?,?,?)").run(span.spanRef,span.heading,span.content);db.prepare("INSERT INTO edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(stableId("edge",doc.documentRef,span.spanRef,"contains"),doc.documentRef,span.spanRef,"contains","native",1,span.spanRef,hash(span.content),doc.chapterNumber?stableId("entity","Chapter",doc.title.toLowerCase()):null,doc.chapterNumber?stableId("entity","Chapter",doc.title.toLowerCase()):null,null,json({ordinal:span.ordinal}),revision);}
       }
       for(const ref of existing.keys()) if(!present.has(ref))this.deleteDocument(db,ref);
-      this.rebuildEntities(db,revision);
+      if(mode==="rebuild")this.rebuildEntities(db,revision);
+      else this.updateDerivedGraph(db,revision,changedDocumentRefs,previousEntityNames,chapterStructureChanged);
       const stats={added,updated,deleted,skipped,...this.counts(db)};
       db.prepare("UPDATE index_revisions SET stats_json=?,status='valid' WHERE revision=?").run(json(stats),revision);
       db.prepare("INSERT OR REPLACE INTO works VALUES(?,?,?,?,?,?)").run(this.work.workRef,this.work.adapter,hash(this.work.sourcePath??this.work.rootPath),SCHEMA_VERSION,SOFTWARE_VERSION,revision);
@@ -116,8 +121,12 @@ export class WritingStore {
     } catch(error){db.exec("ROLLBACK");throw error;}
   }
 
-  private deleteDocument(db:DatabaseSync,ref:string){const spanRefs=(db.prepare("SELECT span_ref FROM spans WHERE document_ref=?").all(ref) as Array<Record<string,unknown>>).map(r=>String(r.span_ref));for(const s of spanRefs){db.prepare("DELETE FROM spans_fts WHERE span_ref=?").run(s);db.prepare("DELETE FROM mentions WHERE span_ref=?").run(s);db.prepare("DELETE FROM unresolved_mentions WHERE span_ref=?").run(s);db.prepare("DELETE FROM edges WHERE span_ref=?").run(s);db.prepare("DELETE FROM aliases WHERE entity_ref IN (SELECT entity_ref FROM entities WHERE span_ref=?)").run(s);db.prepare("DELETE FROM entities WHERE span_ref=?").run(s);}db.prepare("DELETE FROM documents WHERE document_ref=?").run(ref);}
-  private rebuildEntities(db:DatabaseSync,revision:number){
+  private deleteDocument(db:DatabaseSync,ref:string){const spanRefs=(db.prepare("SELECT span_ref FROM spans WHERE document_ref=?").all(ref) as Array<Record<string,unknown>>).map(r=>String(r.span_ref));for(const s of spanRefs){const entityRefs=(db.prepare("SELECT entity_ref FROM entities WHERE span_ref=?").all(s) as Array<Record<string,unknown>>).map(row=>String(row.entity_ref));for(const entityRef of entityRefs)db.prepare("DELETE FROM edges WHERE source_ref=? OR target_ref=?").run(entityRef,entityRef);db.prepare("DELETE FROM spans_fts WHERE span_ref=?").run(s);db.prepare("DELETE FROM mentions WHERE span_ref=?").run(s);db.prepare("DELETE FROM unresolved_mentions WHERE span_ref=?").run(s);db.prepare("DELETE FROM edges WHERE span_ref=?").run(s);db.prepare("DELETE FROM aliases WHERE entity_ref IN (SELECT entity_ref FROM entities WHERE span_ref=?)").run(s);db.prepare("DELETE FROM entities WHERE span_ref=?").run(s);}db.prepare("DELETE FROM documents WHERE document_ref=?").run(ref);}
+
+  private entityNamesForDocuments(db:DatabaseSync,refs:Set<string>):Set<string>{if(!refs.size)return new Set();const placeholders=[...refs].map(()=>"?").join(",");const rows=db.prepare(`SELECT DISTINCT e.name FROM entities e JOIN spans s ON s.span_ref=e.span_ref WHERE s.document_ref IN (${placeholders})`).all(...refs) as Array<Record<string,unknown>>;return new Set(rows.map(row=>String(row.name)));}
+  private documentsContainKind(db:DatabaseSync,refs:Set<string>,kind:string):boolean{if(!refs.size)return false;const placeholders=[...refs].map(()=>"?").join(",");return asNumber((db.prepare(`SELECT COUNT(*) count FROM documents WHERE document_ref IN (${placeholders}) AND kind=?`).get(...refs,kind) as Record<string,unknown>).count)>0;}
+  private rowsForDocuments(db:DatabaseSync,refs?:Set<string>):Array<Record<string,unknown>>{if(!refs)return db.prepare("SELECT s.span_ref,s.heading,s.content,d.document_ref,d.kind,d.chapter_number FROM spans s JOIN documents d ON d.document_ref=s.document_ref ORDER BY d.chapter_number,s.ordinal").all() as Array<Record<string,unknown>>;if(!refs.size)return[];const placeholders=[...refs].map(()=>"?").join(",");return db.prepare(`SELECT s.span_ref,s.heading,s.content,d.document_ref,d.kind,d.chapter_number FROM spans s JOIN documents d ON d.document_ref=s.document_ref WHERE d.document_ref IN (${placeholders}) ORDER BY d.chapter_number,s.ordinal`).all(...refs) as Array<Record<string,unknown>>;}
+  private legacyRebuildEntities(db:DatabaseSync,revision:number){
     db.exec("DELETE FROM mentions;DELETE FROM unresolved_mentions;DELETE FROM edges WHERE kind!='contains';DELETE FROM aliases;DELETE FROM entities;");
     const rows=db.prepare("SELECT s.span_ref,s.heading,s.content,d.document_ref,d.kind,d.chapter_number FROM spans s JOIN documents d ON d.document_ref=s.document_ref ORDER BY d.chapter_number,s.ordinal").all() as Array<Record<string,unknown>>;
     const insertEntity=(kind:string,name:string,spanRef:string,sourceKind="native",chapterRef?:string,properties:Record<string,unknown>={})=>{const normalized=name.toLowerCase(),ref=stableId("entity",kind,normalized);db.prepare("INSERT OR IGNORE INTO entities VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(ref,kind,name,normalized,sourceKind,1,spanRef,hash(`${kind}\0${name}\0${spanRef}`),chapterRef??null,chapterRef??null,null,json(properties),revision);db.prepare("INSERT OR IGNORE INTO aliases VALUES(?,?,?)").run(ref,name,normalized);return ref;};
@@ -125,6 +134,88 @@ export class WritingStore {
     for(const row of rows){const heading=String(row.heading).replace(/^#+\s*/,"").trim(),docKind=String(row.kind),spanRef=String(row.span_ref),chapterRef=row.chapter_number!=null?stableId("entity","Chapter",heading.toLowerCase()):undefined;if(documentKinds[docKind]&&heading){const ref=insertEntity(documentKinds[docKind]!,heading,spanRef,"native",chapterRef,{documentKind:docKind});if(docKind==="chapter"&&row.chapter_number!=null)chapterEntities.push({ref,number:asNumber(row.chapter_number),spanRef});}if(docKind==="character"&&heading&&!/^(角色|人物|characters?)$/i.test(heading))insertEntity("Character",heading,spanRef);const explicit=/^(?:地点|location)\s*[:：]\s*(.+)$/i.exec(heading)??/^(?:物品|item)\s*[:：]\s*(.+)$/i.exec(heading)??/^(?:事件|event)\s*[:：]\s*(.+)$/i.exec(heading);if(explicit){const kind=/^(?:地点|location)/i.test(heading)?"Location":/^(?:物品|item)/i.test(heading)?"Item":"Event";insertEntity(kind,explicit[1]!.trim(),spanRef,"deterministic",undefined,{marker:heading.split(/[:：]/,1)[0]});}}
     chapterEntities.sort((a,b)=>a.number-b.number);for(let i=1;i<chapterEntities.length;i++){const before=chapterEntities[i-1]!,after=chapterEntities[i]!;db.prepare("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(stableId("edge",before.ref,after.ref,"precedes"),before.ref,after.ref,"precedes","native",1,after.spanRef,hash(`${before.ref}\0${after.ref}\0precedes`),before.ref,after.ref,null,json({order:i}),revision);}
     const entities=db.prepare("SELECT entity_ref,name,normalized_name,valid_from_chapter,valid_to_chapter FROM entities").all() as Array<Record<string,unknown>>;const byName=new Map(entities.map(e=>[String(e.normalized_name),e]));for(const s of rows){for(const e of entities){const name=String(e.name),pos=String(s.content).indexOf(name);if(pos<0)continue;const from=e.valid_from_chapter==null?null:String(e.valid_from_chapter),to=e.valid_to_chapter==null?null:String(e.valid_to_chapter),m=stableId("mention",String(s.span_ref),String(e.entity_ref),String(pos));db.prepare("INSERT OR IGNORE INTO mentions VALUES(?,?,?,?,?,?,?,?)").run(m,String(e.entity_ref),String(s.span_ref),pos,pos+name.length,"deterministic",1,revision);db.prepare("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(stableId("edge",String(e.entity_ref),String(s.document_ref),"appears_in"),String(e.entity_ref),String(s.document_ref),"appears_in","deterministic",1,String(s.span_ref),hash(`${e.entity_ref}\0${s.document_ref}\0appears_in\0${s.span_ref}`),from,to,null,"{}",revision);}for(const match of String(s.content).matchAll(/\[\[([^\[\]\n]{1,100})\]\]/g)){const text=match[1]!.trim(),entity=byName.get(text.toLowerCase());if(!entity){db.prepare("INSERT OR IGNORE INTO unresolved_mentions VALUES(?,?,?,?,?)").run(stableId("unresolved",String(s.span_ref),text,String(match.index)),text,String(s.span_ref),"NO_MATCHING_ENTITY",revision);continue;}const entityRef=String(entity.entity_ref),offset=match.index??0,from=entity.valid_from_chapter==null?null:String(entity.valid_from_chapter),to=entity.valid_to_chapter==null?null:String(entity.valid_to_chapter);db.prepare("INSERT OR IGNORE INTO mentions VALUES(?,?,?,?,?,?,?,?)").run(stableId("mention",String(s.span_ref),entityRef,String(offset)),entityRef,String(s.span_ref),offset,offset+text.length,"native",1,revision);db.prepare("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(stableId("edge",String(s.document_ref),entityRef,"mentions"),String(s.document_ref),entityRef,"mentions","native",1,String(s.span_ref),hash(`${s.document_ref}\0${entityRef}\0mentions\0${s.span_ref}`),from,to,null,"{}",revision);}}}
+  private rebuildEntities(db:DatabaseSync,revision:number){
+    db.exec("DELETE FROM mentions;DELETE FROM unresolved_mentions;DELETE FROM edges WHERE kind!='contains';DELETE FROM aliases;DELETE FROM entities;");
+    const rows=this.rowsForDocuments(db);
+    this.insertEntitiesForRows(db,rows,revision);
+    this.refreshReferencesForRows(db,rows,revision);
+    this.rebuildPrecedes(db,revision);
+  }
+
+  private updateDerivedGraph(db:DatabaseSync,revision:number,changedDocumentRefs:Set<string>,previousEntityNames:Set<string>,chapterStructureChanged:boolean){
+    const changedRows=this.rowsForDocuments(db,changedDocumentRefs);
+    const currentEntityNames=this.insertEntitiesForRows(db,changedRows,revision);
+    const affectedNames=new Set([...previousEntityNames,...currentEntityNames]);
+    const rowsByRef=new Map(changedRows.map(row=>[String(row.span_ref),row]));
+    if(affectedNames.size){
+      const normalizedNames=new Set([...affectedNames].map(name=>name.toLowerCase()));
+      const allRows=this.rowsForDocuments(db),allRowsByRef=new Map(allRows.map(row=>[String(row.span_ref),row]));
+      for(const row of allRows){
+        const content=String(row.content);
+        if([...affectedNames].some(name=>content.includes(name)))rowsByRef.set(String(row.span_ref),row);
+      }
+      for(const row of db.prepare("SELECT DISTINCT span_ref,text FROM unresolved_mentions").all() as Array<Record<string,unknown>>){
+        if(normalizedNames.has(String(row.text).toLowerCase())){
+          const match=allRowsByRef.get(String(row.span_ref));
+          if(match)rowsByRef.set(String(match.span_ref),match);
+        }
+      }
+    }
+    this.refreshReferencesForRows(db,[...rowsByRef.values()],revision);
+    if(chapterStructureChanged)this.rebuildPrecedes(db,revision);
+  }
+
+  private insertEntitiesForRows(db:DatabaseSync,rows:Array<Record<string,unknown>>,revision:number):Set<string>{
+    const insertedNames=new Set<string>();
+    const insertEntity=(kind:string,name:string,spanRef:string,sourceKind="native",chapterRef?:string,properties:Record<string,unknown>={})=>{
+      const normalized=name.toLowerCase(),ref=stableId("entity",kind,normalized);
+      db.prepare("INSERT OR IGNORE INTO entities VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(ref,kind,name,normalized,sourceKind,1,spanRef,hash(`${kind}\0${name}\0${spanRef}`),chapterRef??null,chapterRef??null,null,json(properties),revision);
+      db.prepare("INSERT OR IGNORE INTO aliases VALUES(?,?,?)").run(ref,name,normalized);
+      insertedNames.add(name);
+    };
+    const documentKinds:Record<string,string>={chapter:"Chapter",outline:"OutlineNode",state:"Fact",foreshadow:"Foreshadow"};
+    for(const row of rows){
+      const heading=String(row.heading).replace(/^#+\s*/,"").trim(),docKind=String(row.kind),spanRef=String(row.span_ref);
+      const chapterRef=row.chapter_number!=null?stableId("entity","Chapter",heading.toLowerCase()):undefined;
+      if(documentKinds[docKind]&&heading)insertEntity(documentKinds[docKind]!,heading,spanRef,"native",chapterRef,{documentKind:docKind});
+      if(docKind==="character"&&heading&&!/^(角色|人物|characters?)$/i.test(heading))insertEntity("Character",heading,spanRef);
+      const explicit=/^(?:地点|location)\s*[:：]\s*(.+)$/i.exec(heading)??/^(?:物品|item)\s*[:：]\s*(.+)$/i.exec(heading)??/^(?:事件|event)\s*[:：]\s*(.+)$/i.exec(heading);
+      if(explicit){const kind=/^(?:地点|location)/i.test(heading)?"Location":/^(?:物品|item)/i.test(heading)?"Item":"Event";insertEntity(kind,explicit[1]!.trim(),spanRef,"deterministic",undefined,{marker:heading.split(/[:：]/,1)[0]});}
+    }
+    return insertedNames;
+  }
+
+  private refreshReferencesForRows(db:DatabaseSync,rows:Array<Record<string,unknown>>,revision:number){
+    const entities=db.prepare("SELECT entity_ref,name,normalized_name,valid_from_chapter,valid_to_chapter FROM entities").all() as Array<Record<string,unknown>>;
+    const byName=new Map(entities.map(entity=>[String(entity.normalized_name),entity]));
+    for(const row of rows){
+      const spanRef=String(row.span_ref),documentRef=String(row.document_ref),content=String(row.content);
+      db.prepare("DELETE FROM mentions WHERE span_ref=?").run(spanRef);
+      db.prepare("DELETE FROM unresolved_mentions WHERE span_ref=?").run(spanRef);
+      db.prepare("DELETE FROM edges WHERE span_ref=? AND kind!='contains'").run(spanRef);
+      for(const entity of entities){
+        const name=String(entity.name),position=content.indexOf(name);
+        if(position<0)continue;
+        const from=entity.valid_from_chapter==null?null:String(entity.valid_from_chapter),to=entity.valid_to_chapter==null?null:String(entity.valid_to_chapter);
+        db.prepare("INSERT OR IGNORE INTO mentions VALUES(?,?,?,?,?,?,?,?)").run(stableId("mention",spanRef,String(entity.entity_ref),String(position)),String(entity.entity_ref),spanRef,position,position+name.length,"deterministic",1,revision);
+        db.prepare("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(stableId("edge",String(entity.entity_ref),documentRef,"appears_in"),String(entity.entity_ref),documentRef,"appears_in","deterministic",1,spanRef,hash(`${entity.entity_ref}\0${documentRef}\0appears_in\0${spanRef}`),from,to,null,"{}",revision);
+      }
+      for(const match of content.matchAll(/\[\[([^\[\]\n]{1,100})\]\]/g)){
+        const text=match[1]!.trim(),entity=byName.get(text.toLowerCase());
+        if(!entity){db.prepare("INSERT OR IGNORE INTO unresolved_mentions VALUES(?,?,?,?,?)").run(stableId("unresolved",spanRef,text,String(match.index)),text,spanRef,"NO_MATCHING_ENTITY",revision);continue;}
+        const entityRef=String(entity.entity_ref),offset=match.index??0,from=entity.valid_from_chapter==null?null:String(entity.valid_from_chapter),to=entity.valid_to_chapter==null?null:String(entity.valid_to_chapter);
+        db.prepare("INSERT OR IGNORE INTO mentions VALUES(?,?,?,?,?,?,?,?)").run(stableId("mention",spanRef,entityRef,String(offset)),entityRef,spanRef,offset,offset+text.length,"native",1,revision);
+        db.prepare("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(stableId("edge",documentRef,entityRef,"mentions"),documentRef,entityRef,"mentions","native",1,spanRef,hash(`${documentRef}\0${entityRef}\0mentions\0${spanRef}`),from,to,null,"{}",revision);
+      }
+    }
+  }
+
+  private rebuildPrecedes(db:DatabaseSync,revision:number){
+    db.prepare("DELETE FROM edges WHERE kind='precedes'").run();
+    const chapters=(db.prepare("SELECT e.entity_ref,d.chapter_number,e.span_ref FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.kind='Chapter' AND d.chapter_number IS NOT NULL ORDER BY d.chapter_number,s.ordinal").all() as Array<Record<string,unknown>>).map(row=>({ref:String(row.entity_ref),spanRef:String(row.span_ref)}));
+    for(let index=1;index<chapters.length;index++){const before=chapters[index-1]!,after=chapters[index]!;db.prepare("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(stableId("edge",before.ref,after.ref,"precedes"),before.ref,after.ref,"precedes","native",1,after.spanRef,hash(`${before.ref}\0${after.ref}\0precedes`),before.ref,after.ref,null,json({order:index}),revision);}
+  }
+
   private counts(db=this.db!){const n=(t:string)=>asNumber((db.prepare(`SELECT COUNT(*) n FROM ${t}`).get() as Record<string,unknown>).n);return {documents:n("documents"),spans:n("spans"),entities:n("entities"),edges:n("edges")};}
 
   async explore(operation:ExploreOperation,query="",limit=20,maxHops=2):Promise<ExploreResult>{const db=await this.open();const revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);let rows:Array<Record<string,unknown>>=[];

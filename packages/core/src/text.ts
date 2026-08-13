@@ -15,7 +15,7 @@ export function splitDocument(document: SourceDocument, makeId: (ordinal: number
     const line = lines[i]!;
     const nextHeading = line.match(/^#{1,6}\s+(.+)/)?.[1]?.trim();
     if (nextHeading && buffer.some((v) => v.trim())) { flush(); start = i; heading = nextHeading; }
-    else if (!buffer.length) start = i;
+    else if (!buffer.length) { start = i; if (nextHeading) heading = nextHeading; }
     buffer.push(line);
     if (buffer.join("\n").length >= maxChars) flush();
   }

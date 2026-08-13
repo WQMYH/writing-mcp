@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run",
+    "test": "pnpm build && vitest run",
     "benchmark": "pnpm build && node scripts/run-benchmark.mjs",
     "check": "tsc -b --pretty false",
     "start": "node packages/mcp-server/dist/index.js"

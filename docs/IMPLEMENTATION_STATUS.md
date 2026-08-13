@@ -1,7 +1,7 @@
 # Writing MCP MVP 实施状态
 
 > 检查点时间：2026-08-14
-> 当前状态：M0、M1 已完成，M2 进行中（M2.1 schema/原子替换已完成）；整体仍是可演示 MVP，尚未达到 `Writing_MCP_Server_v2.md` 的 v1 完整验收标准。
+> 当前状态：M0～M2 已完成，M3 进行中；整体仍是可演示 MVP，尚未达到 `Writing_MCP_Server_v2.md` 的 v1 完整验收标准。
 
 ## 恢复入口
 
@@ -21,7 +21,7 @@ pnpm start
 
 实现中断后，依次运行 `pnpm build`、`pnpm benchmark` 和 `pnpm test`。三者都通过后，才可继续增加功能。
 
-最近验证：2026-08-14，构建通过；30/30 基准任务、10/10 事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；9 个测试文件、22 个测试通过。
+最近验证：2026-08-14，构建通过；30/30 基准任务、10/10 事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；9 个测试文件、26 个测试通过。
 
 ## 已实现闭环
 
@@ -48,12 +48,12 @@ pnpm start
 |---|---|---|---|
 | M0 | 已完成 | 版本化协议/存储合同、四工具 schema、四类最小 fixture、30 个任务、Token/事实基线、EPUB 技术验证、两项 ADR | 无 |
 | M1 | 已完成 | 授权 roots、realpath/链接防护、稳定候选与引用、单/多书诊断、InkOS 新旧结构、Markdown/TXT/EPUB、损坏 EPUB 错误码 | 无 |
-| M2 | 进行中 | SQLite/FTS5、schema v2、works/index_revisions、证据哈希/属性/时态/revision、临时库验证后原子替换、未实现关系延期 ADR | 增量派生关系按影响范围更新，避免每次文档变化无条件全图重建；补对应复杂度与稳定 revision 回归 |
-| M3 | 待开始（已有纵向切片） | search/entity/neighborhood/document/stats 基础查询 | 真正的 0～3 跳 BFS、timeline、fan-out/全局上限、歧义模型和完整重排 |
+| M2 | 已完成 | SQLite/FTS5、schema v2、works/index_revisions、证据哈希/属性/时态/revision、临时库验证后原子替换、未实现关系延期 ADR、按受影响文档/实体增量刷新派生图、稳定 revision 回归 | 无 |
+| M3 | 进行中（已有纵向切片） | search/entity/neighborhood/document/stats 基础查询 | 真正的 0～3 跳 BFS、timeline、fan-out/全局上限、歧义模型和完整重排 |
 | M4 | 待开始（已有纵向切片） | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
 | M5 | 待开始（已有纵向切片） | stdio、四工具注册、structuredContent、outputSchema、统一结果/错误信封、协议测试 | 真实 InkOS/EPUB 回归、客户端安装与故障文档 |
 
-M0、M1 已满足计划完成条件。M2 曾因纵向切片测试通过而被过早标记完成，2026-08-14 审查后已纠正为进行中。M3～M5 仍未完成；现有成果不能据此宣称 Writing MCP v1 已完成。
+M0～M2 已满足计划完成条件。M2 的完成以原子重建、受影响范围增量更新、跨文档引用修复和无关派生记录 revision 稳定回归为依据。M3～M5 仍未完成；现有成果不能据此宣称 Writing MCP v1 已完成。
 
 ## 当前测试覆盖
 
@@ -68,6 +68,7 @@ M0、M1 已满足计划完成条件。M2 曾因纵向切片测试通过而被过
 - 作品识别：覆盖单书、多书歧义、空目录、不支持扩展名、同目录直接文件隔离和 InkOS 新旧结构。
 - 稳定诊断：`AUTHORIZED_ROOTS_REQUIRED`、`PATH_NOT_ALLOWED` 以及四类 EPUB 确定性错误码。
 - 索引生命周期：不兼容 schema 只读报告/显式重建、失败事务保留上一 revision、未解析方括号引用入库。
+- 增量影响范围：无关文档的派生记录不改写 revision；新增实体会重新解析其他文档中匹配的未解析引用。
 - 属性图：原生 Chapter/Character/OutlineNode/Fact/Foreshadow，显式 Location/Item/Event，以及 contains/appears_in/mentions/precedes。
 - 可重建性：删除整个 `.writing-index` 后可从原始文本恢复等价稳定引用和检索结果。
 - Reference 边界：保持四工具、无 LLM、无自动写回；Scene 仅按明确分隔条件生成，World/Lore/独立 Timeline 不作为 v1 必需存储节点。
@@ -80,12 +81,8 @@ M0、M1 已满足计划完成条件。M2 曾因纵向切片测试通过而被过
 - 角色提取只覆盖角色类文档的 heading，尚无别名解析和未解析 mention 生成。
 - EPUB 解析为最小实现，尚未覆盖加密、复杂命名空间、脚注和损坏包。
 - `workRef` 只在当前 server 进程中注册；重启后客户端需重新调用 `writing_resolve`。
-- 尚未达到 90% 事实召回、100% 证据覆盖、60% Token 缩减等正式基准结论。
+- 当前指标只在固定 M0 fixture 上达到门禁，尚不能替代 M5 的真实 InkOS/EPUB 语料结论。
 
 ## 下一步
 
-继续 M2，完成以下剩余门禁后才能进入 M3：
-
-1. 将实体、mention、未解析引用和非结构边改为按受影响文档/实体更新，不再无条件清空全图。
-2. 验证单章变化不会重写无关文档的派生记录，删除或重命名实体时仍能修复跨文档 mention。
-3. M2 完成后才开始 M3 正式 BFS；M3 同步修复 `Evidence.documentRef`、查询期全量解析和约 10 万字符开发性能 fixture。
+继续 M3：实现正式 0～3 跳 BFS、fan-out/全局上限、timeline 与歧义/重排模型；同步修复 `Evidence.documentRef`、查询期全量解析和约 10 万字符开发性能 fixture。
