@@ -1,4 +1,4 @@
-# M0 Contract v1
+# M0 Contract v1.1
 
 This document freezes the public and storage decisions for the MVP. Changes require a schema version bump or an ADR.
 
@@ -66,11 +66,24 @@ See `docs/adr/0003-schema-v2-temporal-evidence.md` for compatibility and scope d
 ## MCP result rules
 
 - Every call returns Markdown `content` and a JSON `structuredContent` envelope.
-- Success uses `{ result: { ok: true, data } }`; failure uses `{ result: { ok: false, error } }`.
+- Success uses `{ result: { ok: true, data, diagnostic } }`; failure uses `{ result: { ok: false, error, diagnostic } }`.
 - Every tool advertises an `outputSchema`.
-- Expected failures return `isError: true`; their error contains `code`, `message`, and optional `recovery`.
+- Expected failures return `isError: true`; their error contains `code`, `message`, `traceId`, and optional `recovery`.
 - Stack traces and paths outside the requested source are not returned.
 - `budget_unsatisfiable` remains a successful business result, not an MCP execution error.
+
+### M0.1 diagnostic amendment (2026-08-14)
+
+- The public tool set is `writing_resolve`, `writing_index`, `writing_explore`, `writing_context`, and `writing_diagnose`.
+- All five handlers pass through the same server-side post-call diagnostic hook on success and failure. This is a code invariant, not a prompt convention.
+- Every response contains a concise `diagnostic` report with `traceId`, tool name, outcome, elapsed time, persistence status, an `executionSummary`, and an artifact reference when persistence succeeds.
+- Detailed diagnostic input/output summaries are written silently under `.writing-index/<workId>/diagnostics/`; they are never written to MCP stdout.
+- Each invocation writes a schema-versioned JSON report atomically and appends a redacted JSONL event. Diagnostic write failure does not replace a successful business result; it is disclosed in the returned diagnostic report.
+- Existing business tools accept optional `diagnosticRunRef`. Explicit capture uses `writing_diagnose(start_capture)`, propagates the reference through later calls, and ends with `writing_diagnose(finish_capture)`.
+- Capture reports observe MCP calls only. They do not claim access to agent reasoning, non-MCP tools, or user actions not submitted to this server.
+- Default capture policy stores metadata, hashes, stable references, counts, errors, timings, revisions, evidence references, truncation, and token metrics. It does not store source text, returned excerpts, absolute paths, stack traces, SQL, keys, or tokens.
+- `writing_diagnose` may write disposable diagnostic artifacts but cannot modify source works or index semantics and cannot automatically invoke index repair.
+- Stable diagnostic errors include `INVALID_DIAGNOSTIC_REQUEST`, `DIAGNOSTIC_RUN_NOT_FOUND`, `DIAGNOSTIC_RUN_CLOSED`, and `DIAGNOSTIC_STORAGE_LIMIT`.
 
 ## Benchmark gate
 

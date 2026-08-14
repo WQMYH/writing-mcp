@@ -1,5 +1,6 @@
 import type { AdapterKind, ContextPacket, ExploreOperation, ExploreResult, IndexResult, ResolveResult, WorkAdapter, WorkCandidate } from "./types.js";
 import { WritingStore } from "./store.js";
+import { join } from "node:path";
 
 export class WritingService {
   private readonly works=new Map<string,WorkCandidate>(); private readonly stores=new Map<string,WritingStore>();
@@ -25,5 +26,6 @@ export class WritingService {
   }
   async explore(workRef:string,operation:ExploreOperation,query="",limit=20,maxHops=2):Promise<ExploreResult>{await this.index(workRef,"incremental");return (await this.store(workRef)).explore(operation,query,limit,maxHops);}
   async context(workRef:string,query:string,budgetTokens:number,requiredRefs:string[]=[]):Promise<ContextPacket>{await this.index(workRef,"incremental");return (await this.store(workRef)).context(query,budgetTokens,requiredRefs);}
+  diagnosticDirectory(workRef?:string):string|undefined{const candidate=workRef?this.works.get(workRef):undefined;const root=candidate?.rootPath??this.authorizedRoots?.[0];if(!root)return undefined;const scope=candidate?workRef!.replaceAll(":","-"):"_server";return join(root,".writing-index",scope,"diagnostics");}
   close():void{for(const store of this.stores.values())store.close();this.stores.clear();}
 }
