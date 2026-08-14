@@ -18,4 +18,12 @@ describe("M3 bounded graph exploration",()=>{
       expect(two.results.find(item=>item.title==="One")?.evidence.documentRef).toBe(work.documents[1]!.documentRef);
     }finally{store.close();await rm(root,{recursive:true,force:true});}
   });
+
+  test("reranks short Chinese terms and marks nickname-only expansion as heuristic",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"writing-mcp-ranking-")),workRef=stableId("work","ranking",root),documents:SourceDocument[]=[];
+    for(let index=0;index<25;index++){const content=`普通段落 ${index} 喜欢`;documents.push({documentRef:stableId("doc",workRef,String(index)),relativePath:`noise-${index}.txt`,absolutePath:`noise-${index}.txt`,title:`Noise ${index}`,kind:"document",content,sourceMtimeMs:1,sourceSize:content.length});}
+    const add=(path:string,content:string)=>documents.push({documentRef:stableId("doc",workRef,path),relativePath:path,absolutePath:path,title:path,kind:"document",content,sourceMtimeMs:1,sourceSize:content.length});add("nickname.txt","阿枫很喜欢，却也有些冲动。");add("given-name.txt","溪海后来去了酒吧。");
+    const store=new WritingStore({workRef,title:"Ranking",rootPath:root,adapter:"generic",capabilities:[],documents});
+    try{await store.index("rebuild");const relation=await store.explore("search","吕霁 岳枫 感情 喜欢",20,2);expect(relation.results.some(item=>item.evidence.relativePath==="nickname.txt")).toBe(true);const nickname=await store.explore("search","岳枫",20,2);expect(nickname.results.find(item=>item.evidence.relativePath==="nickname.txt")?.sourceKind).toBe("heuristic");const givenName=await store.explore("search","岳枫 林溪海 在一起 酒吧",20,2);expect(givenName.results.some(item=>item.evidence.relativePath==="given-name.txt")).toBe(true);}finally{store.close();await rm(root,{recursive:true,force:true});}
+  });
 });

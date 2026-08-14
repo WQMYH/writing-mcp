@@ -13,7 +13,7 @@ export interface ResolveResult {
 }
 export interface SourceDocument {
   documentRef: string; relativePath: string; absolutePath: string; title: string;
-  kind: DocumentKind; content: string; chapterNumber?: number; sourceMtimeMs: number; sourceSize: number;
+  kind: DocumentKind; content: string; chapterNumber?: number; sourceStartLine?: number; sourceMtimeMs: number; sourceSize: number;
 }
 export interface ParsedWork extends WorkCandidate { documents: SourceDocument[] }
 export interface WorkAdapter {

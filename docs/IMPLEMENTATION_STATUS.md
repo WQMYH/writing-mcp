@@ -21,7 +21,7 @@ pnpm start
 
 实现中断后，依次运行 `pnpm build`、`pnpm benchmark` 和 `pnpm test`。三者都通过后，才可继续增加功能。
 
-最近验证：2026-08-14，构建通过；30/30 基准任务、10/10 事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；10 个测试文件、27 个测试通过。
+最近验证：2026-08-14，构建通过；30/30 公共基准任务、10/10 固定事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；本地私有长篇达到 41/42 span 召回、16/16 required 召回、100% 来源覆盖、首次索引约 0.46 秒及暖查询 P95 约 44 毫秒。
 
 ## 已实现闭环
 
@@ -29,7 +29,7 @@ pnpm start
 - Node.js 24 内置 `node:sqlite`，SQLite 3.53 和 FTS5 trigram。
 - `writing_resolve`、`writing_index`、`writing_explore`、`writing_context`。
 - InkOS 书籍识别，新旧大纲路径、角色目录、状态、伏笔和章节读取。
-- Markdown、TXT 和基础 EPUB spine 解析。
+- Markdown、UTF-8/GB18030 TXT 和基础 EPUB spine 解析；单文件 TXT 支持章节切分、卷内编号重置与原始行号保留。
 - 项目内 `.writing-index/<workId>/index.sqlite`。
 - 文档哈希增量更新、revision、无变化不新增 revision、事务回滚。
 - Span 全文检索、角色实体、mention、`contains` 和 `appears_in` 关系。
@@ -49,7 +49,7 @@ pnpm start
 | M0 | 已完成 | 版本化协议/存储合同、四工具 schema、四类最小 fixture、30 个任务、Token/事实基线、EPUB 技术验证、两项 ADR | 无 |
 | M1 | 已完成 | 授权 roots、realpath/链接防护、稳定候选与引用、单/多书诊断、InkOS 新旧结构、Markdown/TXT/EPUB、损坏 EPUB 错误码 | 无 |
 | M2 | 已完成 | SQLite/FTS5、schema v2、works/index_revisions、证据哈希/属性/时态/revision、临时库验证后原子替换、未实现关系延期 ADR、按受影响文档/实体增量刷新派生图、稳定 revision 回归 | 无 |
-| M3 | 进行中 | search/entity/neighborhood/document/stats 基础查询、0～3 跳稳定 BFS、逐边路径证据、64 fan-out/512 节点上限、检索指标、正确 documentRef | timeline、歧义模型、章节时态过滤、完整重排和开发性能 fixture |
+| M3 | 进行中 | search/entity/neighborhood/document/stats、0～3 跳稳定 BFS、逐边路径证据、64 fan-out/512 节点上限、检索指标、正确 documentRef、短中文词重排、低权重称呼形态扩展、私有长篇性能门禁 | timeline、歧义模型、章节时态过滤和完整重排 |
 | M4 | 待开始（已有纵向切片） | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
 | M5 | 待开始（已有纵向切片） | stdio、四工具注册、structuredContent、outputSchema、统一结果/错误信封、协议测试 | 真实 InkOS/EPUB 回归、客户端安装与故障文档 |
 
@@ -62,6 +62,8 @@ M0～M2 已满足计划完成条件。M2 的完成以原子重建、受影响范
 - MCP stdio：枚举四工具、确认输出模式，顺序调用 resolve/index/explore/context，并验证结构化错误信封。
 - M0 基准：固定 fixture 上 30 个检索、实体、邻域、文档、统计和上下文任务全部命中且具有证据。
 - M0 基线：整书估算 166 Token，10/10 预期事实召回，证据覆盖 100%，三项上下文任务平均 64.33 Token，降幅 61.24%。
+- 私有长篇：外部 schema v2 标注包含 42 条事实、101 条逐字证据和七类知识；数据不入库、不进入 Git，运行器只输出汇总及失败 ID。
+- TXT：覆盖 GBK/GB18030 解码、章节切分、章节编号重置推断新卷和原始文件行号偏移。
 - EPUB：正常双章节 spine，以及损坏 ZIP、缺 container、缺 OPF、无可读 spine 四类失败。
 - InkOS：静态最小 fixture 的稳定作品引用、原生文档类型和章节编号。
 - 路径安全：MCP 缺少授权 roots 时拒绝访问，入口越界及作品目录内 symlink/junction 越界均被阻止。
@@ -77,11 +79,11 @@ M0～M2 已满足计划完成条件。M2 的完成以原子重建、受影响范
 
 - `timeline` 目前没有独立语义实现。
 - `taskType` 尚未改变上下文来源策略。
-- 角色提取只覆盖角色类文档的 heading，尚无别名解析和未解析 mention 生成。
+- 角色实体提取只覆盖角色类文档 heading；查询期仅提供透明的中文称呼形态扩展，尚无持久化别名解析。
 - EPUB 解析为最小实现，尚未覆盖加密、复杂命名空间、脚注和损坏包。
 - `workRef` 只在当前 server 进程中注册；重启后客户端需重新调用 `writing_resolve`。
-- 当前指标只在固定 M0 fixture 上达到门禁，尚不能替代 M5 的真实 InkOS/EPUB 语料结论。
+- 私有长篇仍有 1 条 optional 事实未进入前 20，900 字抽取摘要的逐字证据暴露率为 88.10%；这些指标与 span 召回、来源覆盖分别报告。
 
 ## 下一步
 
-继续 M3：实现 timeline、歧义/重排模型、章节时态过滤，并消除查询期全量实体解析，补约 10 万字符开发性能 fixture。
+继续 M3：实现 timeline、歧义模型、章节时态过滤和剩余重排；继续提高私有语料 optional 召回与证据窗口暴露率。

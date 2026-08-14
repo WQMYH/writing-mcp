@@ -10,6 +10,7 @@
     "build": "tsc -b",
     "test": "pnpm build && vitest run",
     "benchmark": "pnpm build && node scripts/run-benchmark.mjs",
+    "benchmark:private": "pnpm build && node scripts/run-private-acceptance.mjs",
     "check": "tsc -b --pretty false",
     "start": "node packages/mcp-server/dist/index.js"
   },

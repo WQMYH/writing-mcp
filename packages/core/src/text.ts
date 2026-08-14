@@ -4,11 +4,12 @@ export interface Span { spanRef: string; documentRef: string; ordinal: number; s
 
 export function splitDocument(document: SourceDocument, makeId: (ordinal: number) => string, maxChars = 2400): Span[] {
   const lines = document.content.replace(/\r\n?/g, "\n").split("\n");
+  const sourceLineOffset = (document.sourceStartLine ?? 1) - 1;
   const spans: Span[] = [];
   let start = 0, heading = document.title, buffer: string[] = [];
   const flush = () => {
     const content = buffer.join("\n").trim();
-    if (content) spans.push({ spanRef: makeId(spans.length), documentRef: document.documentRef, ordinal: spans.length, startLine: start + 1, endLine: start + buffer.length, heading, content });
+    if (content) spans.push({ spanRef: makeId(spans.length), documentRef: document.documentRef, ordinal: spans.length, startLine: sourceLineOffset + start + 1, endLine: sourceLineOffset + start + buffer.length, heading, content });
     buffer = [];
   };
   for (let i = 0; i < lines.length; i++) {
