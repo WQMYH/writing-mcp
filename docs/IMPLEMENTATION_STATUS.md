@@ -29,7 +29,7 @@ pnpm start
 - Node.js 24 内置 `node:sqlite`，SQLite 3.53 和 FTS5 trigram。
 - `writing_resolve`、`writing_index`、`writing_explore`、`writing_context`、`writing_diagnose`。
 - InkOS 书籍识别，新旧大纲路径、角色目录、状态、伏笔和章节读取。
-- Markdown、UTF-8/GB18030 TXT 和基础 EPUB spine 解析；单文件 TXT 支持章节切分、卷内编号重置与原始行号保留。
+- Markdown、UTF-8/GB18030 TXT 和 EPUB OPF/spine 解析；单文件 TXT 支持章节切分、卷内编号重置与原始行号保留，转换型 EPUB 支持作品元数据、封面过滤、正文清洗和跨 spine 内部章节切分。
 - 项目内 `.writing-index/<workId>/index.sqlite`。
 - 文档哈希增量更新、revision、无变化不新增 revision、事务回滚。
 - Span 全文检索、角色实体、mention、`contains` 和 `appears_in` 关系。
@@ -54,7 +54,7 @@ pnpm start
 | M2 | 已完成 | SQLite/FTS5、schema v2、works/index_revisions、证据哈希/属性/时态/revision、临时库验证后原子替换、未实现关系延期 ADR、按受影响文档/实体增量刷新派生图、稳定 revision 回归 | 无 |
 | M3 | 进行中 | search/entity/neighborhood/document/stats、0～3 跳稳定 BFS、逐边路径证据、64 fan-out/512 节点上限、检索指标、正确 documentRef、短中文词重排、低权重称呼形态扩展、私有长篇性能门禁、全工具自动诊断、显式调用链捕获与诊断文件 | timeline、歧义模型、章节时态过滤、完整重排、诊断容量/并发的进一步压力验证 |
 | M4 | 待开始（已有纵向切片） | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
-| M5 | 待开始（已有纵向切片） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试 | 真实 InkOS/EPUB 回归、客户端安装与故障文档 |
+| M5 | 待开始（已有纵向切片） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归 | 真实 InkOS、更多 EPUB 2/3 变体、客户端安装与故障文档 |
 
 M0～M2 已满足计划完成条件。M2 的完成以原子重建、受影响范围增量更新、跨文档引用修复和无关派生记录 revision 稳定回归为依据。M3～M5 仍未完成；现有成果不能据此宣称 Writing MCP v1 已完成。
 
@@ -68,7 +68,8 @@ M0～M2 已满足计划完成条件。M2 的完成以原子重建、受影响范
 - M0 基线：整书估算 166 Token，10/10 预期事实召回，证据覆盖 100%，三项上下文任务平均 64.33 Token，降幅 61.24%。
 - 私有长篇：外部 schema v2 标注包含 42 条事实、101 条逐字证据和七类知识；数据不入库、不进入 Git，运行器只输出汇总及失败 ID。
 - TXT：覆盖 GBK/GB18030 解码、章节切分、章节编号重置推断新卷和原始文件行号偏移。
-- EPUB：正常双章节 spine，以及损坏 ZIP、缺 container、缺 OPF、无可读 spine 四类失败。
+- EPUB：正常双章节 spine、OPF 属性顺序变化、元数据标题、封面过滤、跨 spine 章节续文、单作品多 EPUB 引用隔离，以及损坏 ZIP、缺 container、缺 OPF、无可读 spine 四类失败。
+- 私有转换型 EPUB：本机《语料A》从 5 个 spine 文档重建为 1 个前置文档、55 个编号章节和 1 个尾部段落；索引为 57 documents、121 spans、31 entities、208 edges，中文检索、500 Token context、无变化增量更新和多调用诊断捕获均通过，原文及索引不入 Git。
 - InkOS：静态最小 fixture 的稳定作品引用、原生文档类型和章节编号。
 - 路径安全：MCP 缺少授权 roots 时拒绝访问，入口越界及作品目录内 symlink/junction 越界均被阻止。
 - 作品识别：覆盖单书、多书歧义、空目录、不支持扩展名、同目录直接文件隔离和 InkOS 新旧结构。
@@ -84,7 +85,7 @@ M0～M2 已满足计划完成条件。M2 的完成以原子重建、受影响范
 - `timeline` 目前没有独立语义实现。
 - `taskType` 尚未改变上下文来源策略。
 - 角色实体提取只覆盖角色类文档 heading；查询期仅提供透明的中文称呼形态扩展，尚无持久化别名解析。
-- EPUB 解析为最小实现，尚未覆盖加密、复杂命名空间、脚注和损坏包。
+- EPUB 仍采用确定性轻量解析，尚未覆盖 DRM/加密、复杂命名空间、导航目录语义、脚注回链、图片内容和全部 EPUB 2/3 变体；内部章节切分目前依赖独占行的中英文编号标题。
 - `workRef` 只在当前 server 进程中注册；重启后客户端需重新调用 `writing_resolve`。
 - 私有长篇仍有 1 条 optional 事实未进入前 20，900 字抽取摘要的逐字证据暴露率为 88.10%；这些指标与 span 召回、来源覆盖分别报告。
 
