@@ -51,9 +51,9 @@ Required uniqueness:
 
 Schema v1 is rebuildable derived state. It never owns source-of-truth writing data.
 
-## SQLite schema v2 amendment
+## SQLite schema v2 amendment (historical)
 
-Schema v2 is the active implementation contract. It is an incompatible upgrade from schema v1; existing derived indexes are rebuilt from source files rather than semantically migrated.
+Schema v2 was an incompatible upgrade from schema v1; existing derived indexes were rebuilt from source files rather than semantically migrated. Schema v3 below is now active.
 
 - `works` records the work, adapter, canonical source-path hash, schema/software versions, and current valid revision.
 - `index_revisions` records source snapshot hash, build statistics, validity status, and software version.
@@ -62,6 +62,19 @@ Schema v2 is the active implementation contract. It is an incompatible upgrade f
 - v2 adds indexes for source spans, endpoints/kinds, validity ranges, and revisions.
 
 See `docs/adr/0003-schema-v2-temporal-evidence.md` for compatibility and scope decisions.
+
+## SQLite schema v3 amendment
+
+Schema v3 is the active implementation contract and remains disposable, rebuild-only derived state.
+
+- `documents` stores separate source `content_hash` and `semantic_hash` values plus `source_ordinal` and `source_start_line`.
+- The semantic hash covers identity-affecting source metadata and content, so metadata-only and order-only changes cannot be silently skipped.
+- `writing_index(status)` compares the current adapter snapshot and returns `stale` with `INDEX_SOURCE_CHANGED` when it differs from the valid index.
+- Writes for a work are serialized in-process and guarded by a cooperative per-work lock across Writing MCP processes. A live conflict returns `INDEX_BUSY`.
+- Interrupted atomic replacement restores `.previous` before the next locked write and removes schema-owned orphan temporary files.
+- The cache `.gitignore` is create-if-absent and never overwrites an existing file.
+
+See `docs/adr/0004-schema-v3-source-freshness-and-writer-recovery.md`.
 
 ## MCP result rules
 
@@ -100,3 +113,4 @@ The frozen fixture baseline is 166 estimated full-book tokens, 10/10 expected fa
 - `docs/adr/0001-deterministic-local-core.md`: local deterministic TypeScript core and disposable index.
 - `docs/adr/0002-epub-jszip.md`: JSZip 3.x under its MIT option, supported EPUB boundary and failure behavior.
 - `docs/adr/0003-schema-v2-temporal-evidence.md`: incompatible derived-index upgrade, chapter-reference validity, and deferred semantic relationships.
+- `docs/adr/0004-schema-v3-source-freshness-and-writer-recovery.md`: semantic source snapshots, truthful freshness, cooperative writer locking, and interrupted replacement recovery.

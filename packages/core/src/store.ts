@@ -1,16 +1,34 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open as openFile, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { splitDocument, estimateTokens } from "./text.js";
 import { stableId } from "./ids.js";
 import type { ContextBlock, ContextPacket, ExploreItem, ExploreOperation, ExploreResult, IndexResult, ParsedWork } from "./types.js";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const SOFTWARE_VERSION = "0.1.0";
 const json = (value: unknown) => JSON.stringify(value);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const asNumber = (value: unknown) => typeof value === "bigint" ? Number(value) : Number(value ?? 0);
+
+interface DocumentState {
+  readonly document: ParsedWork["documents"][number];
+  readonly sourceOrdinal: number;
+  readonly contentHash: string;
+  readonly semanticHash: string;
+}
+
+interface StoredDocumentState {
+  readonly document_ref: string;
+  readonly semantic_hash: string;
+}
+
+const errorCode = (error: unknown): string | undefined =>
+  typeof error === "object" && error && "code" in error ? String(error.code) : undefined;
+
+const codedError = (code: string, message: string, cause?: unknown): Error =>
+  Object.assign(new Error(message, { cause }), { code });
 
 export class WritingStore {
   private db?: DatabaseSync;
@@ -18,13 +36,28 @@ export class WritingStore {
   private schemaVersionOnDisk=0;
   constructor(private readonly work: ParsedWork,private readonly forcedIndexPath?:string,private readonly directRebuild=false) {}
 
+  private async prepareIndexLocation(): Promise<void> {
+    if (this.indexPath) return;
+    const dir = this.forcedIndexPath
+      ? dirname(this.forcedIndexPath)
+      : join(this.work.rootPath, ".writing-index", this.work.workRef.replace(":", "-"));
+    await mkdir(dir, { recursive: true });
+    if (!this.forcedIndexPath) {
+      const cacheRoot = join(this.work.rootPath, ".writing-index");
+      await mkdir(cacheRoot, { recursive: true });
+      try {
+        await writeFile(join(cacheRoot, ".gitignore"), "*\n!.gitignore\n", { flag: "wx" });
+      } catch (error) {
+        if (errorCode(error) !== "EEXIST") throw error;
+      }
+    }
+    this.indexPath = this.forcedIndexPath ?? join(dir, "index.sqlite");
+  }
+
   private async open(): Promise<DatabaseSync> {
     if (this.db) return this.db;
-    const dir = join(this.work.rootPath, ".writing-index", this.work.workRef.replace(":", "-"));
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(this.work.rootPath, ".writing-index", ".gitignore"), "*\n!.gitignore\n", { flag: "w" });
-    this.indexPath = this.forcedIndexPath??join(dir, "index.sqlite");
-    const db = new DatabaseSync(this.indexPath);
+    await this.prepareIndexLocation();
+    const db = new DatabaseSync(this.indexPath!);
     db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
     this.schemaVersionOnDisk=asNumber((db.prepare("PRAGMA user_version").get() as Record<string,unknown>).user_version);
     if(this.schemaVersionOnDisk!==0&&this.schemaVersionOnDisk!==SCHEMA_VERSION){this.db=db;return db;}
@@ -38,7 +71,7 @@ export class WritingStore {
       CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS works(work_ref TEXT PRIMARY KEY,adapter TEXT NOT NULL,source_path_hash TEXT NOT NULL,schema_version INTEGER NOT NULL,software_version TEXT NOT NULL,current_revision INTEGER);
       CREATE TABLE IF NOT EXISTS index_revisions(revision INTEGER PRIMARY KEY AUTOINCREMENT,created_at TEXT NOT NULL,source_snapshot_hash TEXT NOT NULL,stats_json TEXT NOT NULL,status TEXT NOT NULL,software_version TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS documents(document_ref TEXT PRIMARY KEY,relative_path TEXT UNIQUE NOT NULL,title TEXT NOT NULL,kind TEXT NOT NULL,chapter_number INTEGER,content_hash TEXT NOT NULL,mtime_ms REAL NOT NULL,size INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS documents(document_ref TEXT PRIMARY KEY,relative_path TEXT UNIQUE NOT NULL,title TEXT NOT NULL,kind TEXT NOT NULL,chapter_number INTEGER,source_ordinal INTEGER NOT NULL,source_start_line INTEGER NOT NULL,content_hash TEXT NOT NULL,semantic_hash TEXT NOT NULL,mtime_ms REAL NOT NULL,size INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS spans(span_ref TEXT PRIMARY KEY,document_ref TEXT NOT NULL,ordinal INTEGER NOT NULL,start_line INTEGER NOT NULL,end_line INTEGER NOT NULL,heading TEXT NOT NULL,content TEXT NOT NULL,FOREIGN KEY(document_ref) REFERENCES documents(document_ref) ON DELETE CASCADE);
       CREATE VIRTUAL TABLE IF NOT EXISTS spans_fts USING fts5(span_ref UNINDEXED,heading,content,tokenize='trigram');
       CREATE TABLE IF NOT EXISTS entities(entity_ref TEXT PRIMARY KEY,kind TEXT NOT NULL,name TEXT NOT NULL,normalized_name TEXT NOT NULL,source_kind TEXT NOT NULL,confidence REAL NOT NULL CHECK(confidence BETWEEN 0 AND 1),span_ref TEXT NOT NULL,content_hash TEXT NOT NULL,valid_from_chapter TEXT,valid_to_chapter TEXT,narrative_time TEXT,properties_json TEXT NOT NULL,revision INTEGER NOT NULL);
@@ -61,51 +94,183 @@ export class WritingStore {
     `);
   }
 
+  private backupPath(): string { return `${this.indexPath!}.previous`; }
+  private lockPath(): string { return join(dirname(this.indexPath!), "write.lock"); }
+
+  private async pathExists(path: string): Promise<boolean> {
+    try { await stat(path); return true; }
+    catch (error) { if (errorCode(error) === "ENOENT") return false; throw error; }
+  }
+
+  private processIsAlive(pid: number): boolean {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try { process.kill(pid, 0); return true; }
+    catch (error) { return errorCode(error) !== "ESRCH"; }
+  }
+
+  private async acquireWriteLock(): Promise<{ readonly token: string; release(): Promise<void> }> {
+    const path = this.lockPath();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const token = randomUUID();
+      try {
+        const handle = await openFile(path, "wx");
+        try { await handle.writeFile(JSON.stringify({ pid: process.pid, token, createdAt: new Date().toISOString() })); }
+        finally { await handle.close(); }
+        return {
+          token,
+          release: async () => {
+            try {
+              const current = JSON.parse(await readFile(path, "utf8")) as { token?: string };
+              if (current.token === token) await rm(path, { force: true });
+            } catch (error) {
+              if (errorCode(error) !== "ENOENT") throw error;
+            }
+          },
+        };
+      } catch (error) {
+        if (errorCode(error) !== "EEXIST") throw error;
+        let owner: { pid?: number } | undefined;
+        try { owner = JSON.parse(await readFile(path, "utf8")) as { pid?: number }; }
+        catch (readError) {
+          if (errorCode(readError) === "ENOENT") continue;
+        }
+        if (owner?.pid !== undefined && !this.processIsAlive(owner.pid)) {
+          await rm(path, { force: true });
+          continue;
+        }
+        throw codedError("INDEX_BUSY", `Derived index for ${this.work.workRef} is being updated by another process`);
+      }
+    }
+    throw codedError("INDEX_BUSY", `Could not acquire the derived-index writer lock for ${this.work.workRef}`);
+  }
+
+  private async recoverInterruptedReplacement(): Promise<void> {
+    const activePath = this.indexPath!;
+    const backupPath = this.backupPath();
+    if (!await this.pathExists(activePath) && await this.pathExists(backupPath)) {
+      await rename(backupPath, activePath);
+    }
+    for (const name of await readdir(dirname(activePath))) {
+      if (/^index\.[a-f0-9-]+\.tmp\.sqlite(?:-wal|-shm)?$/i.test(name)) {
+        await rm(join(dirname(activePath), name), { force: true });
+      }
+    }
+  }
+
+  private async interruptedStatus(started: number): Promise<IndexResult | undefined> {
+    if (this.forcedIndexPath) return undefined;
+    await this.prepareIndexLocation();
+    if (await this.pathExists(this.indexPath!) || !await this.pathExists(this.backupPath())) return undefined;
+    return {
+      workRef: this.work.workRef,
+      revision: 0,
+      schemaVersion: SCHEMA_VERSION,
+      freshness: "stale",
+      stats: { added: 0, updated: 0, deleted: 0, skipped: 0, documents: 0, spans: 0, entities: 0, edges: 0 },
+      diagnostics: [{ code: "INDEX_RECOVERY_REQUIRED", message: "An interrupted atomic replacement will be recovered by the next incremental or rebuild operation" }],
+      elapsedMs: performance.now() - started,
+    };
+  }
+
+  private async withWriteLock<T>(action: () => Promise<T>): Promise<T> {
+    const lock = await this.acquireWriteLock();
+    try {
+      await this.recoverInterruptedReplacement();
+      return await action();
+    } finally {
+      await lock.release();
+    }
+  }
+
   private async atomicRebuild(previousSchema?:number):Promise<IndexResult>{
-    const activePath=this.indexPath!,temporaryPath=join(dirname(activePath),`index.${randomUUID()}.tmp.sqlite`),backupPath=`${activePath}.previous`;
+    const activePath=this.indexPath!,temporaryPath=join(dirname(activePath),`index.${randomUUID()}.tmp.sqlite`),backupPath=this.backupPath();
     const temporary=new WritingStore(this.work,temporaryPath,true);
     try{
       const result=await temporary.index("rebuild");temporary.validateBuiltIndex();temporary.close();
       this.close();await rm(backupPath,{force:true});
       let backedUp=false;
-      try{await stat(activePath);await rename(activePath,backupPath);backedUp=true;}catch(error){if(!(typeof error==="object"&&error&&"code" in error&&error.code==="ENOENT"))throw error;}
+      try{await stat(activePath);await rename(activePath,backupPath);backedUp=true;}catch(error){if(errorCode(error)!=="ENOENT")throw error;}
       try{await rename(temporaryPath,activePath);}catch(error){if(backedUp)await rename(backupPath,activePath);throw error;}
       await rm(backupPath,{force:true});this.schemaVersionOnDisk=0;
       return{...result,diagnostics:[...result.diagnostics,...(previousSchema==null?[]:[{code:"INDEX_SCHEMA_REBUILT",message:`Rebuilt derived index schema ${previousSchema} as ${SCHEMA_VERSION}`}]) ]};
-    }finally{temporary.close();for(const suffix of ["","-wal","-shm"])await rm(temporaryPath+suffix,{force:true});}
+    }catch(error){if(["EBUSY","EACCES","EPERM","SQLITE_BUSY"].includes(errorCode(error)??""))throw codedError("INDEX_BUSY",`Derived index for ${this.work.workRef} is in use`,error);throw error;}
+    finally{temporary.close();for(const suffix of ["","-wal","-shm"])await rm(temporaryPath+suffix,{force:true});}
   }
 
   private validateBuiltIndex():void{const db=this.db!;const integrity=String((db.prepare("PRAGMA integrity_check").get() as Record<string,unknown>).integrity_check);if(integrity!=="ok")throw Object.assign(new Error(`Temporary index integrity check failed: ${integrity}`),{code:"INDEX_VALIDATION_FAILED"});const version=asNumber((db.prepare("PRAGMA user_version").get() as Record<string,unknown>).user_version);if(version!==SCHEMA_VERSION)throw Object.assign(new Error(`Temporary index schema is ${version}, expected ${SCHEMA_VERSION}`),{code:"INDEX_VALIDATION_FAILED"});const required=["works","index_revisions","documents","spans","spans_fts","entities","aliases","mentions","edges","unresolved_mentions"];const tables=new Set((db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view')").all() as Array<Record<string,unknown>>).map(row=>String(row.name)));for(const table of required)if(!tables.has(table))throw Object.assign(new Error(`Temporary index is missing ${table}`),{code:"INDEX_VALIDATION_FAILED"});const revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions WHERE status='valid'").get() as Record<string,unknown>).revision);if(revision<1)throw Object.assign(new Error("Temporary index has no valid revision"),{code:"INDEX_VALIDATION_FAILED"});db.prepare("SELECT span_ref FROM spans LIMIT 1").all();}
 
+  private documentStates(): DocumentState[] {
+    return this.work.documents.map((document, sourceOrdinal) => {
+      const contentHash = hash(document.content);
+      const semanticHash = hash(json({
+        documentRef: document.documentRef,
+        relativePath: document.relativePath,
+        title: document.title,
+        kind: document.kind,
+        chapterNumber: document.chapterNumber ?? null,
+        sourceOrdinal,
+        sourceStartLine: document.sourceStartLine ?? 1,
+        contentHash,
+      }));
+      return { document, sourceOrdinal, contentHash, semanticHash };
+    });
+  }
+
   async index(mode: "status" | "incremental" | "rebuild"): Promise<IndexResult> {
+    const started = performance.now();
+    await this.prepareIndexLocation();
+    if (mode === "status") {
+      const interrupted = await this.interruptedStatus(started);
+      if (interrupted) return interrupted;
+    }
+    if (mode !== "status" && !this.directRebuild) {
+      return this.withWriteLock(() => this.indexUnlocked(mode));
+    }
+    return this.indexUnlocked(mode);
+  }
+
+  private async indexUnlocked(mode: "status" | "incremental" | "rebuild"): Promise<IndexResult> {
     const started = performance.now(); let db = await this.open();const diagnostics:IndexResult["diagnostics"]=[];
     if(this.schemaVersionOnDisk!==0&&this.schemaVersionOnDisk!==SCHEMA_VERSION){if(mode==="status")return{workRef:this.work.workRef,revision:0,schemaVersion:SCHEMA_VERSION,freshness:"incompatible",stats:{added:0,updated:0,deleted:0,skipped:0,documents:0,spans:0,entities:0,edges:0},diagnostics:[{code:"INDEX_SCHEMA_INCOMPATIBLE",message:`Index schema ${this.schemaVersionOnDisk} is incompatible with ${SCHEMA_VERSION}`}],elapsedMs:performance.now()-started};return this.atomicRebuild(this.schemaVersionOnDisk);}
     if(mode==="rebuild"&&!this.directRebuild)return this.atomicRebuild();
     const revisionRow = db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string, unknown>;
     const currentRevision = asNumber(revisionRow.revision);
-    if (mode === "status") return { workRef: this.work.workRef, revision: currentRevision, schemaVersion: SCHEMA_VERSION, freshness: currentRevision ? "fresh" : "missing", stats: { added: 0, updated: 0, deleted: 0, skipped: 0, ...this.counts() }, diagnostics, elapsedMs: performance.now()-started };
+    const states = this.documentStates();
+    const current = new Map(states.map(state => [state.document.documentRef, state]));
     const existing = new Map<string,string>();
-    if(mode!=="rebuild")for (const row of db.prepare("SELECT document_ref,content_hash FROM documents").all() as Array<Record<string,unknown>>) existing.set(String(row.document_ref),String(row.content_hash));
-    const currentHashes=new Map(this.work.documents.map(doc=>[doc.documentRef,hash(doc.content)]));
+    if(mode!=="rebuild")for (const row of db.prepare("SELECT document_ref,semantic_hash FROM documents").all() as unknown as StoredDocumentState[]) existing.set(String(row.document_ref),String(row.semantic_hash));
     let added=0,updated=0,skipped=0,deleted=0;
-    for(const [ref,contentHash] of currentHashes){if(existing.get(ref)===contentHash)skipped++;else if(existing.has(ref))updated++;else added++;}
-    for(const ref of existing.keys())if(!currentHashes.has(ref))deleted++;
+    for(const [ref,state] of current){if(existing.get(ref)===state.semanticHash)skipped++;else if(existing.has(ref))updated++;else added++;}
+    for(const ref of existing.keys())if(!current.has(ref))deleted++;
+    if (mode === "status") {
+      const changed = added > 0 || updated > 0 || deleted > 0;
+      return {
+        workRef: this.work.workRef,
+        revision: currentRevision,
+        schemaVersion: SCHEMA_VERSION,
+        freshness: currentRevision ? (changed ? "stale" : "fresh") : "missing",
+        stats: { added, updated, deleted, skipped, ...this.counts(db) },
+        diagnostics: changed ? [{ code: "INDEX_SOURCE_CHANGED", message: "Source documents differ from the current valid index revision" }] : diagnostics,
+        elapsedMs: performance.now()-started,
+      };
+    }
     if(mode==="incremental"&&currentRevision>0&&added===0&&updated===0&&deleted===0)return{workRef:this.work.workRef,revision:currentRevision,schemaVersion:SCHEMA_VERSION,freshness:"fresh",stats:{added,updated,deleted,skipped,...this.counts(db)},diagnostics,elapsedMs:performance.now()-started};
-    const snapshotHash=hash(this.work.documents.map(doc=>`${doc.documentRef}:${currentHashes.get(doc.documentRef)}`).sort().join("\n"));
+    const snapshotHash=hash(states.map(state=>`${state.document.documentRef}:${state.semanticHash}`).sort().join("\n"));
     db.exec("BEGIN");
     try {
       if(mode==="rebuild")db.exec("DELETE FROM mentions; DELETE FROM edges; DELETE FROM aliases; DELETE FROM entities; DELETE FROM spans_fts; DELETE FROM spans; DELETE FROM documents;");
       const revision=asNumber((db.prepare("INSERT INTO index_revisions(created_at,source_snapshot_hash,stats_json,status,software_version) VALUES(?,?,?,?,?) RETURNING revision").get(new Date().toISOString(),snapshotHash,"{}","building",SOFTWARE_VERSION) as Record<string,unknown>).revision);
-      const changedDocumentRefs=new Set<string>([...currentHashes.keys()].filter(ref=>mode==="rebuild"||existing.get(ref)!==currentHashes.get(ref)));
-      for(const ref of existing.keys())if(!currentHashes.has(ref))changedDocumentRefs.add(ref);
+      const changedDocumentRefs=new Set<string>([...current.keys()].filter(ref=>mode==="rebuild"||existing.get(ref)!==current.get(ref)!.semanticHash));
+      for(const ref of existing.keys())if(!current.has(ref))changedDocumentRefs.add(ref);
       const previousEntityNames=mode==="rebuild"?new Set<string>():this.entityNamesForDocuments(db,changedDocumentRefs);
       const chapterStructureChanged=mode==="rebuild"||this.documentsContainKind(db,changedDocumentRefs,"chapter")||this.work.documents.some(doc=>changedDocumentRefs.has(doc.documentRef)&&doc.kind==="chapter");
       const present = new Set<string>();
-      for (const doc of this.work.documents) {
-        present.add(doc.documentRef); const contentHash=currentHashes.get(doc.documentRef)!;
-        if (mode!=="rebuild"&&existing.get(doc.documentRef)===contentHash) continue;
+      for (const state of states) {
+        const doc = state.document;
+        present.add(doc.documentRef);
+        if (mode!=="rebuild"&&existing.get(doc.documentRef)===state.semanticHash) continue;
         this.deleteDocument(db,doc.documentRef);
-        db.prepare("INSERT INTO documents VALUES(?,?,?,?,?,?,?,?)").run(doc.documentRef,doc.relativePath,doc.title,doc.kind,doc.chapterNumber??null,contentHash,doc.sourceMtimeMs,doc.sourceSize);
+        db.prepare("INSERT INTO documents VALUES(?,?,?,?,?,?,?,?,?,?,?)").run(doc.documentRef,doc.relativePath,doc.title,doc.kind,doc.chapterNumber??null,state.sourceOrdinal,doc.sourceStartLine??1,state.contentHash,state.semanticHash,doc.sourceMtimeMs,doc.sourceSize);
         const spans=splitDocument(doc,(n)=>stableId("span",doc.documentRef,String(n)));
         for(const span of spans){db.prepare("INSERT INTO spans VALUES(?,?,?,?,?,?,?)").run(span.spanRef,span.documentRef,span.ordinal,span.startLine,span.endLine,span.heading,span.content);db.prepare("INSERT INTO spans_fts VALUES(?,?,?)").run(span.spanRef,span.heading,span.content);db.prepare("INSERT INTO edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(stableId("edge",doc.documentRef,span.spanRef,"contains"),doc.documentRef,span.spanRef,"contains","native",1,span.spanRef,hash(span.content),doc.chapterNumber?stableId("entity","Chapter",doc.title.toLowerCase()):null,doc.chapterNumber?stableId("entity","Chapter",doc.title.toLowerCase()):null,null,json({ordinal:span.ordinal}),revision);}
       }

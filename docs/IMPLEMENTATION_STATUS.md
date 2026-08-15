@@ -1,7 +1,7 @@
 # Writing MCP MVP 实施状态
 
-> 检查点时间：2026-08-14
-> 当前状态：M0～M2 已完成，M0.1 诊断协议增补已落地，M3 进行中；整体仍是可演示 MVP，尚未达到 `Writing_MCP_Server_v2.md` 的 v1 完整验收标准。
+> 检查点时间：2026-08-16
+> 当前状态：M0 主体完成；综合审查重新打开 M0.1、M1、M2 补强，索引事实性 Step 1 已完成，M3 进行中；整体仍是可演示 MVP，尚未达到 `Writing_MCP_Server_v2.md` 的 v1 完整验收标准。
 
 ## 恢复入口
 
@@ -21,7 +21,7 @@ pnpm start
 
 实现中断后，依次运行 `pnpm build`、`pnpm benchmark` 和 `pnpm test`。三者都通过后，才可继续增加功能。
 
-最近验证：2026-08-14，构建通过；30/30 公共基准任务、10/10 固定事实召回和 100% 证据覆盖通过；fixture 上下文 Token 降幅 61.24%；本地私有长篇达到 41/42 span 召回、16/16 required 召回、100% 来源覆盖、首次索引约 0.46 秒及暖查询 P95 约 44 毫秒。
+最近验证：2026-08-16，构建与 43 项测试通过；30/30 公共基准、10/10 固定事实召回和 100% locator 字段存在率通过；fixture excerpt 估算 Token 降幅 61.24%。本地私有长篇的 41/42、88.10% 和 P95 约 44～51 毫秒为历史结果，私有标注缺失时不可复现，也不作为当前产品验收。
 
 ## 已实现闭环
 
@@ -31,7 +31,10 @@ pnpm start
 - InkOS 书籍识别，新旧大纲路径、角色目录、状态、伏笔和章节读取。
 - Markdown、UTF-8/GB18030 TXT 和 EPUB OPF/spine 解析；单文件 TXT 支持章节切分、卷内编号重置与原始行号保留，转换型 EPUB 支持作品元数据、封面过滤、正文清洗和跨 spine 内部章节切分。
 - 项目内 `.writing-index/<workId>/index.sqlite`。
-- 文档哈希增量更新、revision、无变化不新增 revision、事务回滚。
+- schema v3 语义快照增量更新：正文哈希与语义哈希分离，标题、kind、章节号、源顺序和起始行参与 freshness；无变化不新增 revision。
+- `writing_index(status)` 重新加载当前来源，源有待处理变化时返回 `stale` 和 `INDEX_SOURCE_CHANGED`。
+- 同作品操作进程内串行；写操作使用可回收 PID lock，外部占用返回 `INDEX_BUSY`；中断替换可从 `.previous` 恢复并清理 schema-owned 临时文件。
+- `.writing-index/.gitignore` 仅在缺失时创建，不覆盖用户已有内容。
 - Span 全文检索、角色实体、mention、`contains` 和 `appears_in` 关系。
 - 基础 entity/neighborhood/document/stats/search 查询。
 - 抽取式上下文选择、Token 估算和预算上限。
@@ -49,14 +52,15 @@ pnpm start
 
 | 里程碑 | 状态 | 已完成 | 未完成门禁 |
 |---|---|---|---|
-| M0 | 已完成（含 M0.1 增补） | 版本化协议/存储合同、五工具 schema、统一诊断信封、四类最小 fixture、30 个任务、Token/事实基线、EPUB 技术验证、两项 ADR | 无 |
-| M1 | 已完成 | 授权 roots、realpath/链接防护、稳定候选与引用、单/多书诊断、InkOS 新旧结构、Markdown/TXT/EPUB、损坏 EPUB 错误码 | 无 |
-| M2 | 已完成 | SQLite/FTS5、schema v2、works/index_revisions、证据哈希/属性/时态/revision、临时库验证后原子替换、未实现关系延期 ADR、按受影响文档/实体增量刷新派生图、稳定 revision 回归 | 无 |
+| M0 | 主体完成 | 版本化协议/存储合同、五工具 schema、统一信封、最小 fixture、30 个任务、Token/事实基线 | 指标含义和实现契约继续校准 |
+| M0.1 | 补强中 | 全工具诊断 wrapper、显式 capture、脱敏与报告哈希 | AUD-023～025：有界证据 ref、general 并发轮转、协议层错误边界 |
+| M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB | AUD-010、026～030：跨 spine locator、作品边界、格式与资源上限 |
+| M2 | 补强中（Step 1 完成） | SQLite/FTS5、schema v3、语义 snapshot、truthful status、revision/事务、原子替换、作品级串行/写锁、`.previous` 恢复、受影响范围派生图 | AUD-001、002、007～010：图身份、顺序、证据哈希、多 mention 与 EPUB locator |
 | M3 | 进行中 | search/entity/neighborhood/document/stats、0～3 跳稳定 BFS、逐边路径证据、64 fan-out/512 节点上限、检索指标、正确 documentRef、短中文词重排、低权重称呼形态扩展、私有长篇性能门禁、全工具自动诊断、显式调用链捕获与诊断文件 | timeline、歧义模型、章节时态过滤、完整重排、诊断容量/并发的进一步压力验证 |
 | M4 | 待开始（已有纵向切片） | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
 | M5 | 待开始（已有纵向切片） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归 | 真实 InkOS、更多 EPUB 2/3 变体、客户端安装与故障文档 |
 
-M0～M2 已满足计划完成条件。M2 的完成以原子重建、受影响范围增量更新、跨文档引用修复和无关派生记录 revision 稳定回归为依据。M3～M5 仍未完成；现有成果不能据此宣称 Writing MCP v1 已完成。
+M0.1～M2 因综合审查发现契约缺口而重新打开。Step 1 已关闭 AUD-003、AUD-006、AUD-011 的合作式锁/恢复范围和 AUD-031 的覆盖行为；下一步必须关闭图身份与证据门禁。现有成果不能据此宣称 Writing MCP v1 已完成。
 
 ## 当前测试覆盖
 
@@ -75,6 +79,7 @@ M0～M2 已满足计划完成条件。M2 的完成以原子重建、受影响范
 - 作品识别：覆盖单书、多书歧义、空目录、不支持扩展名、同目录直接文件隔离和 InkOS 新旧结构。
 - 稳定诊断：`AUTHORIZED_ROOTS_REQUIRED`、`PATH_NOT_ALLOWED` 以及四类 EPUB 确定性错误码。
 - 索引生命周期：不兼容 schema 只读报告/显式重建、失败事务保留上一 revision、未解析方括号引用入库。
+- 索引事实性：源正文/标题/kind/章节号/源顺序/起始行变化使 status 变 stale；同作品并发串行、live/stale writer lock、`.previous/tmp` 恢复和用户 `.gitignore` 保持。
 - 增量影响范围：无关文档的派生记录不改写 revision；新增实体会重新解析其他文档中匹配的未解析引用。
 - 属性图：原生 Chapter/Character/OutlineNode/Fact/Foreshadow，显式 Location/Item/Event，以及 contains/appears_in/mentions/precedes。
 - 可重建性：删除整个 `.writing-index` 后可从原始文本恢复等价稳定引用和检索结果。
@@ -87,8 +92,10 @@ M0～M2 已满足计划完成条件。M2 的完成以原子重建、受影响范
 - 角色实体提取只覆盖角色类文档 heading；查询期仅提供透明的中文称呼形态扩展，尚无持久化别名解析。
 - EPUB 仍采用确定性轻量解析，尚未覆盖 DRM/加密、复杂命名空间、导航目录语义、脚注回链、图片内容和全部 EPUB 2/3 变体；内部章节切分目前依赖独占行的中英文编号标题。
 - `workRef` 只在当前 server 进程中注册；重启后客户端需重新调用 `writing_resolve`。
+- schema v3 writer lock 是 Writing MCP 进程间的合作式协议，不能强制无关程序释放 SQLite 句柄；此类占用稳定返回 `INDEX_BUSY`。
+- status 当前为保证正确性会重新读取适配器全部来源；mtime/size 快速路径仍待在不牺牲语义 snapshot 的前提下实现。
 - 私有长篇仍有 1 条 optional 事实未进入前 20，900 字抽取摘要的逐字证据暴露率为 88.10%；这些指标与 span 召回、来源覆盖分别报告。
 
 ## 下一步
 
-继续 M3：先对真实 Qoder/Codex 调用执行一次显式诊断捕获，审查工具路由、重复调用、实体回退和 context 误用；随后实现 timeline、歧义模型、章节时态过滤和剩余重排，并继续提高私有语料 optional 召回与证据窗口暴露率。
+进入 v2 Step 2：先为多卷重复章名、卷内顺序、identity/evidence hash、多次 mention、多 span 关系证据和跨 spine locator 建立失败回归，再修复 AUD-001、002、007～010。该闭环通过后才进入中文长句检索和 M3 策略模块化。

@@ -50,6 +50,7 @@ function failure(detail: SafeErrorDetail & { traceId: string }, diagnostic: Post
 
 function recoveryFor(code: string): string {
   if (code === "WORK_REF_NOT_FOUND") return "Call writing_resolve in this server session, then retry.";
+  if (code === "INDEX_BUSY") return "Wait for the other index writer or close the process holding the SQLite index, then retry.";
   if (code.startsWith("DIAGNOSTIC_")) return "Start a new development capture or remove old derived diagnostic reports, then retry.";
   if (code === "PATH_NOT_ALLOWED" || code === "AUTHORIZED_ROOTS_REQUIRED") return "Check WRITING_MCP_ROOTS and use a source inside an authorized root.";
   return "Check the tool arguments and related work reference, then retry.";
