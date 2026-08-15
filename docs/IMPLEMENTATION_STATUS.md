@@ -21,7 +21,7 @@ pnpm start
 
 实现中断后，依次运行 `pnpm build`、`pnpm benchmark` 和 `pnpm test`。三者都通过后，才可继续增加功能。
 
-最近验证：2026-08-16，构建与 47 项测试通过；30/30 公共基准、10/10 固定事实召回和 100% locator 字段存在率通过；fixture excerpt 估算 Token 降幅 61.24%。本地转换型 EPUB 以 schema v4 重建为 57 documents、56 Chapter entities、55 `precedes` edges，首次索引约 0.31 秒。本地私有长篇的 41/42、88.10% 和 P95 约 44～51 毫秒为历史结果，私有标注缺失时不可复现，也不作为当前产品验收。
+最近验证：2026-08-16，构建与 50 项测试通过；30/30 公共基准、10/10 固定事实召回和 100% locator 字段存在率通过；fixture excerpt 估算 Token 降幅 61.24%。本地转换型 EPUB 以 schema v4 重建为 57 documents、56 Chapter entities、55 `precedes` edges，首次索引约 0.31 秒；自然语言查询对不存在的“语笙”返回 `NO_RESULTS`，对真实存在的“秦晴”“岳枫”前 5 条均含目标姓名。本地私有标注指标仍仅作历史参考。
 
 ## 已实现闭环
 
@@ -37,6 +37,8 @@ pnpm start
 - `.writing-index/.gitignore` 仅在缺失时创建，不覆盖用户已有内容。
 - Span 全文检索、角色实体、全部 mention、`contains`/`appears_in`/`mentions`/`precedes` 关系；实体/边 identity hash 与 evidence hash 分离，公共证据返回可验证 excerpt hash 和 revision。
 - 基础 entity/neighborhood/document/stats/search 查询。
+- 确定性中文问句分析、查询/引用/预算上限、稳定 LIMIT 前排序，以及空分析/真无结果/FTS 降级诊断。
+- entity 查询读取持久化 aliases，并通过 `ambiguous` 返回重复实体、替代定义和未解析引用；存在歧义时不自动扩展 neighborhood。
 - 抽取式上下文选择、Token 估算和预算上限。
 - MCP stdio 客户端端到端测试。
 - 五工具均发布对象型 `outputSchema`，成功和失败统一采用可验证的结构化信封。
@@ -56,7 +58,7 @@ pnpm start
 | M0.1 | 补强中 | 全工具诊断 wrapper、显式 capture、脱敏与报告哈希 | AUD-023～025：有界证据 ref、general 并发轮转、协议层错误边界 |
 | M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB、跨 spine 分段 locator | AUD-026～030：作品边界、格式与资源上限 |
 | M2 | ✅ 基础门禁完成 | SQLite/FTS5、schema v4、语义 snapshot、truthful status、revision/事务、原子替换、作品级串行/写锁、恢复、work/document 作用域身份、规范定义晋升、多 mention/关系证据、源顺序图 | 后续只随 M3/M4 查询语义做受控增强 |
-| M3 | 进行中 | search/entity/neighborhood/document/stats、0～3 跳稳定 BFS、逐边路径证据、64 fan-out/512 节点上限、检索指标、正确 documentRef、短中文词重排、低权重称呼形态扩展、私有长篇性能门禁、全工具自动诊断、显式调用链捕获与诊断文件 | timeline、歧义模型、章节时态过滤、完整重排、诊断容量/并发的进一步压力验证 |
+| M3 | 进行中 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、基础输入上限、0～3 跳 BFS 与逐边证据 | 响应/时间上限、BFS 批量化、timeline、章节时态过滤、完整重排 |
 | M4 | 待开始（已有纵向切片） | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
 | M5 | 待开始（已有纵向切片） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归 | 真实 InkOS、更多 EPUB 2/3 变体、客户端安装与故障文档 |
 
@@ -69,6 +71,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - MCP stdio：枚举五工具，顺序调用 resolve/index/explore/context/diagnose，确认所有成功/失败响应均经过诊断 hook 并验证结构化错误信封。
 - 诊断链：覆盖默认元数据脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用和不可持久化降级。
 - M0 基准：固定 fixture 上 30 个检索、实体、邻域、文档、统计和上下文任务全部命中且具有证据。
+- 检索正确性：无分词中文问句命中；空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序和输入上限均有回归。
 - M0 基线：整书估算 166 Token，10/10 预期事实召回，证据覆盖 100%，三项上下文任务平均 64.33 Token，降幅 61.24%。
 - 私有长篇：外部 schema v2 标注包含 42 条事实、101 条逐字证据和七类知识；数据不入库、不进入 Git，运行器只输出汇总及失败 ID。
 - TXT：覆盖 GBK/GB18030 解码、章节切分、章节编号重置推断新卷和原始文件行号偏移。
@@ -95,7 +98,8 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - schema v4 writer lock 是 Writing MCP 进程间的合作式协议，不能强制无关程序释放 SQLite 句柄；此类占用稳定返回 `INDEX_BUSY`。
 - status 当前为保证正确性会重新读取适配器全部来源；mtime/size 快速路径仍待在不牺牲语义 snapshot 的前提下实现。
 - 私有长篇仍有 1 条 optional 事实未进入前 20，900 字抽取摘要的逐字证据暴露率为 88.10%；这些指标与 span 召回、来源覆盖分别报告。
+- 中文问句分析当前是有界规则与 n-gram，不是通用分词器；问题短语表会继续通过真实调用链回归校准。
 
 ## 下一步
 
-进入 v2 Step 3：修复中文完整问句检索、别名/歧义/未解析引用输出、LIMIT 前稳定排序、输入与响应边界、FTS 降级诊断及批量化图查询（AUD-004、016～020）。该闭环通过后再补强诊断契约并开展 M3 策略模块化。
+继续 v2 Step 3：中文完整问句、别名/歧义/未解析引用、稳定排序、基础输入边界和 FTS 降级语义已落地；下一子门禁是响应/执行时间上限、候选统计校准和 BFS/locator 批量化（AUD-018～020）。
