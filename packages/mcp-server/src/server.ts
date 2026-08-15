@@ -8,7 +8,8 @@ import { InkosAdapter } from "@writing-mcp/adapter-inkos";
 import { DiagnosticRecorder, type PostCallDiagnostic, type SafeErrorDetail } from "./diagnostics.js";
 
 const sourceDiagnosticSchema = z.object({ code: z.string(), message: z.string(), path: z.string().optional() });
-const evidenceSchema = z.object({ documentRef: z.string(), relativePath: z.string(), startLine: z.number(), endLine: z.number(), excerpt: z.string() });
+const evidenceLocatorSchema = z.object({ relativePath: z.string(), startLine: z.number(), endLine: z.number() });
+const evidenceSchema = z.object({ documentRef: z.string(), relativePath: z.string(), startLine: z.number(), endLine: z.number(), excerpt: z.string(), evidenceHash: z.string(), revision: z.number(), locators: z.array(evidenceLocatorSchema).optional() });
 const pathEvidenceSchema = z.object({ edgeRef: z.string(), edgeKind: z.string(), direction: z.enum(["outgoing", "incoming"]), sourceRef: z.string(), targetRef: z.string(), sourceKind: z.enum(["native", "deterministic", "heuristic"]), confidence: z.number(), evidence: evidenceSchema });
 const itemSchema = z.object({ ref: z.string(), kind: z.string(), title: z.string(), score: z.number(), sourceKind: z.enum(["native", "deterministic", "heuristic"]), confidence: z.number(), evidence: evidenceSchema, path: z.array(z.string()).optional(), pathEvidence: z.array(pathEvidenceSchema).optional() });
 const candidateSchema = z.object({ workRef: z.string(), title: z.string(), rootPath: z.string(), sourcePath: z.string().optional(), adapter: z.enum(["inkos", "generic"]), capabilities: z.array(z.string()) });

@@ -13,8 +13,10 @@ export interface ResolveResult {
 }
 export interface SourceDocument {
   documentRef: string; relativePath: string; absolutePath: string; title: string;
-  kind: DocumentKind; content: string; chapterNumber?: number; sourceStartLine?: number; sourceMtimeMs: number; sourceSize: number;
+  kind: DocumentKind; content: string; chapterNumber?: number; volumeNumber?: number; localChapterNumber?: number; sourceStartLine?: number; sourceMtimeMs: number; sourceSize: number;
+  sourceSegments?: SourceSegment[];
 }
+export interface SourceSegment { relativePath: string; startLine: number; endLine: number; documentStartLine: number; documentEndLine: number }
 export interface ParsedWork extends WorkCandidate { documents: SourceDocument[] }
 export interface WorkAdapter {
   readonly kind: AdapterKind;
@@ -24,7 +26,8 @@ export interface WorkAdapter {
 export interface IndexStats { added: number; updated: number; deleted: number; skipped: number; documents: number; spans: number; entities: number; edges: number }
 export interface IndexResult { workRef: string; revision: number; schemaVersion: number; freshness: "fresh" | "stale" | "missing" | "incompatible"; stats: IndexStats; diagnostics: Diagnostic[]; elapsedMs: number }
 export type ExploreOperation = "search" | "entity" | "neighborhood" | "timeline" | "document" | "stats";
-export interface Evidence { documentRef: string; relativePath: string; startLine: number; endLine: number; excerpt: string }
+export interface EvidenceLocator { relativePath: string; startLine: number; endLine: number }
+export interface Evidence { documentRef: string; relativePath: string; startLine: number; endLine: number; excerpt: string; evidenceHash: string; revision: number; locators?: EvidenceLocator[] }
 export interface PathEvidence { edgeRef: string; edgeKind: string; direction: "outgoing" | "incoming"; sourceRef: string; targetRef: string; sourceKind: SourceKind; confidence: number; evidence: Evidence }
 export interface ExploreItem { ref: string; kind: string; title: string; score: number; sourceKind: SourceKind; confidence: number; evidence: Evidence; path?: string[]; pathEvidence?: PathEvidence[] }
 export interface ExploreMetrics { candidateCount: number; returnedCount: number; visitedNodes: number; maxActualHops: number; omittedEstimate: number; elapsedMs: number }

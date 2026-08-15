@@ -1,4 +1,4 @@
-# M0 Contract v1.1
+# M0 Contract v1.2
 
 This document freezes the public and storage decisions for the MVP. Changes require a schema version bump or an ADR.
 
@@ -17,7 +17,7 @@ All references use `<kind>:<24 lowercase hex characters>`, derived from SHA-256 
 - `workRef`: adapter kind + canonical project/work path + adapter-local work id.
 - `documentRef`: workRef + normalized relative path; EPUB adds the spine entry path.
 - `spanRef`: documentRef + zero-based stable ordinal.
-- `entityRef`: entity kind + normalized canonical name.
+- `entityRef`: workRef + entity kind + identity key. Chapter identity uses its stable documentRef; canonical named entities use the normalized name within the work.
 - `edgeRef`: sourceRef + targetRef + relationship kind.
 
 Moving a work or document intentionally changes its reference. Editing content without moving the document preserves its document and span references when section order is unchanged.
@@ -65,7 +65,7 @@ See `docs/adr/0003-schema-v2-temporal-evidence.md` for compatibility and scope d
 
 ## SQLite schema v3 amendment
 
-Schema v3 is the active implementation contract and remains disposable, rebuild-only derived state.
+Schema v3 was the active freshness/recovery contract. Schema v4 below is now active; both remain disposable, rebuild-only derived state.
 
 - `documents` stores separate source `content_hash` and `semantic_hash` values plus `source_ordinal` and `source_start_line`.
 - The semantic hash covers identity-affecting source metadata and content, so metadata-only and order-only changes cannot be silently skipped.
@@ -75,6 +75,21 @@ Schema v3 is the active implementation contract and remains disposable, rebuild-
 - The cache `.gitignore` is create-if-absent and never overwrites an existing file.
 
 See `docs/adr/0004-schema-v3-source-freshness-and-writer-recovery.md`.
+
+## SQLite schema v4 amendment
+
+Schema v4 is the active implementation contract. It is an incompatible derived-index upgrade and is rebuilt only from authorized source works.
+
+- `documents` adds `volume_number` and `local_chapter_number`; source order remains the authoritative ordering key for `precedes`.
+- Chapter identity includes work and document identity, so duplicate display titles across volumes remain distinct.
+- `entity_definitions` preserves every deterministic definition. `entities` selects the canonical definition by source ordinal, span ordinal, then stable definition ref; deleting it deterministically promotes the next definition without changing entity identity.
+- Entity and edge rows separate `identity_hash` from full-source `evidence_hash`.
+- `mentions` records every occurrence, not only the first occurrence in a span.
+- `edge_evidence` stores all evidence occurrences for a stable relationship row, including span and offsets.
+- `span_locators` stores one or more source segments. EPUB spans crossing spine entries therefore retain every XHTML entry path and line range.
+- Public evidence includes a SHA-256 hash of the returned excerpt, its row/index revision, and optional source-segment locators.
+
+See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 
 ## MCP result rules
 
@@ -114,3 +129,4 @@ The frozen fixture baseline is 166 estimated full-book tokens, 10/10 expected fa
 - `docs/adr/0002-epub-jszip.md`: JSZip 3.x under its MIT option, supported EPUB boundary and failure behavior.
 - `docs/adr/0003-schema-v2-temporal-evidence.md`: incompatible derived-index upgrade, chapter-reference validity, and deferred semantic relationships.
 - `docs/adr/0004-schema-v3-source-freshness-and-writer-recovery.md`: semantic source snapshots, truthful freshness, cooperative writer locking, and interrupted replacement recovery.
+- `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`: work-scoped identity, deterministic canonical definitions, multi-evidence relationships, and segmented EPUB locators.

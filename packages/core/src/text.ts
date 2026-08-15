@@ -1,6 +1,6 @@
-import type { SourceDocument } from "./types.js";
+import type { EvidenceLocator, SourceDocument } from "./types.js";
 
-export interface Span { spanRef: string; documentRef: string; ordinal: number; startLine: number; endLine: number; heading: string; content: string }
+export interface Span { spanRef: string; documentRef: string; ordinal: number; startLine: number; endLine: number; heading: string; content: string; locators: EvidenceLocator[] }
 
 export function splitDocument(document: SourceDocument, makeId: (ordinal: number) => string, maxChars = 2400): Span[] {
   const lines = document.content.replace(/\r\n?/g, "\n").split("\n");
@@ -9,7 +9,20 @@ export function splitDocument(document: SourceDocument, makeId: (ordinal: number
   let start = 0, heading = document.title, buffer: string[] = [];
   const flush = () => {
     const content = buffer.join("\n").trim();
-    if (content) spans.push({ spanRef: makeId(spans.length), documentRef: document.documentRef, ordinal: spans.length, startLine: sourceLineOffset + start + 1, endLine: sourceLineOffset + start + buffer.length, heading, content });
+    if (content) {
+      const documentStartLine = start + 1, documentEndLine = start + buffer.length;
+      const locators = document.sourceSegments?.flatMap(segment => {
+        const overlapStart = Math.max(documentStartLine, segment.documentStartLine);
+        const overlapEnd = Math.min(documentEndLine, segment.documentEndLine);
+        if (overlapStart > overlapEnd) return [];
+        return [{
+          relativePath: segment.relativePath,
+          startLine: segment.startLine + overlapStart - segment.documentStartLine,
+          endLine: segment.startLine + overlapEnd - segment.documentStartLine,
+        }];
+      }) ?? [{ relativePath: document.relativePath, startLine: sourceLineOffset + documentStartLine, endLine: sourceLineOffset + documentEndLine }];
+      spans.push({ spanRef: makeId(spans.length), documentRef: document.documentRef, ordinal: spans.length, startLine: sourceLineOffset + documentStartLine, endLine: sourceLineOffset + documentEndLine, heading, content, locators });
+    }
     buffer = [];
   };
   for (let i = 0; i < lines.length; i++) {

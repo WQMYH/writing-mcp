@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import JSZip from "jszip";
 import { describe, expect, test } from "vitest";
 import { GenericAdapter } from "@writing-mcp/adapter-generic";
+import { WritingStore } from "@writing-mcp/core";
 
 async function fixtureZip(options:{container?:boolean;opf?:boolean;chapters?:boolean}={container:true,opf:true,chapters:true}){
   const zip=new JSZip();const base=new URL("../fixtures/epub-minimal/",import.meta.url);
@@ -44,6 +45,19 @@ describe("generic EPUB technical validation",()=>{
       expect(work.documents.some(document=>document.content.includes("Cover")||document.content.includes("\ufffd"))).toBe(false);
       expect(work.documents[2]?.content).toContain("\u7b2c\u4e8c\u7ae0\u7684\u540e\u534a\u90e8\u5206");
       expect(work.documents[1]?.relativePath).toContain("unknown.epub#part-1.html::v1-c1");
+      expect(work.documents[2]?.sourceSegments?.map(segment=>segment.relativePath)).toEqual([
+        "unknown.epub#part-1.html",
+        "unknown.epub#part-2.html",
+      ]);
+      const store=new WritingStore(work);
+      try{
+        await store.index("rebuild");
+        const explored=await store.explore("search","第二章的后半部分",10,0);
+        expect(explored.results[0]?.evidence.locators?.map(locator=>locator.relativePath)).toEqual([
+          "unknown.epub#part-1.html",
+          "unknown.epub#part-2.html",
+        ]);
+      }finally{store.close();}
     }finally{await rm(dir,{recursive:true,force:true});}
   });
 
