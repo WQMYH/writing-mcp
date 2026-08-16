@@ -125,6 +125,11 @@ export interface InspectResult {
   readonly observationScope: "mcp_calls_only";
 }
 
+export interface GeneralEventLimits {
+  readonly generalEvents?: number;
+  readonly generalBytes?: number;
+}
+
 type DirectoryResolver = (workRef?: string) => string | undefined;
 
 const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
@@ -132,8 +137,13 @@ const asRecord = (value: unknown): Record<string, unknown> | undefined => value 
 
 export class DiagnosticRecorder {
   private readonly queues = new Map<string, Promise<unknown>>();
+  private readonly generalEventsLimit: number;
+  private readonly generalBytesLimit: number;
 
-  constructor(private readonly resolveDirectory: DirectoryResolver) {}
+  constructor(private readonly resolveDirectory: DirectoryResolver, limits?: GeneralEventLimits) {
+    this.generalEventsLimit = limits?.generalEvents ?? MAX_GENERAL_EVENTS;
+    this.generalBytesLimit = limits?.generalBytes ?? MAX_GENERAL_BYTES;
+  }
 
   // Diagnostic files are disposable derived artifacts. Keep detailed data on
   // disk only: never log it to stdout (reserved for MCP) or copy source excerpts,
@@ -271,9 +281,13 @@ export class DiagnosticRecorder {
       executionSummary,
     };
     try {
-      await mkdir(join(directory, "reports"), { recursive: true });
-      await rotateGeneralEvents(join(directory, "diagnostics.jsonl"));
-      await appendFile(join(directory, "diagnostics.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
+      // Serialize rotation and append per directory: concurrent records must
+      // never interleave a rotation rewrite with appends (AUD-024).
+      await this.serial(`general:${directory}`, async () => {
+        await mkdir(join(directory, "reports"), { recursive: true });
+        await rotateGeneralEvents(join(directory, "diagnostics.jsonl"), this.generalEventsLimit, this.generalBytesLimit);
+        await appendFile(join(directory, "diagnostics.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
+      });
       let capturePersistenceError: string | undefined;
       if (input.diagnosticRunRef && workRef) {
         try { await this.appendCaptureEvent(workRef, input.diagnosticRunRef, event, input.input, input.output); }
@@ -472,11 +486,11 @@ async function directorySize(path: string): Promise<number> {
   return total;
 }
 
-async function rotateGeneralEvents(path: string): Promise<void> {
+async function rotateGeneralEvents(path: string, maxEvents: number, maxBytes: number): Promise<void> {
   const size = await fileSize(path);
   const events = await readJsonLines(path);
-  if (size < MAX_GENERAL_BYTES && events.length < MAX_GENERAL_EVENTS) return;
-  const retained = events.slice(-Math.floor(MAX_GENERAL_EVENTS / 2));
+  if (size < maxBytes && events.length < maxEvents) return;
+  const retained = events.slice(-Math.floor(maxEvents / 2));
   await atomicWrite(path, retained.map(event => JSON.stringify(event)).join("\n") + (retained.length ? "\n" : ""));
 }
 

@@ -10,7 +10,7 @@
 |---|---|
 | `baseline.test.ts` | M0 基线：整书 166 Token、10/10 事实召回、证据覆盖 100%、61.24% 降幅 |
 | `benchmark.test.ts` | 30 个机器可读基准任务的确定性门禁 |
-| `diagnostics.test.ts` | 诊断链：脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用、不可持久化降级、AUD-023 开发捕获有界命中 ref/score/locator 哈希（不存正文） |
+| `diagnostics.test.ts` | 诊断链：脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用、不可持久化降级、AUD-023 开发捕获有界命中 ref/score/locator 哈希（不存正文）、AUD-024 general JSONL 串行轮转/并发不丢不乱/写失败降级 |
 | `epub.test.ts` | EPUB：正常双章节 spine、OPF 属性顺序变化、元数据标题、封面过滤、跨 spine 续章、单作品多 EPUB 引用隔离、损坏 ZIP/缺 container/缺 OPF/无可读 spine 四类失败 |
 | `explore-bfs.test.ts` | 0~3 跳 BFS、fan-out/全局上限、逐边 pathEvidence、截断 |
 | `generic-txt.test.ts` | TXT：GBK/GB18030 解码、章节切分、章节编号重置推断新卷、原始文件行号偏移 |
@@ -43,6 +43,7 @@
 - MCP stdio：枚举五工具，顺序调用 resolve/index/explore/context/diagnose，确认所有成功/失败响应均经过诊断 hook 并验证结构化错误信封。
 - 诊断链：默认元数据脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用、不可持久化降级。
 - AUD-023：开发捕获事件保存有界 `outputHits`（命中 ref/kind/sourceKind/score + locator 哈希、omitted 原因、候选 workRef，各列上限 100），正文/标题/路径不入捕获；通用 JSONL 与逐调用报告仍只保存数量。
+- AUD-024：general JSONL 的轮转检查与追加在同一按目录串行队列内执行，注入小容量上限验证轮转保留最新半数、并发 20 条记录不丢不乱且保持提交顺序、写失败降级为 persistence=failed 不替换业务结果。
 
 ### 检索正确性（M3）
 

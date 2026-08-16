@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
@@ -90,6 +90,55 @@ describe("diagnostic recorder", () => {
       const contextCall = artifact.calls.find(call => call.tool === "writing_context");
       expect(contextCall?.outputHits?.blocks?.[0]).toMatchObject({ ref: "entity:character:yu", sourceKind: "native", layer: "L0", tokens: 40, required: true });
       expect(contextCall?.outputHits?.omitted?.[0]).toMatchObject({ ref: "span:missing", reason: "not_found", tokens: 0 });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("general JSONL rotation keeps a bounded event count under the injected limit", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-diagnostics-rotation-"));
+    const workRef = "work:test";
+    const recorder = new DiagnosticRecorder(ref => ref === workRef ? join(root, "diagnostics") : undefined, { generalEvents: 8 });
+    try {
+      for (let index = 0; index < 12; index++) {
+        await recorder.record({ traceId: `trace-${index}`, tool: "writing_explore", input: { workRef, operation: "search" }, output: { workRef, revision: 1, freshness: "fresh", operation: "search", results: [] }, elapsedMs: 1 });
+      }
+      const lines = (await readFile(join(root, "diagnostics", "diagnostics.jsonl"), "utf8")).split(/\r?\n/).filter(line => line.length > 0);
+      expect(lines.length).toBeLessThanOrEqual(8);
+      expect(lines.map(line => JSON.parse(line) as { traceId: string }).map(event => event.traceId)).toContain("trace-11");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("concurrent records serialize general JSONL writes without loss or corruption", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-diagnostics-concurrency-"));
+    const workRef = "work:test";
+    const recorder = new DiagnosticRecorder(ref => ref === workRef ? join(root, "diagnostics") : undefined, { generalEvents: 8 });
+    try {
+      const diagnostics = await Promise.all(Array.from({ length: 20 }, (_, index) => recorder.record({ traceId: `trace-${index}`, tool: "writing_explore", input: { workRef, operation: "search" }, output: { workRef, revision: 1, freshness: "fresh", operation: "search", results: [] }, elapsedMs: 1 })));
+      expect(diagnostics.map(item => item.persistence)).toEqual(Array.from({ length: 20 }, () => "persisted"));
+      const lines = (await readFile(join(root, "diagnostics", "diagnostics.jsonl"), "utf8")).split(/\r?\n/).filter(line => line.length > 0);
+      const traceIds = lines.map(line => (JSON.parse(line) as { traceId: string }).traceId);
+      expect(new Set(traceIds).size).toBe(traceIds.length);
+      expect(traceIds.length).toBeLessThanOrEqual(8);
+      // Serialization preserves submission order; the last submitted event survives rotation.
+      expect(traceIds.at(-1)).toBe("trace-19");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("general JSONL write failure degrades to a failed persistence report", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-diagnostics-writefail-"));
+    const workRef = "work:test";
+    // Make diagnostics.jsonl a directory so every write to it fails deterministically.
+    await mkdir(join(root, "diagnostics", "diagnostics.jsonl"), { recursive: true });
+    const recorder = new DiagnosticRecorder(ref => ref === workRef ? join(root, "diagnostics") : undefined);
+    try {
+      const diagnostic = await recorder.record({ traceId: "trace-fail", tool: "writing_explore", input: { workRef }, output: { workRef, revision: 1 }, elapsedMs: 1 });
+      expect(diagnostic).toMatchObject({ outcome: "success", persistence: "failed" });
+      expect(diagnostic.persistenceError).toBeTruthy();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

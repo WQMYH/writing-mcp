@@ -160,6 +160,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Each hit list is capped at 100 entries. Titles, excerpts, paths, and locator content itself never enter this view; locators are observable only through their hash.
 - The general JSONL history, per-call reports, usage-mode inspect, and the `PostCallDiagnostic` returned to callers are unchanged (counts only). This amendment adds detail to development captures only.
 
+### M0.1 general JSONL serialization amendment (2026-08-16)
+
+- Every append to the general `diagnostics.jsonl` history runs inside a per-directory serial queue together with its rotation check; concurrent records can no longer interleave a rotation rewrite with appends, lose events, or produce interleaved lines.
+- Rotation limits (1,000 events / 5 MiB by default) remain unchanged in production and are injectable for tests; rotation still retains the newest half of events.
+- A general-history write failure still never replaces a successful business result: persistence degrades to `failed` with a `persistenceError` code in the returned diagnostic.
+
 ## Benchmark gate
 
 - Dataset: `benchmarks/m0.json`, exactly 30 machine-readable tasks.
