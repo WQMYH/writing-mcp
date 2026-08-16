@@ -63,6 +63,13 @@ Moving a work or document intentionally changes its reference. Editing content w
 - Extending any frozen set requires a new M0 contract amendment first.
 - The wire format is unchanged: `capabilities` remains an array of strings in every response, and `EntityKind` gains `OutlineNode`, which indexing already produced before this amendment.
 
+### M3 timeline target-chapter and reserved context inputs amendment (2026-08-16)
+
+- `writing_explore` accepts an optional `targetChapter` (integer, 1 to 1,000,000). It applies only to the `timeline` operation and is ignored by every other operation.
+- With `targetChapter`, the timeline projection keeps only temporal items valid at that 1-based chapter position: `valid_from_chapter` position is at most the anchor and `valid_to_chapter` position is at least the anchor. An absent `valid_from_chapter` means the book start; an absent `valid_to_chapter` means the book end. Items anchored to chapters that do not exist in the projection are never valid at a real anchor. Diagnostics report the anchor in `TIMELINE_PROJECTION` or `NO_RESULTS`.
+- `writing_context` accepts reserved inputs `targetChapter`, `entityRefs`, `documentRefs`, and `excludeRefs`, and its description marks them and `taskType` as reserved: they are validated but do not change assembly until the M4 amendment. No packet shape, status, or estimator changes here.
+- This amendment supersedes the chapter-tense filtering deferral recorded in the M3 query-correctness amendment.
+
 ## SQLite schema v1
 
 Required tables: `metadata`, `revisions`, `documents`, `spans`, `spans_fts`, `entities`, `aliases`, `mentions`, `edges`, `unresolved_mentions`.

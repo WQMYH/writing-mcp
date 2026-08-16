@@ -60,7 +60,7 @@ pnpm start
 | M0.1 | 补强中 | 全工具诊断 wrapper、显式 capture、脱敏与报告哈希 | AUD-023～025：有界证据 ref、general 并发轮转、协议层错误边界 |
 | M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB、跨 spine 分段 locator | AUD-026～030：作品边界、格式与资源上限 |
 | M2 | ✅ 基础门禁完成 | SQLite/FTS5、schema v4、语义 snapshot、truthful status、revision/事务、原子替换、作品级串行/写锁、恢复、work/document 作用域身份、规范定义晋升、多 mention/关系证据、源顺序图 | 后续只随 M3/M4 查询语义做受控增强 |
-| M3 | 进行中 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限（query 2048 字符）、explore 执行时间上限（30s）、源指纹复用 store（未变化不重载）、0～3 跳 BFS 与逐边证据、BFS 逐层批量边查询与 locator 批量加载（AUD-020 主体）、timeline 独立确定性投影（AUD-015 主体）、图/能力词汇表冻结（AUD-022 主体） | 真实语料百万字/高 fan-out P95 门禁（待代表性语料）、章节时态过滤（待目标章节输入，AUD-012）、完整重排 |
+| M3 | 进行中 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限（query 2048 字符）、explore 执行时间上限（30s）、源指纹复用 store（未变化不重载）、0～3 跳 BFS 与逐边证据、BFS 逐层批量边查询与 locator 批量加载（AUD-020 主体）、timeline 独立确定性投影（AUD-015 主体）、图/能力词汇表冻结（AUD-022 主体）、timeline 章节时态过滤与 context reserved 参数标注（AUD-012 M3 范围） | 真实语料百万字/高 fan-out P95 门禁（待代表性语料）、完整重排 |
 | M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、requiredRefs 脱离 top-50 直接解析（AUD-005） | L0～L3 正式策略、tokenizer profile、任务类型/章节范围（AUD-012～014） |
 | M5 | 待开始（已有纵向切片） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归 | 真实 InkOS、更多 EPUB 2/3 变体、客户端安装与故障文档 |
 
@@ -70,13 +70,13 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
-- 19 个测试文件，覆盖：通用链路、MCP 协议与诊断、检索正确性（含 AUD-021 源复用）、上下文装配（AUD-005 requiredRefs 直接解析）、BFS 批量化护栏（AUD-020）、timeline 独立投影（AUD-015）、图/能力词汇表冻结（AUD-022）、基准与基线、私有语料（不入库）、TXT/EPUB/InkOS 适配器、路径安全、作品识别、索引生命周期与事实性（schema v4）、边界与原则。
+- 21 个测试文件，覆盖：通用链路、MCP 协议与诊断、检索正确性（含 AUD-021 源复用）、上下文装配（AUD-005 requiredRefs 直接解析）、BFS 批量化护栏（AUD-020）、timeline 独立投影（AUD-015）、图/能力词汇表冻结（AUD-022）、章节时态过滤与 reserved 参数（AUD-012）、基准与基线、私有语料（不入库）、TXT/EPUB/InkOS 适配器、路径安全、作品识别、索引生命周期与事实性（schema v4）、边界与原则。
 - 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制
 
-- `timeline` 已实现为携带时态属性实体与 precedes 时序边的确定性投影；基于目标章节的时态过滤待目标章节输入（AUD-012）落地后实现。
-- `taskType` 尚未改变上下文来源策略。
+- `timeline` 已实现为携带时态属性实体与 precedes 时序边的确定性投影，支持 targetChapter 章节时态过滤（AUD-012 M3 范围）；taskType 与 context 的 targetChapter/entityRefs/documentRefs/excludeRefs 仍为 reserved 输入，装配策略待 M4。
+- `taskType` 尚未改变上下文来源策略（已在工具描述中显式标注 reserved）。
 - 角色实体提取只覆盖角色类文档 heading；查询期仅提供透明的中文称呼形态扩展，尚无持久化别名解析。
 - EPUB 仍采用确定性轻量解析，尚未覆盖 DRM/加密、复杂命名空间、导航目录语义、脚注回链、图片内容和全部 EPUB 2/3 变体；内部章节切分目前依赖独占行的中英文编号标题。
 - `workRef` 只在当前 server 进程中注册；重启后客户端需重新调用 `writing_resolve`。
@@ -87,7 +87,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 ## 下一步
 
-继续 v2 Step 3 剩余子门禁：中文完整问句、别名/歧义/未解析引用、稳定排序、输入边界、FTS 降级语义已落地（`4030085`）；AUD-021 源指纹复用 store 与 AUD-018 执行时间上限已落地（`c376df7`）。REVIEW_2026-08-16 的唯一 P0 AUD-005（requiredRefs 直接解析）已落地并新增 5 项回归测试；P1 首项 AUD-020 主体已落地：BFS 逐层批量边查询（CTE frontier + ROW_NUMBER 每节点 fan-out 封顶）与 locator/span 批量加载，语义（fan-out 64、全局 512、逐边证据、确定性排序）不变，新增 2 项宽图护栏测试；真实语料百万字 P95 门禁待代表性语料可得后补。AUD-015 主体已落地：timeline 为携带时态属性实体与 precedes 边的确定性投影（章节位置排序，新增 TIMELINE_PROJECTION 诊断），章节时态过滤待目标章节输入。AUD-022 主体已落地：确定性可抽取词汇表冻结为 ENTITY_KINDS/EDGE_KINDS/WORK_CAPABILITIES（EntityKind 补入 OutlineNode，新增 EdgeKind/WorkCapability 类型，capabilities 类型收窄），未实现关系不作为已有能力（M0_CONTRACT 新增 M3 graph vocabulary freeze amendment）。下一子门禁：AUD-012 参数接线/reserved 标注、候选统计校准与完整重排。M4 剩余：taskType/目标与排除引用（AUD-012）、L0～L3 语义分层与去重（AUD-013）、tokenizer profile（AUD-014）。status 的 mtime/size 快速路径（不牺牲语义 snapshot）仍待实现。
+继续 v2 Step 3 剩余子门禁：中文完整问句、别名/歧义/未解析引用、稳定排序、输入边界、FTS 降级语义已落地（`4030085`）；AUD-021 源指纹复用 store 与 AUD-018 执行时间上限已落地（`c376df7`）。REVIEW_2026-08-16 的唯一 P0 AUD-005（requiredRefs 直接解析）已落地并新增 5 项回归测试；P1 首项 AUD-020 主体已落地：BFS 逐层批量边查询（CTE frontier + ROW_NUMBER 每节点 fan-out 封顶）与 locator/span 批量加载，语义（fan-out 64、全局 512、逐边证据、确定性排序）不变，新增 2 项宽图护栏测试；真实语料百万字 P95 门禁待代表性语料可得后补。AUD-015 主体已落地：timeline 为携带时态属性实体与 precedes 边的确定性投影（章节位置排序，新增 TIMELINE_PROJECTION 诊断），章节时态过滤待目标章节输入。AUD-022 主体已落地：确定性可抽取词汇表冻结为 ENTITY_KINDS/EDGE_KINDS/WORK_CAPABILITIES（EntityKind 补入 OutlineNode，新增 EdgeKind/WorkCapability 类型，capabilities 类型收窄），未实现关系不作为已有能力（M0_CONTRACT 新增 M3 graph vocabulary freeze amendment）。AUD-012 M3 范围已落地（按用户里程碑优先路线，M4 深水区延后）：writing_explore 新增可选 targetChapter，timeline 投影按 from ≤ 锚点 ≤ to 做章节时态过滤（无界 from/to 视为书首/书尾）；writing_context 新增 reserved 输入 targetChapter/entityRefs/documentRefs/excludeRefs 且描述显式标注 taskType 等参数 reserved（接收验证、不改变装配，M0_CONTRACT 新增对应 amendment）。下一子门禁：批次 B（M0.1：AUD-023～025 诊断契约补强），随后批次 C（M1：AUD-026～030、032、035）；候选统计校准与完整重排仍待。M4 剩余：taskType/目标与排除引用（AUD-012）、L0～L3 语义分层与去重（AUD-013）、tokenizer profile（AUD-014）。status 的 mtime/size 快速路径（不牺牲语义 snapshot）仍待实现。
 
 ## 可追溯提交清单
 

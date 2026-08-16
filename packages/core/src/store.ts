@@ -439,11 +439,11 @@ export class WritingStore {
 
   private counts(db=this.db!){const n=(t:string)=>asNumber((db.prepare(`SELECT COUNT(*) n FROM ${t}`).get() as Record<string,unknown>).n);return {documents:n("documents"),spans:n("spans"),entities:n("entities"),edges:n("edges")};}
 
-  async explore(operation:ExploreOperation,query="",limit=20,maxHops=2):Promise<ExploreResult>{if(query.length>2048)throw codedError("QUERY_TOO_LARGE","Query exceeds the 2048-character deterministic limit");const started=performance.now(),db=await this.open();const revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);limit=Math.max(1,Math.min(100,Math.trunc(limit)));maxHops=Math.max(0,Math.min(3,maxHops));let rows:Array<Record<string,unknown>>=[],ambiguousRows:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
+  async explore(operation:ExploreOperation,query="",limit=20,maxHops=2,targetChapter?:number):Promise<ExploreResult>{if(query.length>2048)throw codedError("QUERY_TOO_LARGE","Query exceeds the 2048-character deterministic limit");const started=performance.now(),db=await this.open();const revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);limit=Math.max(1,Math.min(100,Math.trunc(limit)));maxHops=Math.max(0,Math.min(3,maxHops));let rows:Array<Record<string,unknown>>=[],ambiguousRows:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
     if(operation==="stats"){const c=this.counts(db);rows=[{span_ref:"stats",heading:"Index statistics",content:json(c),relative_path:".writing-index",start_line:1,end_line:1,score:1,kind:"stats"}];}
     else if(operation==="entity"||operation==="neighborhood"){const lookup=this.entityRows(db,query,limit);rows=lookup.rows;ambiguousRows=lookup.ambiguous;diagnostics=lookup.diagnostics;}
     else if(operation==="document"){rows=db.prepare("SELECT s.span_ref,s.heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,1 score,d.kind FROM spans s JOIN documents d ON d.document_ref=s.document_ref WHERE d.relative_path LIKE ? OR d.title LIKE ? ORDER BY d.source_ordinal,s.ordinal,s.span_ref LIMIT ?").all(`%${query}%`,`%${query}%`,limit) as Array<Record<string,unknown>>;}
-    else if(operation==="timeline"){const timeline=this.timelineRows(db,query,limit);rows=timeline.rows;diagnostics=timeline.diagnostics;}
+    else if(operation==="timeline"){const timeline=this.timelineRows(db,query,limit,targetChapter);rows=timeline.rows;diagnostics=timeline.diagnostics;}
     else {const searched=this.searchRows(db,query,limit);rows=searched.rows;diagnostics=searched.diagnostics;}
     const locatorsBySpan=this.locatorMap(db,rows.map(row=>String(row.span_ref)));
     let results=rows.map(row=>this.item({...row,revision,locators:locatorsBySpan.get(String(row.span_ref))}));let visitedNodes=results.length,maxActualHops=0,omittedEstimate=0,truncated=false;
@@ -468,19 +468,24 @@ export class WritingStore {
     return map;
   }
 
-  private timelineRows(db:DatabaseSync,query:string,limit:number):{rows:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}
+  private timelineRows(db:DatabaseSync,query:string,limit:number,targetChapter?:number):{rows:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}
   {
     const diagnostics:ExploreResult["diagnostics"]=[];
     const chapterOrder=new Map<string,number>();
     const chapters=db.prepare("SELECT e.entity_ref FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.kind='Chapter' ORDER BY d.source_ordinal,s.ordinal,e.entity_ref").all() as Array<Record<string,unknown>>;
     chapters.forEach((row,index)=>chapterOrder.set(String(row.entity_ref),index));
     const position=(ref:unknown)=>ref==null?Number.MAX_SAFE_INTEGER:chapterOrder.get(String(ref))??Number.MAX_SAFE_INTEGER;
+    // Chapter-tense filtering (AUD-012): a temporal item is valid at the
+    // 1-based anchor when from <= anchor <= to; an unbounded from means the
+    // book start and an unbounded to means the book end.
+    const anchor=targetChapter==null?null:Math.max(1,Math.trunc(targetChapter))-1;
+    const validAtAnchor=(row:Record<string,unknown>)=>anchor==null||((row.valid_from_chapter==null?-1:position(row.valid_from_chapter))<=anchor&&(row.valid_to_chapter==null?Number.MAX_SAFE_INTEGER:position(row.valid_to_chapter))>=anchor);
     const normalized=query.normalize("NFKC").trim().toLowerCase(),temporal="(valid_from_chapter IS NOT NULL OR valid_to_chapter IS NOT NULL OR narrative_time IS NOT NULL)";
     const entityRows=db.prepare(`SELECT e.entity_ref ref,e.span_ref,e.name heading,e.kind,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.source_kind,e.confidence,e.revision,e.valid_from_chapter,e.valid_to_chapter,e.narrative_time FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE ${temporal} ORDER BY e.entity_ref`).all() as Array<Record<string,unknown>>;
     const edgeRows=db.prepare(`SELECT e.edge_ref ref,e.span_ref,e.kind||': '||COALESCE(sn.name,e.source_ref)||' → '||COALESCE(tn.name,e.target_ref) heading,e.kind||'-relation' kind,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.source_kind,e.confidence,e.revision,e.valid_from_chapter,e.valid_to_chapter,e.narrative_time FROM edges e LEFT JOIN entities sn ON sn.entity_ref=e.source_ref LEFT JOIN entities tn ON tn.entity_ref=e.target_ref JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.kind='precedes' ORDER BY e.edge_ref`).all() as Array<Record<string,unknown>>;
-    const merged=[...entityRows,...edgeRows].filter(row=>!normalized||String(row.heading).toLowerCase().includes(normalized)).sort((left,right)=>position(left.valid_from_chapter)-position(right.valid_from_chapter)||position(left.valid_to_chapter)-position(right.valid_to_chapter)||compareText(String(left.narrative_time??""),String(right.narrative_time??""))||compareText(String(left.ref),String(right.ref)));
-    if(!merged.length)diagnostics.push({code:"NO_RESULTS",message:"No entity or relation carries temporal attributes (valid_from_chapter, valid_to_chapter, or narrative_time)"});
-    else diagnostics.push({code:"TIMELINE_PROJECTION",message:`Timeline projected ${merged.length} temporal item(s) ordered by chapter position, then narrative time, then reference`});
+    const merged=[...entityRows,...edgeRows].filter(row=>validAtAnchor(row)&&(!normalized||String(row.heading).toLowerCase().includes(normalized))).sort((left,right)=>position(left.valid_from_chapter)-position(right.valid_from_chapter)||position(left.valid_to_chapter)-position(right.valid_to_chapter)||compareText(String(left.narrative_time??""),String(right.narrative_time??""))||compareText(String(left.ref),String(right.ref)));
+    if(!merged.length)diagnostics.push({code:"NO_RESULTS",message:anchor==null?"No entity or relation carries temporal attributes (valid_from_chapter, valid_to_chapter, or narrative_time)":`No temporal item is valid at target chapter ${anchor+1}`});
+    else diagnostics.push({code:"TIMELINE_PROJECTION",message:anchor==null?`Timeline projected ${merged.length} temporal item(s) ordered by chapter position, then narrative time, then reference`:`Timeline projected ${merged.length} temporal item(s) valid at target chapter ${anchor+1}, ordered by chapter position, then narrative time, then reference`});
     return{rows:merged.slice(0,limit),diagnostics};
   }
 

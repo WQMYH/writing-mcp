@@ -69,9 +69,9 @@ export class WritingService {
     await this.indexUnlocked(workRef,"incremental");
   }
   async index(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{return this.serial(workRef,async()=>{const result=await this.indexUnlocked(workRef,mode);if(mode!=="status"){const candidate=this.works.get(workRef);if(candidate)this.fingerprints.set(workRef,await this.sourceFingerprint(candidate));}return result;});}
-  async explore(workRef:string,operation:ExploreOperation,query="",limit=20,maxHops=2):Promise<ExploreResult>{
+  async explore(workRef:string,operation:ExploreOperation,query="",limit=20,maxHops=2,targetChapter?:number):Promise<ExploreResult>{
     const started=performance.now();
-    const result=await this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).explore(operation,query,limit,maxHops);});
+    const result=await this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).explore(operation,query,limit,maxHops,targetChapter);});
     const elapsedMs=performance.now()-started;
     if(elapsedMs>EXPLORE_TIME_LIMIT_MS)throw Object.assign(new Error(`Explore exceeded the ${EXPLORE_TIME_LIMIT_MS}ms deterministic time limit (took ${Math.trunc(elapsedMs)}ms)`),{code:"EXPLORE_TIME_LIMIT_EXCEEDED"});
     return result;
