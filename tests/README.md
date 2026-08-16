@@ -30,6 +30,7 @@
 | `timeline-tense-filter.test.ts` | AUD-012 章节时态过滤：targetChapter 锚点只保留当时态有效的实体/边（无界 from/to 视为书首/书尾）、锚点外章节排除、与名称过滤组合、重复运行确定性 |
 | `context-reserved-params.test.ts` | AUD-012 stdio 契约：explore schema 暴露 targetChapter 且锚定 timeline 排除锚点外章节实体；context schema 接收 reserved 的 targetChapter/entityRefs/documentRefs/excludeRefs 且描述标注 reserved |
 | `search-source-trust.test.ts` | AUD-012 残留（M3 期）source-trust 排序因子：命中查询词的 deterministic 行获 +0.25 信任加分，反超原始分更高的 alias-only heuristic 行，重复运行确定性 |
+| `protocol-boundary.test.ts` | AUD-025 协议错误边界：数据 schema 单一真相源、输出失配记 failure 并返回 OUTPUT_SCHEMA_MISMATCH 一致信封、正常路径无协议错误、SDK 输入拒绝裸文本且无诊断记录、协议层未知消息经 onerror 上报 |
 
 ## 覆盖清单（按能力域）
 
@@ -44,6 +45,7 @@
 - 诊断链：默认元数据脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用、不可持久化降级。
 - AUD-023：开发捕获事件保存有界 `outputHits`（命中 ref/kind/sourceKind/score + locator 哈希、omitted 原因、候选 workRef，各列上限 100），正文/标题/路径不入捕获；通用 JSONL 与逐调用报告仍只保存数量。
 - AUD-024：general JSONL 的轮转检查与追加在同一按目录串行队列内执行，注入小容量上限验证轮转保留最新半数、并发 20 条记录不丢不乱且保持提交顺序、写失败降级为 persistence=failed 不替换业务结果。
+- AUD-025：输出 data schema 是注册信封与 wrapper 自校验的单一真相源；wrapper 记录前自校验失配抛出 `OUTPUT_SCHEMA_MISMATCH`（记 failure + isError 一致信封 + 专用 recovery）；正常 in-process 调用无协议错误；SDK 输入拒绝返回裸 isError 文本、不产生诊断记录且不写 stderr；协议层未知消息类型经注入的 onerror 上报。
 
 ### 检索正确性（M3）
 

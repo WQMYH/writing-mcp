@@ -166,6 +166,14 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Rotation limits (1,000 events / 5 MiB by default) remain unchanged in production and are injectable for tests; rotation still retains the newest half of events.
 - A general-history write failure still never replaces a successful business result: persistence degrades to `failed` with a `persistenceError` code in the returned diagnostic.
 
+### M0.1 protocol error boundary amendment (2026-08-17)
+
+- Each tool's declared output data schema is the single source of truth: the registered `outputSchema` envelope and the server-side self-validation inside the diagnostic wrapper are built from the same exported data schema, so the two can never drift.
+- Before recording a success, the wrapper self-validates the business result against that data schema. A mismatch raises the new stable error code `OUTPUT_SCHEMA_MISMATCH`, is recorded as a `failure` diagnostic, and is returned as the standard failure envelope with `isError: true`. This keeps the envelope and the SDK's own post-handler output validation consistent; a caller can never observe a recorded success that the protocol layer would reject.
+- `OUTPUT_SCHEMA_MISMATCH` is a server-side contract defect indicator, never a caller error; its `recovery` instructs reporting the traceId and retrying after a server update. It is additive: no existing code, envelope shape, or schema changes.
+- Observation boundary: SDK-level input rejections (invalid arguments) happen before any tool handler runs, so they are outside the `mcp_calls_only` observation scope by definition. They return the SDK's bare error result (`isError: true`, no `structuredContent`) and must not produce any diagnostic record.
+- Protocol/transport-layer errors that never reach a tool handler (unknown message types, transport failures) surface through an injected `onerror` hook; the stdio entrypoint logs them to stderr prefixed `[writing-mcp][protocol]`. stderr is the only observability exit for this layer; MCP stdout remains reserved for protocol messages.
+
 ## Benchmark gate
 
 - Dataset: `benchmarks/m0.json`, exactly 30 machine-readable tasks.

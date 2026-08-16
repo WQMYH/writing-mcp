@@ -19,14 +19,21 @@ const postCallDiagnosticSchema = z.object({
   workRef: z.string().optional(), revision: z.number().optional(), persistence: z.enum(["persisted", "skipped", "failed"]), artifactRef: z.string().optional(), artifactPath: z.string().optional(), artifactSha256: z.string().optional(), persistenceError: z.string().optional(), executionSummary: executionSummarySchema,
 });
 const errorSchema = z.object({ code: z.string(), message: z.string(), traceId: z.string(), recovery: z.string().optional() });
-const envelope = <T extends z.ZodType>(data: T) => z.object({ result: z.discriminatedUnion("ok", [z.object({ ok: z.literal(true), data, diagnostic: postCallDiagnosticSchema }), z.object({ ok: z.literal(false), error: errorSchema, diagnostic: postCallDiagnosticSchema })]) });
-const resolveSchema = envelope(z.object({ status: z.enum(["resolved", "ambiguous", "unsupported"]), workRef: z.string().optional(), candidates: z.array(candidateSchema), diagnostics: z.array(sourceDiagnosticSchema) }));
-const indexSchema = envelope(z.object({ workRef: z.string(), revision: z.number(), schemaVersion: z.number(), freshness: z.enum(["fresh", "stale", "missing", "incompatible"]), stats: z.object({ added: z.number(), updated: z.number(), deleted: z.number(), skipped: z.number(), documents: z.number(), spans: z.number(), entities: z.number(), edges: z.number() }), diagnostics: z.array(sourceDiagnosticSchema), elapsedMs: z.number() }));
-const exploreSchema = envelope(z.object({ workRef: z.string(), revision: z.number(), freshness: z.literal("fresh"), operation: z.enum(["search", "entity", "neighborhood", "timeline", "document", "stats"]), results: z.array(itemSchema), ambiguous: z.array(itemSchema), truncated: z.boolean(), metrics: z.object({ candidateCount: z.number(), returnedCount: z.number(), visitedNodes: z.number(), maxActualHops: z.number(), omittedEstimate: z.number(), elapsedMs: z.number() }), diagnostics: z.array(sourceDiagnosticSchema) }));
-const contextSchema = envelope(z.object({ status: z.enum(["complete", "truncated", "budget_unsatisfiable"]), workRef: z.string(), revision: z.number(), budgetTokens: z.number(), usedTokens: z.number(), estimated: z.boolean(), estimator: z.string(), blocks: z.array(itemSchema.extend({ layer: z.enum(["L0", "L1", "L2", "L3"]), tokens: z.number(), required: z.boolean() })), omitted: z.array(z.object({ ref: z.string(), reason: z.string(), tokens: z.number() })), diagnostics: z.array(sourceDiagnosticSchema) }));
-const diagnoseSchema = envelope(z.object({
+// AUD-025: tool data schemas are exported so registerTool outputSchema and the
+// handleDiagnosed self-validation share one source of truth (no second copy).
+export const TOOL_RESOLVE_DATA_SCHEMA = z.object({ status: z.enum(["resolved", "ambiguous", "unsupported"]), workRef: z.string().optional(), candidates: z.array(candidateSchema), diagnostics: z.array(sourceDiagnosticSchema) });
+export const TOOL_INDEX_DATA_SCHEMA = z.object({ workRef: z.string(), revision: z.number(), schemaVersion: z.number(), freshness: z.enum(["fresh", "stale", "missing", "incompatible"]), stats: z.object({ added: z.number(), updated: z.number(), deleted: z.number(), skipped: z.number(), documents: z.number(), spans: z.number(), entities: z.number(), edges: z.number() }), diagnostics: z.array(sourceDiagnosticSchema), elapsedMs: z.number() });
+export const TOOL_EXPLORE_DATA_SCHEMA = z.object({ workRef: z.string(), revision: z.number(), freshness: z.literal("fresh"), operation: z.enum(["search", "entity", "neighborhood", "timeline", "document", "stats"]), results: z.array(itemSchema), ambiguous: z.array(itemSchema), truncated: z.boolean(), metrics: z.object({ candidateCount: z.number(), returnedCount: z.number(), visitedNodes: z.number(), maxActualHops: z.number(), omittedEstimate: z.number(), elapsedMs: z.number() }), diagnostics: z.array(sourceDiagnosticSchema) });
+export const TOOL_CONTEXT_DATA_SCHEMA = z.object({ status: z.enum(["complete", "truncated", "budget_unsatisfiable"]), workRef: z.string(), revision: z.number(), budgetTokens: z.number(), usedTokens: z.number(), estimated: z.boolean(), estimator: z.string(), blocks: z.array(itemSchema.extend({ layer: z.enum(["L0", "L1", "L2", "L3"]), tokens: z.number(), required: z.boolean() })), omitted: z.array(z.object({ ref: z.string(), reason: z.string(), tokens: z.number() })), diagnostics: z.array(sourceDiagnosticSchema) });
+export const TOOL_DIAGNOSE_DATA_SCHEMA = z.object({
   action: z.enum(["inspect", "start_capture", "finish_capture"]), workRef: z.string(), purpose: z.enum(["usage", "development"]), status: z.enum(["healthy", "degraded"]).optional(), eventHistoryAvailable: z.boolean().optional(), recentEvents: z.array(z.unknown()).optional(), diagnosticsDirectory: z.string().optional(), observationScope: z.literal("mcp_calls_only").optional(), diagnosticRunRef: z.string().optional(), contentPolicy: z.enum(["metadata", "query"]).optional(), limits: z.object({ calls: z.number(), bytes: z.number() }).optional(), formats: z.array(z.enum(["json", "markdown"])).optional(), artifactRef: z.string().optional(), artifactPath: z.string().optional(), schemaVersion: z.number().optional(), sha256: z.string().optional(), calls: z.number().optional(), failures: z.number().optional(), truncated: z.boolean().optional(), index: z.object({ revision: z.number(), freshness: z.string(), documents: z.number(), spans: z.number(), entities: z.number(), edges: z.number() }).optional(),
-}));
+});
+const envelope = <T extends z.ZodType>(data: T) => z.object({ result: z.discriminatedUnion("ok", [z.object({ ok: z.literal(true), data, diagnostic: postCallDiagnosticSchema }), z.object({ ok: z.literal(false), error: errorSchema, diagnostic: postCallDiagnosticSchema })]) });
+const resolveSchema = envelope(TOOL_RESOLVE_DATA_SCHEMA);
+const indexSchema = envelope(TOOL_INDEX_DATA_SCHEMA);
+const exploreSchema = envelope(TOOL_EXPLORE_DATA_SCHEMA);
+const contextSchema = envelope(TOOL_CONTEXT_DATA_SCHEMA);
+const diagnoseSchema = envelope(TOOL_DIAGNOSE_DATA_SCHEMA);
 
 type ToolInput = Record<string, unknown>;
 
@@ -54,6 +61,7 @@ function recoveryFor(code: string): string {
   if (code === "INDEX_BUSY") return "Wait for the other index writer or close the process holding the SQLite index, then retry.";
   if (code.startsWith("DIAGNOSTIC_")) return "Start a new development capture or remove old derived diagnostic reports, then retry.";
   if (code === "PATH_NOT_ALLOWED" || code === "AUTHORIZED_ROOTS_REQUIRED") return "Check WRITING_MCP_ROOTS and use a source inside an authorized root.";
+  if (code === "OUTPUT_SCHEMA_MISMATCH") return "This is a server-side contract defect, not a caller error; report the traceId and retry after the server is updated.";
   return "Check the tool arguments and related work reference, then retry.";
 }
 
@@ -63,13 +71,17 @@ function recoveryFor(code: string): string {
  * report to the response. Do not register a handler that calls business logic
  * directly; doing so would make real user call chains invisible to diagnostics.
  */
-async function handleDiagnosed(recorder: DiagnosticRecorder, tool: string, input: ToolInput, action: () => Promise<unknown>, correlationRef?: string) {
+async function handleDiagnosed(recorder: DiagnosticRecorder, tool: string, input: ToolInput, action: () => Promise<unknown>, dataSchema: z.ZodType, correlationRef?: string) {
   const traceId = recorder.newTraceId();
   const started = performance.now();
   try {
     const workRef = typeof input.workRef === "string" ? input.workRef : undefined;
     if (correlationRef && workRef) await recorder.assertCaptureActive(workRef, correlationRef);
     const value = await action() as Record<string, unknown>;
+    // AUD-025: self-validate against the shared data schema before recording;
+    // otherwise the SDK's post-handler output validation could reject a result
+    // that diagnostics already recorded as success.
+    if (!dataSchema.safeParse(value).success) throw Object.assign(new Error(`${tool} produced a result that does not match its declared output data schema`), { code: "OUTPUT_SCHEMA_MISMATCH" });
     const diagnostic = await recorder.record({ traceId, tool, input, output: value, elapsedMs: performance.now() - started, ...(correlationRef ? { diagnosticRunRef: correlationRef } : {}) });
     return success(value, diagnostic);
   } catch (error) {
@@ -79,14 +91,21 @@ async function handleDiagnosed(recorder: DiagnosticRecorder, tool: string, input
   }
 }
 
-export function createServer(service = createService(), recorder = new DiagnosticRecorder(workRef => service.diagnosticDirectory(workRef))) {
+export interface ServerOptions {
+  /** Observability boundary (AUD-025): protocol/transport-layer errors that never reach a tool handler. */
+  readonly onerror?: (error: Error) => void;
+}
+
+export function createServer(service = createService(), recorder = new DiagnosticRecorder(workRef => service.diagnosticDirectory(workRef)), options?: ServerOptions) {
   const server = new McpServer({ name: "writing-mcp", version: "0.1.0" });
+  // onerror lives on the underlying low-level Server (Protocol), not on the McpServer wrapper.
+  if (options?.onerror) server.server.onerror = options.onerror;
   const diagnosticRunRef = (input: ToolInput): string | undefined => typeof input.diagnosticRunRef === "string" ? input.diagnosticRunRef : undefined;
 
-  server.registerTool("writing_resolve", { description: "Resolve an InkOS or generic writing source to a stable work reference. Every call returns and persists a diagnostic report.", inputSchema: { sourcePath: z.string(), adapterHint: z.enum(["inkos", "generic"]).optional(), diagnosticRunRef: z.string().optional() }, outputSchema: resolveSchema }, input => handleDiagnosed(recorder, "writing_resolve", input, () => service.resolve(input.sourcePath, input.adapterHint), diagnosticRunRef(input)));
-  server.registerTool("writing_index", { description: "Inspect, incrementally update, or rebuild a work's derived index. Every call returns and persists a diagnostic report.", inputSchema: { workRef: z.string(), mode: z.enum(["status", "incremental", "rebuild"]), diagnosticRunRef: z.string().optional() }, outputSchema: indexSchema }, input => handleDiagnosed(recorder, "writing_index", input, () => service.index(input.workRef, input.mode), diagnosticRunRef(input)));
-  server.registerTool("writing_explore", { description: "Search or explore the indexed writing graph with bounded results. Use search before entity/neighborhood when no stable entityRef is known. targetChapter anchors the timeline projection to a 1-based chapter position and is ignored by other operations. Every call returns and persists a diagnostic report.", inputSchema: { workRef: z.string(), operation: z.enum(["search", "entity", "neighborhood", "timeline", "document", "stats"]), query: z.string().max(2048).optional(), maxHops: z.number().int().min(0).max(3).default(2), limit: z.number().int().min(1).max(100).default(20), targetChapter: z.number().int().min(1).max(1_000_000).optional(), diagnosticRunRef: z.string().optional() }, outputSchema: exploreSchema }, input => handleDiagnosed(recorder, "writing_explore", input, () => service.explore(input.workRef, input.operation, input.query, input.limit, input.maxHops, input.targetChapter), diagnosticRunRef(input)));
-  server.registerTool("writing_context", { description: "Build an evidence-backed context packet within a token budget; this tool assembles context and does not answer a factual question by itself. taskType is reserved: it is accepted and validated but does not change assembly yet. targetChapter, entityRefs, documentRefs, and excludeRefs are reserved inputs: they are accepted and validated but do not change assembly yet. Every call returns and persists a diagnostic report.", inputSchema: { workRef: z.string(), taskType: z.enum(["continue_chapter", "draft_chapter", "revise", "answer", "custom"]), query: z.string().max(2048), budgetTokens: z.number().int().min(1).max(1_000_000), requiredRefs: z.array(z.string().max(256)).max(128).default([]), targetChapter: z.number().int().min(1).max(1_000_000).optional(), entityRefs: z.array(z.string().max(256)).max(128).optional(), documentRefs: z.array(z.string().max(256)).max(128).optional(), excludeRefs: z.array(z.string().max(256)).max(128).optional(), diagnosticRunRef: z.string().optional() }, outputSchema: contextSchema }, input => handleDiagnosed(recorder, "writing_context", input, () => service.context(input.workRef, input.query, input.budgetTokens, input.requiredRefs), diagnosticRunRef(input)));
+  server.registerTool("writing_resolve", { description: "Resolve an InkOS or generic writing source to a stable work reference. Every call returns and persists a diagnostic report.", inputSchema: { sourcePath: z.string(), adapterHint: z.enum(["inkos", "generic"]).optional(), diagnosticRunRef: z.string().optional() }, outputSchema: resolveSchema }, input => handleDiagnosed(recorder, "writing_resolve", input, () => service.resolve(input.sourcePath, input.adapterHint), TOOL_RESOLVE_DATA_SCHEMA, diagnosticRunRef(input)));
+  server.registerTool("writing_index", { description: "Inspect, incrementally update, or rebuild a work's derived index. Every call returns and persists a diagnostic report.", inputSchema: { workRef: z.string(), mode: z.enum(["status", "incremental", "rebuild"]), diagnosticRunRef: z.string().optional() }, outputSchema: indexSchema }, input => handleDiagnosed(recorder, "writing_index", input, () => service.index(input.workRef, input.mode), TOOL_INDEX_DATA_SCHEMA, diagnosticRunRef(input)));
+  server.registerTool("writing_explore", { description: "Search or explore the indexed writing graph with bounded results. Use search before entity/neighborhood when no stable entityRef is known. targetChapter anchors the timeline projection to a 1-based chapter position and is ignored by other operations. Every call returns and persists a diagnostic report.", inputSchema: { workRef: z.string(), operation: z.enum(["search", "entity", "neighborhood", "timeline", "document", "stats"]), query: z.string().max(2048).optional(), maxHops: z.number().int().min(0).max(3).default(2), limit: z.number().int().min(1).max(100).default(20), targetChapter: z.number().int().min(1).max(1_000_000).optional(), diagnosticRunRef: z.string().optional() }, outputSchema: exploreSchema }, input => handleDiagnosed(recorder, "writing_explore", input, () => service.explore(input.workRef, input.operation, input.query, input.limit, input.maxHops, input.targetChapter), TOOL_EXPLORE_DATA_SCHEMA, diagnosticRunRef(input)));
+  server.registerTool("writing_context", { description: "Build an evidence-backed context packet within a token budget; this tool assembles context and does not answer a factual question by itself. taskType is reserved: it is accepted and validated but does not change assembly yet. targetChapter, entityRefs, documentRefs, and excludeRefs are reserved inputs: they are accepted and validated but do not change assembly yet. Every call returns and persists a diagnostic report.", inputSchema: { workRef: z.string(), taskType: z.enum(["continue_chapter", "draft_chapter", "revise", "answer", "custom"]), query: z.string().max(2048), budgetTokens: z.number().int().min(1).max(1_000_000), requiredRefs: z.array(z.string().max(256)).max(128).default([]), targetChapter: z.number().int().min(1).max(1_000_000).optional(), entityRefs: z.array(z.string().max(256)).max(128).optional(), documentRefs: z.array(z.string().max(256)).max(128).optional(), excludeRefs: z.array(z.string().max(256)).max(128).optional(), diagnosticRunRef: z.string().optional() }, outputSchema: contextSchema }, input => handleDiagnosed(recorder, "writing_context", input, () => service.context(input.workRef, input.query, input.budgetTokens, input.requiredRefs), TOOL_CONTEXT_DATA_SCHEMA, diagnosticRunRef(input)));
   server.registerTool("writing_diagnose", { description: "Inspect MCP effects or explicitly capture a development call chain. It never repairs an index or evaluates prose quality.", inputSchema: { action: z.enum(["inspect", "start_capture", "finish_capture"]).default("inspect"), workRef: z.string(), purpose: z.enum(["usage", "development"]).default("usage"), diagnosticRunRef: z.string().optional(), label: z.string().max(80).optional(), contentPolicy: z.enum(["metadata", "query"]).default("metadata"), formats: z.array(z.enum(["json", "markdown"])).default(["json"]), limit: z.number().int().min(1).max(100).default(20) }, outputSchema: diagnoseSchema }, input => {
     const action = input.action;
     const runRef = action === "inspect" ? input.diagnosticRunRef : undefined;
@@ -103,14 +122,16 @@ export function createServer(service = createService(), recorder = new Diagnosti
       const index = await service.index(input.workRef, "status");
       const inspected = await recorder.inspect(input.workRef, input.purpose, input.limit);
       return { ...inspected, index: { revision: index.revision, freshness: index.freshness, documents: index.stats.documents, spans: index.stats.spans, entities: index.stats.entities, edges: index.stats.edges } };
-    }, runRef);
+    }, TOOL_DIAGNOSE_DATA_SCHEMA, runRef);
   });
   return server;
 }
 
 export async function runStdio(): Promise<void> {
   const service = createService();
-  const server = createServer(service);
+  // stderr is the only observability exit for protocol-layer errors (AUD-025):
+  // SDK input rejections and handler-level failures stay in the MCP envelope.
+  const server = createServer(service, undefined, { onerror: error => console.error(`[writing-mcp][protocol] ${error instanceof Error ? error.stack ?? error.message : String(error)}`) });
   const close = () => service.close();
   process.once("SIGINT", close); process.once("SIGTERM", close); process.once("exit", close);
   await server.connect(new StdioServerTransport());
