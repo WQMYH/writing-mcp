@@ -23,6 +23,7 @@
 | `resolve-matrix.test.ts` | 作品识别矩阵：空目录、不支持扩展名、多书歧义、同目录直接文件隔离、InkOS 新旧结构 |
 | `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限、响应字节上限（RESPONSE_TRUNCATED） |
 | `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见、超大 query 拒绝 |
+| `context-required-refs.test.ts` | AUD-005 requiredRefs 直接解析：池外 span/entity 强制命中、不存在 ref 进 omitted（not_found）、直解 ref 触发 budget_unsatisfiable、池内去重与优先 |
 
 ## 覆盖清单（按能力域）
 
@@ -40,6 +41,10 @@
 
 - 无分词中文问句命中；空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序和输入上限均有回归。
 - 源复用：计数适配器证明未变化源连续 explore/context 零重载；源编辑后下次调用可见；超大 query 拒绝；既有 resolve/index/explore/context/status-stale/incremental 链路完整。
+
+### 上下文装配（M4，部分）
+
+- AUD-005：`requiredRefs` 脱离 search top-50 候选池按 entity/span/document 三级直接解析；池外必选 ref 进 blocks 且计入预算最小值，不存在 ref 以 `not_found` 进 omitted，预算不足时直解 ref 也触发 `budget_unsatisfiable`，池内重复 ref 去重。
 
 ### 基准与基线
 

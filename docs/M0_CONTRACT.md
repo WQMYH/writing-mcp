@@ -46,6 +46,14 @@ Moving a work or document intentionally changes its reference. Editing content w
 - Entity lookup uses persisted aliases. Duplicate canonical identities, alternative source definitions, and unresolved bracket references are returned through `ambiguous`; `AMBIGUOUS_ENTITY` prevents neighborhood expansion from choosing a candidate automatically.
 - LIKE and document candidates are ordered by stable source/span keys before `LIMIT`; final ties use ordinal bytewise string comparison rather than host locale.
 
+### M4 requiredRefs amendment (2026-08-16)
+
+- `writing_context` resolves every `requiredRefs` value directly against the index (entity, then span, then document) instead of only marking matches inside the search candidate pool.
+- A required ref that resolves outside the pool is added to `blocks` with `required: true` and counts toward the required minimum before budget allocation.
+- A required ref that resolves to nothing is reported in `omitted` with reason `not_found` and yields a `truncated` packet; it is never dropped silently.
+- If the required minimum (pool and direct-resolved refs) exceeds `budgetTokens`, the packet status is `budget_unsatisfiable` and every required ref is listed in `omitted` with reason `required_minimum_exceeds_budget`.
+- The `ContextPacket` shape, status vocabulary, and estimator are unchanged by this amendment.
+
 ## SQLite schema v1
 
 Required tables: `metadata`, `revisions`, `documents`, `spans`, `spans_fts`, `entities`, `aliases`, `mentions`, `edges`, `unresolved_mentions`.
