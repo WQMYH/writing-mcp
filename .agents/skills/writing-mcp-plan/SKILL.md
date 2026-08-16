@@ -1,12 +1,12 @@
 ---
 name: writing-mcp-plan
-description: Execute the Writing MCP Server v2 implementation plan: recovery, audit, milestone gates, AUD fix order, doc navigation, and commit rules for the writing-mcp monorepo at E:\Programming\AI\Agents\Writing\writing-mcp. Use when continuing implementation work, resuming after interruption, auditing plan-vs-code consistency, or deciding what to fix next.
-version: 0.2.0
+description: writing-mcp monorepo 项目开发过程的标准操作手册。覆盖执行计划、中断恢复、门禁审计、AUD 修复顺序、文档导航和提交规则。**任何涉及 writing-mcp 的计划执行、实现修复、状态审计或提交决策时都必须首先调用此技能。**
+version: 0.3.0
 ---
 
-# Writing MCP 计划执行 Skill
+# Writing MCP 项目开发过程 Skill
 
-本 Skill 是 `Writing_MCP_Server_v2.md` 执行计划的**操作手册**：它告诉你在哪读什么、恢复时做什么、按什么顺序修、何时提交。它不是契约本身——契约细节以各文档为准。
+本 Skill 是 writing-mcp 项目的**标准开发过程操作手册**：它告诉你在哪读什么、恢复时做什么、按什么顺序修、何时提交。**任何涉及本项目的开发工作都应首先调用此 Skill**，而不是手动读取计划文件。它不是契约本身——契约细节以各文档为准。
 
 ## 文档地图（先读这个，不清晰就点开原文）
 
@@ -36,7 +36,7 @@ pnpm benchmark              # 30/30 门禁
 
 - **Step 1 索引事实性**：✅ 已闭环（`ccc36bc`，schema v3）
 - **Step 2 图身份/顺序/证据**：✅ 已闭环（`6058075`，schema v4）
-- **Step 3 检索基本正确性**：🔄 进行中——中文问句/歧义/排序/输入上限/FTS 诊断（`4030085`）+ AUD-021 源复用/时间上限（`c376df7`）已完成；**剩余：BFS/locator 批量化（AUD-020）**、候选统计校准、timeline、章节时态过滤、完整重排
+- **Step 3 检索基本正确性**：🔄 进行中——中文问句/歧义/排序/输入上限/FTS 诊断（`4030085`）+ AUD-021 源复用修复（`service.index()` 增加指纹记录，55/55 测试通过）+ 时间上限（`c376df7`）已完成；**剩余：BFS/locator 批量化（AUD-020）**、候选统计校准、timeline、章节时态过滤、完整重排
 - **Step 4 诊断契约**：AUD-023~025
 - **Step 5 渐进模块化并完成 M3**：AUD-015/016/022
 - **Step 6 完成 M4**：AUD-005（requiredRefs 直解）→ 012/013/014
