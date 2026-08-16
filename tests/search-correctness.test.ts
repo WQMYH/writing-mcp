@@ -62,4 +62,20 @@ describe("M3 deterministic query analysis",()=>{
       const unresolved=await store.explore("entity","未定角色",20,0);expect(unresolved.results).toEqual([]);expect(unresolved.ambiguous[0]?.kind).toBe("unresolved");expect(unresolved.diagnostics.map(item=>item.code)).toContain("UNRESOLVED_REFERENCE");
     }finally{store.close();await rm(root,{recursive:true,force:true});}
   });
+
+  test("caps the serialized response byte size deterministically",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"writing-mcp-response-limit-")),workRef=stableId("work","search-test",root);
+    const documents:SourceDocument[]=Array.from({length:8},(_,index)=>({documentRef:stableId("doc",workRef,`big-${index}.md`),relativePath:`big-${index}.md`,absolutePath:`big-${index}.md`,title:`文档 ${index}`,kind:"chapter",content:`# 文档 ${index}\n${"长".repeat(2400)}`,chapterNumber:index+1,sourceMtimeMs:1,sourceSize:2400}));
+    // Inject a tiny cap so the truncation path is exercised deterministically.
+    const store=new WritingStore({workRef,title:"ResponseLimit",rootPath:root,adapter:"generic",capabilities:[],documents},undefined,false,2_000);
+    try{
+      await store.index("rebuild");
+      const result=await store.explore("search","文档",100,0);
+      expect(result.truncated).toBe(true);
+      expect(result.diagnostics.map(item=>item.code)).toContain("RESPONSE_TRUNCATED");
+      expect(JSON.stringify({results:result.results,ambiguous:result.ambiguous}).length).toBeLessThanOrEqual(2_000);
+      expect(result.results.length).toBeLessThan(100);
+      expect(result.results.length).toBeGreaterThan(0);
+    }finally{store.close();await rm(root,{recursive:true,force:true});}
+  });
 });

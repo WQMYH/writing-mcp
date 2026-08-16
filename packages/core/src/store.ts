@@ -8,6 +8,7 @@ import type { ContextBlock, ContextPacket, ExploreItem, ExploreOperation, Explor
 
 const SCHEMA_VERSION = 4;
 const SOFTWARE_VERSION = "0.1.0";
+const MAX_RESPONSE_BYTES = 200_000;
 const json = (value: unknown) => JSON.stringify(value);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const asNumber = (value: unknown) => typeof value === "bigint" ? Number(value) : Number(value ?? 0);
@@ -35,7 +36,7 @@ export class WritingStore {
   private db?: DatabaseSync;
   private indexPath?: string;
   private schemaVersionOnDisk=0;
-  constructor(private readonly work: ParsedWork,private readonly forcedIndexPath?:string,private readonly directRebuild=false) {}
+  constructor(private readonly work: ParsedWork,private readonly forcedIndexPath?:string,private readonly directRebuild=false,private readonly maxResponseBytes=MAX_RESPONSE_BYTES) {}
 
   private async prepareIndexLocation(): Promise<void> {
     if (this.indexPath) return;
@@ -447,6 +448,13 @@ export class WritingStore {
     if(operation==="neighborhood"&&results.length&&!diagnostics.some(item=>item.code==="AMBIGUOUS_ENTITY")){const expanded=this.expandNeighborhood(db,results,limit,maxHops);results=expanded.results;visitedNodes=expanded.visitedNodes;maxActualHops=expanded.maxActualHops;omittedEstimate=expanded.omittedEstimate;truncated=expanded.truncated;}
     const candidateCount=results.length,returned=results.slice(0,limit);truncated ||= candidateCount>limit;omittedEstimate+=Math.max(0,candidateCount-limit);
     const ambiguous=ambiguousRows.slice(0,limit).map(row=>this.item({...row,locators:this.spanLocators(db,String(row.span_ref))}));
+    const cap=this.maxResponseBytes;
+    if(JSON.stringify({results:returned,ambiguous}).length>cap){
+      const trimmed:ExploreItem[]=[];let used=0;
+      for(const item of returned){const bytes=JSON.stringify(item).length;if(used+bytes<=cap){trimmed.push(item);used+=bytes;}}
+      const responseDiagnostics=[...diagnostics,{code:"RESPONSE_TRUNCATED",message:`Serialized response exceeded the ${cap}-byte deterministic limit; ${returned.length-trimmed.length} result(s) were dropped`}];
+      return {workRef:this.work.workRef,revision,freshness:"fresh",operation,results:trimmed,ambiguous:[],truncated:true,metrics:{candidateCount,returnedCount:trimmed.length,visitedNodes,maxActualHops,omittedEstimate,elapsedMs:performance.now()-started},diagnostics:responseDiagnostics};
+    }
     return {workRef:this.work.workRef,revision,freshness:"fresh",operation,results:returned,ambiguous,truncated,metrics:{candidateCount,returnedCount:returned.length,visitedNodes,maxActualHops,omittedEstimate,elapsedMs:performance.now()-started},diagnostics};}
   private item(r:Record<string,unknown>):ExploreItem{const sourceKind=String(r.source_kind??"deterministic"),excerpt=String(r.content).slice(0,900),locators=Array.isArray(r.locators)?r.locators as ExploreItem["evidence"]["locators"]:undefined;return {ref:String(r.ref??r.span_ref),kind:String(r.kind??"span"),title:String(r.heading),score:Number(r.score??0),sourceKind:sourceKind==="native"||sourceKind==="heuristic"?sourceKind:"deterministic",confidence:Number(r.confidence??1),evidence:{documentRef:String(r.document_ref??r.span_ref),relativePath:String(r.relative_path),startLine:asNumber(r.start_line),endLine:asNumber(r.end_line),excerpt,evidenceHash:hash(excerpt),revision:asNumber(r.revision),...(locators?.length?{locators}:{})}};}
 

@@ -40,6 +40,7 @@ Moving a work or document intentionally changes its reference. Editing content w
 
 - Search and context queries are limited to 2048 characters; deterministic analysis emits at most 48 unique terms.
 - `requiredRefs` is limited to 128 values of at most 256 characters; `budgetTokens` is limited to 1 through 1,000,000.
+- Serialized `writing_explore` payloads are capped at 200,000 bytes by default (injectable per store). A response that would exceed the cap is deterministically trimmed to fit, sets `truncated: true`, and reports `RESPONSE_TRUNCATED`; it never returns an over-limit payload.
 - Unsegmented Chinese questions use deterministic normalization and transparent question-phrase removal before bounded CJK n-gram analysis. This does not invoke a model or infer user intent.
 - Search returns `QUERY_ANALYZED`, `NO_MATCHING_TERMS`, `NO_RESULTS`, and `FTS_DEGRADED` diagnostics instead of silently turning analysis or FTS failures into ordinary empty success.
 - Entity lookup uses persisted aliases. Duplicate canonical identities, alternative source definitions, and unresolved bracket references are returned through `ambiguous`; `AMBIGUOUS_ENTITY` prevents neighborhood expansion from choosing a candidate automatically.

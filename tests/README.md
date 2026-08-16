@@ -21,7 +21,7 @@
 | `mvp.test.ts` | 通用链路：resolve→rebuild→中文搜索→context→无变化索引→entity/neighborhood→单章增量；适配器优先级；并发串行 |
 | `path-security.test.ts` | 授权 roots 缺失/越界、symlink/junction 越界、service 层强制 roots |
 | `resolve-matrix.test.ts` | 作品识别矩阵：空目录、不支持扩展名、多书歧义、同目录直接文件隔离、InkOS 新旧结构 |
-| `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限 |
+| `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限、响应字节上限（RESPONSE_TRUNCATED） |
 | `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见、超大 query 拒绝 |
 
 ## 覆盖清单（按能力域）
