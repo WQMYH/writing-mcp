@@ -8,6 +8,7 @@ const MAX_GENERAL_BYTES = 5 * 1024 * 1024;
 const MAX_CAPTURE_CALLS = 500;
 const MAX_CAPTURE_BYTES = 10 * 1024 * 1024;
 const MAX_DIAGNOSTIC_BYTES = 100 * 1024 * 1024;
+const MAX_CAPTURE_REF_ENTRIES = 100;
 
 export type DiagnosticPurpose = "usage" | "development";
 export type DiagnosticContentPolicy = "metadata" | "query";
@@ -67,6 +68,7 @@ interface InvocationEvent {
   readonly revision?: number;
   readonly inputSummary: unknown;
   readonly outputSummary?: unknown;
+  readonly outputHits?: unknown;
   readonly error?: { readonly code: string; readonly recoverable: boolean };
   readonly executionSummary: ExecutionSummary;
 }
@@ -274,7 +276,7 @@ export class DiagnosticRecorder {
       await appendFile(join(directory, "diagnostics.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
       let capturePersistenceError: string | undefined;
       if (input.diagnosticRunRef && workRef) {
-        try { await this.appendCaptureEvent(workRef, input.diagnosticRunRef, event, input.input); }
+        try { await this.appendCaptureEvent(workRef, input.diagnosticRunRef, event, input.input, input.output); }
         catch (error) { capturePersistenceError = diagnosticWriteCode(error); }
       }
       const reportJson = JSON.stringify({ ...event, observationScope: "mcp_calls_only", redactions: ["source_text", "returned_excerpts", "absolute_paths", "stack_traces", "sql", "credentials"] }, null, 2);
@@ -293,7 +295,7 @@ export class DiagnosticRecorder {
     }
   }
 
-  private async appendCaptureEvent(workRef: string, diagnosticRunRef: string, event: InvocationEvent, rawInput: Readonly<Record<string, unknown>>): Promise<void> {
+  private async appendCaptureEvent(workRef: string, diagnosticRunRef: string, event: InvocationEvent, rawInput: Readonly<Record<string, unknown>>, output?: Readonly<Record<string, unknown>>): Promise<void> {
     await this.serial(diagnosticRunRef, async () => {
       const directory = this.requireDirectory(workRef);
       const meta = await this.readCaptureMeta(workRef, diagnosticRunRef);
@@ -306,7 +308,8 @@ export class DiagnosticRecorder {
       }
       const query = meta.contentPolicy === "query" && typeof rawInput.query === "string" ? rawInput.query : undefined;
       const inputSummary = asRecord(event.inputSummary) ?? {};
-      const sequenced: InvocationEvent = { ...event, sequence: meta.nextSequence, ...(query !== undefined ? { inputSummary: { ...inputSummary, query } } : {}) };
+      const hits = captureOutputHits(output);
+      const sequenced: InvocationEvent = { ...event, sequence: meta.nextSequence, ...(query !== undefined ? { inputSummary: { ...inputSummary, query } } : {}), ...(hits ? { outputHits: hits } : {}) };
       await appendFile(eventsPath, `${JSON.stringify(sequenced)}\n`, "utf8");
       await atomicWrite(this.metaPath(directory, diagnosticRunRef), JSON.stringify({ ...meta, nextSequence: meta.nextSequence + 1 }, null, 2));
     });
@@ -371,6 +374,56 @@ function summarizeOutput(tool: string, output: Readonly<Record<string, unknown>>
   for (const key of ["stats", "metrics", "limits", "aggregate"]) if (asRecord(output[key])) summary[key] = output[key];
   summary.tool = tool;
   return summary;
+}
+
+// Bounded hit detail for development captures only (AUD-023): which refs were
+// returned, with trust label, score, and a hash of their locators. Titles,
+// excerpts, paths, and locator content itself never enter this view.
+function captureOutputHits(output: Readonly<Record<string, unknown>> | undefined): Record<string, unknown> | undefined {
+  if (!output) return undefined;
+  const itemEntry = (value: unknown, extra?: (item: Record<string, unknown>, entry: Record<string, unknown>) => void): Record<string, unknown> | undefined => {
+    const item = asRecord(value);
+    if (!item) return undefined;
+    const entry: Record<string, unknown> = {};
+    for (const key of ["ref", "kind", "sourceKind"]) { const field = item[key]; if (typeof field === "string") entry[key] = field; }
+    if (typeof item.score === "number") entry.score = item.score;
+    const locators = asRecord(item.evidence)?.locators;
+    if (Array.isArray(locators) && locators.length) entry.locatorsSha256 = hash(JSON.stringify(locators));
+    extra?.(item, entry);
+    return entry;
+  };
+  const bounded = (values: unknown): unknown[] => Array.isArray(values) ? values.slice(0, MAX_CAPTURE_REF_ENTRIES) : [];
+  const hits: Record<string, unknown> = {};
+  for (const key of ["results", "ambiguous"] as const) {
+    const entries = bounded(output[key]).map(value => itemEntry(value)).filter((entry): entry is Record<string, unknown> => entry !== undefined);
+    if (entries.length) hits[key] = entries;
+  }
+  const blocks = bounded(output.blocks).map(value => itemEntry(value, (item, entry) => {
+    if (typeof item.layer === "string") entry.layer = item.layer;
+    if (typeof item.tokens === "number") entry.tokens = item.tokens;
+    if (typeof item.required === "boolean") entry.required = item.required;
+  })).filter((entry): entry is Record<string, unknown> => entry !== undefined);
+  if (blocks.length) hits.blocks = blocks;
+  const omitted = bounded(output.omitted).map(value => {
+    const item = asRecord(value);
+    if (!item) return undefined;
+    const entry: Record<string, unknown> = {};
+    if (typeof item.ref === "string") entry.ref = item.ref;
+    if (typeof item.reason === "string") entry.reason = item.reason;
+    if (typeof item.tokens === "number") entry.tokens = item.tokens;
+    return entry;
+  }).filter((entry): entry is Record<string, unknown> => entry !== undefined);
+  if (omitted.length) hits.omitted = omitted;
+  const candidates = bounded(output.candidates).map(value => {
+    const item = asRecord(value);
+    if (!item) return undefined;
+    const entry: Record<string, unknown> = {};
+    if (typeof item.workRef === "string") entry.workRef = item.workRef;
+    if (typeof item.adapter === "string") entry.adapter = item.adapter;
+    return entry;
+  }).filter((entry): entry is Record<string, unknown> => entry !== undefined);
+  if (candidates.length) hits.candidates = candidates;
+  return Object.keys(hits).length ? hits : undefined;
 }
 
 function effectView(value: unknown): unknown {

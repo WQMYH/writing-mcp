@@ -154,6 +154,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - `writing_diagnose` may write disposable diagnostic artifacts but cannot modify source works or index semantics and cannot automatically invoke index repair.
 - Stable diagnostic errors include `INVALID_DIAGNOSTIC_REQUEST`, `DIAGNOSTIC_RUN_NOT_FOUND`, `DIAGNOSTIC_RUN_CLOSED`, and `DIAGNOSTIC_STORAGE_LIMIT`.
 
+### M0.1 capture bounded-refs amendment (2026-08-16)
+
+- Development capture events additionally store a bounded `outputHits` view of which refs a call returned: for `results`/`ambiguous`/`blocks` each entry keeps `ref`, `kind`, `sourceKind`, `score`, a SHA-256 hash of its locators, and for blocks the assembly fields `layer`/`tokens`/`required`; `omitted` entries keep `ref`/`reason`/`tokens`; resolve candidates keep `workRef`/`adapter`.
+- Each hit list is capped at 100 entries. Titles, excerpts, paths, and locator content itself never enter this view; locators are observable only through their hash.
+- The general JSONL history, per-call reports, usage-mode inspect, and the `PostCallDiagnostic` returned to callers are unchanged (counts only). This amendment adds detail to development captures only.
+
 ## Benchmark gate
 
 - Dataset: `benchmarks/m0.json`, exactly 30 machine-readable tasks.
