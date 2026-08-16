@@ -68,7 +68,7 @@ export class WritingService {
     if(previous===undefined||previous===fingerprint)return;
     await this.indexUnlocked(workRef,"incremental");
   }
-  async index(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{return this.serial(workRef,()=>this.indexUnlocked(workRef,mode));}
+  async index(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{return this.serial(workRef,async()=>{const result=await this.indexUnlocked(workRef,mode);if(mode!=="status"){const candidate=this.works.get(workRef);if(candidate)this.fingerprints.set(workRef,await this.sourceFingerprint(candidate));}return result;});}
   async explore(workRef:string,operation:ExploreOperation,query="",limit=20,maxHops=2):Promise<ExploreResult>{
     const started=performance.now();
     const result=await this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).explore(operation,query,limit,maxHops);});
