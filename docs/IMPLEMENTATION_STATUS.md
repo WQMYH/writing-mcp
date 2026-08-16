@@ -58,11 +58,11 @@ pnpm start
 | M0.1 | 补强中 | 全工具诊断 wrapper、显式 capture、脱敏与报告哈希 | AUD-023～025：有界证据 ref、general 并发轮转、协议层错误边界 |
 | M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB、跨 spine 分段 locator | AUD-026～030：作品边界、格式与资源上限 |
 | M2 | ✅ 基础门禁完成 | SQLite/FTS5、schema v4、语义 snapshot、truthful status、revision/事务、原子替换、作品级串行/写锁、恢复、work/document 作用域身份、规范定义晋升、多 mention/关系证据、源顺序图 | 后续只随 M3/M4 查询语义做受控增强 |
-| M3 | 进行中 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、基础输入上限、0～3 跳 BFS 与逐边证据 | 响应/时间上限、BFS 批量化、timeline、章节时态过滤、完整重排 |
+| M3 | 进行中 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限（query 2048 字符）、explore 执行时间上限（30s）、源指纹复用 store（未变化不重载）、0～3 跳 BFS 与逐边证据 | BFS/locator 批量化（AUD-020）、timeline、章节时态过滤、完整重排 |
 | M4 | 待开始（已有纵向切片） | ContextPacket、预算上限、抽取式选择 | L0～L3 正式策略、requiredRefs 完整解析、tokenizer profile、任务类型/章节范围 |
 | M5 | 待开始（已有纵向切片） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归 | 真实 InkOS、更多 EPUB 2/3 变体、客户端安装与故障文档 |
 
-Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、007～010 的当前门禁。M0.1、M1 其余问题和 M3～M5 尚未完成，现有成果不能据此宣称 Writing MCP v1 已完成。
+Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、007～010 的当前门禁；Step 3 已完成中文问句、别名/歧义、稳定排序、输入上限、FTS 降级与检索诊断（提交 `4030085`），并完成 AUD-021（源指纹复用 store，explore/context 不再全量重读）与 AUD-018 时间上限（提交 `c376df7`）。M0.1、M1 其余问题和 M3～M5 尚未完成，现有成果不能据此宣称 Writing MCP v1 已完成。
 
 ## 当前测试覆盖
 
@@ -72,6 +72,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - 诊断链：覆盖默认元数据脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用和不可持久化降级。
 - M0 基准：固定 fixture 上 30 个检索、实体、邻域、文档、统计和上下文任务全部命中且具有证据。
 - 检索正确性：无分词中文问句命中；空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序和输入上限均有回归。
+- 源复用：计数适配器证明未变化源连续 explore/context 零重载；源编辑后下次调用可见；超大 query 拒绝；既有 resolve/index/explore/context/status-stale/incremental 链路完整（`tests/service-reuse.test.ts`）。
 - M0 基线：整书估算 166 Token，10/10 预期事实召回，证据覆盖 100%，三项上下文任务平均 64.33 Token，降幅 61.24%。
 - 私有长篇：外部 schema v2 标注包含 42 条事实、101 条逐字证据和七类知识；数据不入库、不进入 Git，运行器只输出汇总及失败 ID。
 - TXT：覆盖 GBK/GB18030 解码、章节切分、章节编号重置推断新卷和原始文件行号偏移。
@@ -102,4 +103,4 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 ## 下一步
 
-继续 v2 Step 3：中文完整问句、别名/歧义/未解析引用、稳定排序、基础输入边界和 FTS 降级语义已落地；下一子门禁是响应/执行时间上限、候选统计校准和 BFS/locator 批量化（AUD-018～020）。
+继续 v2 Step 3 剩余子门禁：中文完整问句、别名/歧义/未解析引用、稳定排序、输入边界、FTS 降级语义已落地（`4030085`）；AUD-021 源指纹复用 store 与 AUD-018 执行时间上限已落地（`c376df7`）。下一子门禁是 **BFS/locator 批量化（AUD-020）**——`expandNeighborhood` 仍逐节点单查边（N+1），需批量查询重构并加高 fan-out/百万字性能测试；随后是候选统计校准、timeline、章节时态过滤与完整重排。status 的 mtime/size 快速路径（不牺牲语义 snapshot）仍待实现。
