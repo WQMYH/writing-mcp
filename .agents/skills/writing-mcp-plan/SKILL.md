@@ -1,7 +1,7 @@
 ---
 name: writing-mcp-plan
 description: Execute the Writing MCP Server v2 implementation plan: recovery, audit, milestone gates, AUD fix order, doc navigation, and commit rules for the writing-mcp monorepo at E:\Programming\AI\Agents\Writing\writing-mcp. Use when continuing implementation work, resuming after interruption, auditing plan-vs-code consistency, or deciding what to fix next.
-version: 0.4.0
+version: 0.5.0
 ---
 
 # Writing MCP 计划执行 Skill
@@ -34,17 +34,56 @@ pnpm benchmark              # 30/30 门禁
 
 核对四项：当前里程碑、最近通过门禁、未提交改动、真实 fixture/私有语料是否仍在。若计划或代码被外部修改，先做契合度审查再动手。
 
-## 执行顺序（以计划 §8 为准，勿跳步）
+## 状态确定协议（每次恢复先跑，替代一切静态进度快照）
 
-> 状态随 `IMPLEMENTATION_STATUS.md` 更新；以下是最后一次核对时的进度。
+> 目的：从"文档声称 + 机器门禁 + 代码事实"三方得出**可信当前状态**。本 skill 不保存状态快照；以下每次执行。
 
-- **Step 1 索引事实性**：✅ 已闭环（`ccc36bc`，schema v3）
-- **Step 2 图身份/顺序/证据**：✅ 已闭环（`6058075`，schema v4）
-- **Step 3 检索基本正确性**：🔄 进行中——中文问句/歧义/排序/输入上限/FTS 诊断（`4030085`）+ AUD-021 源复用（`c376df7` + 修复 `2e07df2`）+ AUD-018 响应字节上限（`3aee442`）已完成；AUD-020（BFS 批量取边）与 AUD-015（timeline 独立投影）主体已落地；**剩余：候选统计校准、章节时态过滤、完整重排**
-- **Step 4 诊断契约**：AUD-023~025
-- **Step 5 渐进模块化并完成 M3**：AUD-022 已落地（词汇表冻结）；剩余 AUD-016 相关与重排
-- **Step 6 完成 M4**：AUD-005（requiredRefs 直解）✅ 已提前落地；剩余 AUD-012/013/014
-- **Step 7 完成 M5**：AUD-026~036
+**输入**：唯一状态文件（`IMPLEMENTATION_STATUS.md`）+ git + 门禁结果。
+
+**步骤**：
+1. **读文档声称**：从 `IMPLEMENTATION_STATUS.md`「里程碑完成度」「可追溯提交清单」「下一步」读出各 Step/AUD 的声称状态。
+2. **跑机器门禁**：`pnpm check && pnpm test && pnpm benchmark`，记录全绿/失败。
+3. **核对代码事实**：对每个"声称已完成"的 AUD，用 grep 定位对应代码路径 + 回归测试存在性（按 AUD→代码符号→测试文件的映射核对，映射见「AUD 代码锚点」）。
+4. **判定**：
+   - 声称完成 + 门禁绿 + 代码/测试在 → **确认完成**
+   - 声称完成但缺代码或测试 → **虚报完成**（按教训 2 处理：修正状态，先补测试）
+   - 代码/测试在但文档未记 → **超前完成**（按教训 3 处理：回写状态文件，标记完成）
+   - 文档标记未开发（M4/M5）→ **预期未完成**（教训 4：不是缺陷，不进入路由候选）
+5. **输出**：`{ 当前Step, 已关闭AUD集, 剩余AUD集, 漂移项[], 超前项[] }`，写入工作记忆（不写文件，不污染唯一状态源）。
+
+## 精准路由协议（状态确定之后，输出下一步做什么）
+
+**输入**：状态确定协议的输出。**规则（可复现，同一输入必然同一结论）**：
+
+1. **顺序主规则**：按 Step 1→7 推进，不跳步。Step N 未全关，不路由到 Step N+1 的 AUD。
+2. **Step 内部**：按 AUD 编号升序修；每个 AUD 路由输出 = `{ 目标AUD, 完成门禁(对应测试文件+必须新建的失败测试), 契约影响(是否需要 amendment/ADR) }`。
+3. **超前项处理**：路由第一步永远是"回写状态文件"，把超前完成的 AUD 标记完成——这是漏报完成教训的正规化，避免重复劳动。
+4. **未开发里程碑特例**：M4/M5 的 AUD 不进入候选，除非其前置 Step 门禁全关（教训 4 正规化）。
+5. **契约影响判定**：公共输出/schema/错误码变化 → 必须带 amendment 或 ADR 一起路由；索引 schema 变化 → 走重建不迁移。
+6. **开发中判定**：每次路由到一个修复前，先问"这是开发中还是已发布修复"（教训 6）——决定能否改契约、能否依赖 SDK 行为、失败形态是否保守。
+
+**路由输出格式**（每次执行写在工作记忆，不落盘）：
+```
+下一个目标：AUD-0XX（Step N）
+完成门禁：tests/<file>.test.ts 新增失败测试；pnpm check/test/benchmark 全绿
+契约影响：M0_CONTRACT amendment（错误码/校验边界）｜无
+```
+
+## 执行顺序（AUD 代码锚点，路由判定用）
+
+> 这是各 AUD 在代码中的**定位锚点**，不是状态（状态由协议确定）。对应关系随代码演进，发现失效先更新本表再路由。
+
+| Step | AUD | 代码锚点 | 回归测试 |
+|---|---|---|---|
+| 1 | 003/006/011/031 | `store.ts` freshness/snapshot/write-lock/.gitignore | `index-lifecycle.test.ts` |
+| 2 | 001/002/007~010 | `store.ts` Chapter ID/entity_definitions/edge_evidence/span_locators | `graph-identity-evidence.test.ts` |
+| 3 | 004/016/017/018/019/020/021 | `store.ts` analyzeQuery/entityRows/compareText/limits/FTS_DEGRADED/expandNeighborhood；`service.ts` ensureFresh | `search-correctness.test.ts`/`explore-bfs.test.ts`/`service-reuse.test.ts` |
+| 4 | 023/024/025 | `diagnostics.ts` summarizeOutput/serial/rotate；`server.ts` handleDiagnosed | `diagnostics.test.ts`/`protocol-boundary.test.ts`(规划) |
+| 5 | 015/016/022 | `store.ts` timelineRows/ENTITY_KINDS | `explore-bfs.test.ts`/`search-correctness.test.ts` |
+| 6 | 005/012/013/014 | `store.ts` context requiredRefs 直解；`server.ts` reserved 参数 | `context-reserved-params.test.ts` |
+| 7 | 026~036 | 适配器/安全/生命周期 | M5 未开始，暂无 |
+
+> 教训 3 实例：AUD-005/015/020/022 曾出现"代码已实现但文档未记"——状态确定协议第 4 步专门捕获此类。
 
 ## 修复纪律
 
@@ -54,6 +93,7 @@ pnpm benchmark              # 30/30 门禁
 4. 诊断不变式：所有工具必须仍走统一诊断 wrapper；不得绕过。
 5. 测试新增时同步更新 `tests/README.md` 的映射表。
 6. **完成判定绑定机器门禁**：一个 AUD/Step 只有在 `pnpm check && pnpm test && pnpm benchmark` 全绿 + 对应回归测试存在时才算完成；不得仅凭文档自述标记完成。
+7. **闭环**：完成一个 AUD 后 → 更新唯一状态文件（里程碑/AUD/提交清单）→ 重新跑状态确定协议 → 由精准路由给出下一目标。状态文件是唯一落盘点，工作记忆不落盘。
 
 ## 提交规范（§13.2）
 
