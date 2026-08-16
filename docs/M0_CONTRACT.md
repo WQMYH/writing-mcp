@@ -56,6 +56,13 @@ Moving a work or document intentionally changes its reference. Editing content w
 - If the required minimum (pool and direct-resolved refs) exceeds `budgetTokens`, the packet status is `budget_unsatisfiable` and every required ref is listed in `omitted` with reason `required_minimum_exceeds_budget`.
 - The `ContextPacket` shape, status vocabulary, and estimator are unchanged by this amendment.
 
+### M3 graph vocabulary freeze amendment (2026-08-16)
+
+- The deterministic-extraction vocabulary is frozen in `@writing-mcp/core` as `ENTITY_KINDS` (Character, Location, Item, Event, Fact, Foreshadow, Chapter, OutlineNode), `EDGE_KINDS` (contains, appears_in, precedes), and `WORK_CAPABILITIES` (documents, full_text, epub, chapters, characters, outline, state, foreshadow), with matching `EntityKind`, `EdgeKind`, and `WorkCapability` union types.
+- Indexing only produces entity and edge kinds inside the frozen sets; adapters only declare capabilities inside the frozen set. Unimplemented relations are never advertised as existing capabilities.
+- Extending any frozen set requires a new M0 contract amendment first.
+- The wire format is unchanged: `capabilities` remains an array of strings in every response, and `EntityKind` gains `OutlineNode`, which indexing already produced before this amendment.
+
 ## SQLite schema v1
 
 Required tables: `metadata`, `revisions`, `documents`, `spans`, `spans_fts`, `entities`, `aliases`, `mentions`, `edges`, `unresolved_mentions`.

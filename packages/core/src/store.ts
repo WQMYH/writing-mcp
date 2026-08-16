@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { splitDocument, estimateTokens } from "./text.js";
 import { stableId } from "./ids.js";
-import type { ContextBlock, ContextPacket, ExploreItem, ExploreOperation, ExploreResult, IndexResult, ParsedWork } from "./types.js";
+import type { ContextBlock, ContextPacket, EntityKind, ExploreItem, ExploreOperation, ExploreResult, IndexResult, ParsedWork } from "./types.js";
 
 const SCHEMA_VERSION = 4;
 const SOFTWARE_VERSION = "0.1.0";
@@ -357,14 +357,14 @@ export class WritingStore {
 
   private insertEntitiesForRows(db:DatabaseSync,rows:Array<Record<string,unknown>>,revision:number):Set<string>{
     const insertedNames=new Set<string>();
-    const insertEntity=(kind:string,name:string,row:Record<string,unknown>,sourceKind="native",properties:Record<string,unknown>={})=>{
+    const insertEntity=(kind:EntityKind,name:string,row:Record<string,unknown>,sourceKind="native",properties:Record<string,unknown>={})=>{
       const normalized=name.toLowerCase(),spanRef=String(row.span_ref),documentRef=String(row.document_ref);
       const ref=kind==="Chapter"?stableId("entity",this.work.workRef,kind,documentRef):stableId("entity",this.work.workRef,kind,normalized);
       const definitionRef=stableId("entity-definition",ref,spanRef),evidenceHash=hash(String(row.content));
       db.prepare("INSERT OR REPLACE INTO entity_definitions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(definitionRef,ref,kind,name,normalized,sourceKind,1,spanRef,asNumber(row.source_ordinal),asNumber(row.span_ordinal),evidenceHash,json(properties),revision);
       insertedNames.add(name);
     };
-    const documentKinds:Record<string,string>={chapter:"Chapter",outline:"OutlineNode",state:"Fact",foreshadow:"Foreshadow"};
+    const documentKinds:Record<string,EntityKind>={chapter:"Chapter",outline:"OutlineNode",state:"Fact",foreshadow:"Foreshadow"};
     for(const row of rows){
       const heading=String(row.heading).replace(/^#+\s*/,"").trim(),docKind=String(row.kind);
       if(documentKinds[docKind]&&heading)insertEntity(documentKinds[docKind]!,heading,row,"native",{documentKind:docKind});
