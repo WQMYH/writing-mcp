@@ -24,6 +24,7 @@
 | `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限、响应字节上限（RESPONSE_TRUNCATED） |
 | `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见、超大 query 拒绝 |
 | `context-required-refs.test.ts` | AUD-005 requiredRefs 直接解析：池外 span/entity 强制命中、不存在 ref 进 omitted（not_found）、直解 ref 触发 budget_unsatisfiable、池内去重与优先 |
+| `bfs-batching.test.ts` | AUD-020 批量化护栏：宽图每节点 fan-out 确定性截断与重复运行一致、宽图 BFS 在确定性耗时预算内完成 |
 
 ## 覆盖清单（按能力域）
 
@@ -40,6 +41,7 @@
 ### 检索正确性（M3）
 
 - 无分词中文问句命中；空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序和输入上限均有回归。
+- AUD-020 批量化护栏：宽图（hub 90+ 关联）每节点 fan-out 截断与重复运行确定性；201 文档宽图 BFS 在确定性耗时预算内完成。
 - 源复用：计数适配器证明未变化源连续 explore/context 零重载；源编辑后下次调用可见；超大 query 拒绝；既有 resolve/index/explore/context/status-stale/incremental 链路完整。
 
 ### 上下文装配（M4，部分）
