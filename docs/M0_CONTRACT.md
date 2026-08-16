@@ -71,6 +71,12 @@ Moving a work or document intentionally changes its reference. Editing content w
 - This amendment supersedes the chapter-tense filtering deferral recorded in the M3 query-correctness amendment.
 - Open TODO (AUD-012 remainder, M4 scope): the reserved `writing_context` inputs are not yet wired into assembly. Before M4 closes, `taskType` must drive a deterministic source strategy, `targetChapter` must scope assembly to a chapter anchor, `entityRefs`/`documentRefs` must resolve directly into blocks like `requiredRefs`, and `excludeRefs` must remove matching candidates. Until then every reserved input stays validated-and-ignored, and removing or repurposing any of them requires a new amendment.
 
+### M3 search source-trust ranking amendment (2026-08-16)
+
+- Search ranking operationalizes the "Source trust order" clause: a row that matches at least one analyzed query term (labeled `deterministic`) receives a fixed +0.25 score bonus; alias-only rows (labeled `heuristic`) receive none.
+- The bonus is added after the existing deterministic score components (coverage, alias boost, proximity, heading matches, normalized BM25). The candidate set, stable tie-break ordering, and diagnostics are unchanged.
+- A full re-ranking remains deferred until after M4 with a representative corpus (AUD-012 remainder); this is the only search ranking change inside M3.
+
 ## SQLite schema v1
 
 Required tables: `metadata`, `revisions`, `documents`, `spans`, `spans_fts`, `entities`, `aliases`, `mentions`, `edges`, `unresolved_mentions`.

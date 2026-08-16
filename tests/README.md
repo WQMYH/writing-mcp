@@ -29,6 +29,7 @@
 | `graph-vocabulary.test.ts` | AUD-022 词汇表冻结：索引实体 kind 含 OutlineNode 且不超出 ENTITY_KINDS、边 kind 不超出 EDGE_KINDS、InkOS/generic 能力声明不超出 WORK_CAPABILITIES |
 | `timeline-tense-filter.test.ts` | AUD-012 章节时态过滤：targetChapter 锚点只保留当时态有效的实体/边（无界 from/to 视为书首/书尾）、锚点外章节排除、与名称过滤组合、重复运行确定性 |
 | `context-reserved-params.test.ts` | AUD-012 stdio 契约：explore schema 暴露 targetChapter 且锚定 timeline 排除锚点外章节实体；context schema 接收 reserved 的 targetChapter/entityRefs/documentRefs/excludeRefs 且描述标注 reserved |
+| `search-source-trust.test.ts` | AUD-012 残留（M3 期）source-trust 排序因子：命中查询词的 deterministic 行获 +0.25 信任加分，反超原始分更高的 alias-only heuristic 行，重复运行确定性 |
 
 ## 覆盖清单（按能力域）
 
@@ -49,6 +50,7 @@
 - AUD-015 timeline：不再等同全文 search，而是携带时态属性实体与 precedes 时序边的确定性投影（章节位置排序）；名称过滤、未知章节锚点殿后、无时态数据 NO_RESULTS 均有回归。
 - AUD-022 词汇表冻结：索引产生的实体/边 kind 与适配器能力声明均限定在冻结词汇表内（ENTITY_KINDS/EDGE_KINDS/WORK_CAPABILITIES），OutlineNode 补入 EntityKind；扩展词汇需先修订 M0 契约。
 - AUD-012 章节时态过滤：writing_explore 新增可选 targetChapter（仅对 timeline 生效），投影只保留 from ≤ 锚点 ≤ to 的时态项；stdio 层验证 schema 暴露与锚定行为，context 的 targetChapter/entityRefs/documentRefs/excludeRefs 为 reserved 输入（接收验证、不改变装配，描述显式标注）。
+- AUD-012 残留排序因子：search 中命中查询词的 deterministic 行获固定 +0.25 信任加分（落实 Source trust order 条款），保证不被原始分更高的 alias-only heuristic 行压过；完整重排搁置到 M4 + 代表性语料之后（M0_CONTRACT Open TODO 与 source-trust amendment）。
 - 源复用：计数适配器证明未变化源连续 explore/context 零重载；源编辑后下次调用可见；超大 query 拒绝；既有 resolve/index/explore/context/status-stale/incremental 链路完整。
 
 ### 上下文装配（M4，部分）
