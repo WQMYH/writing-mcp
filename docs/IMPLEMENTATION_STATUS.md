@@ -66,28 +66,10 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 ## 当前测试覆盖
 
-- 通用文本：resolve → rebuild index → 中文搜索 → context → 无变化索引 → entity/neighborhood → 单章增量更新。
-- 适配器优先级：InkOS 根目录不会同时被 generic fallback 报为第二个作品。
-- MCP stdio：枚举五工具，顺序调用 resolve/index/explore/context/diagnose，确认所有成功/失败响应均经过诊断 hook 并验证结构化错误信封。
-- 诊断链：覆盖默认元数据脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用和不可持久化降级。
-- M0 基准：固定 fixture 上 30 个检索、实体、邻域、文档、统计和上下文任务全部命中且具有证据。
-- 检索正确性：无分词中文问句命中；空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序和输入上限均有回归。
-- 源复用：计数适配器证明未变化源连续 explore/context 零重载；源编辑后下次调用可见；超大 query 拒绝；既有 resolve/index/explore/context/status-stale/incremental 链路完整（`tests/service-reuse.test.ts`）。
-- M0 基线：整书估算 166 Token，10/10 预期事实召回，证据覆盖 100%，三项上下文任务平均 64.33 Token，降幅 61.24%。
-- 私有长篇：外部 schema v2 标注包含 42 条事实、101 条逐字证据和七类知识；数据不入库、不进入 Git，运行器只输出汇总及失败 ID。
-- TXT：覆盖 GBK/GB18030 解码、章节切分、章节编号重置推断新卷和原始文件行号偏移。
-- EPUB：正常双章节 spine、OPF 属性顺序变化、元数据标题、封面过滤、跨 spine 章节续文、单作品多 EPUB 引用隔离，以及损坏 ZIP、缺 container、缺 OPF、无可读 spine 四类失败。
-- 私有转换型 EPUB：本机《语料A》从 5 个 spine 文档重建为 1 个前置文档、55 个编号章节和 1 个尾部段落；schema v4 索引为 57 documents、121 spans、56 Chapter entities、55 `precedes` edges，3 个 span 保留跨 entry 分段 locator；原文及索引不入 Git。
-- InkOS：静态最小 fixture 的稳定作品引用、原生文档类型和章节编号。
-- 路径安全：MCP 缺少授权 roots 时拒绝访问，入口越界及作品目录内 symlink/junction 越界均被阻止。
-- 作品识别：覆盖单书、多书歧义、空目录、不支持扩展名、同目录直接文件隔离和 InkOS 新旧结构。
-- 稳定诊断：`AUTHORIZED_ROOTS_REQUIRED`、`PATH_NOT_ALLOWED` 以及四类 EPUB 确定性错误码。
-- 索引生命周期：不兼容 schema 只读报告/显式重建、失败事务保留上一 revision、未解析方括号引用入库。
-- 索引事实性：源正文/标题/kind/章节号/源顺序/起始行变化使 status 变 stale；同作品并发串行、live/stale writer lock、`.previous/tmp` 恢复和用户 `.gitignore` 保持。
-- 增量影响范围：无关文档的派生记录不改写 revision；新增实体会重新解析其他文档中匹配的未解析引用。
-- 属性图：重复 Chapter 标题保持独立身份并按源 ordinal 排序；同名实体保存全部定义且规范来源可稳定晋升；多次 mention 和多 span 关系证据不再静默丢失。
-- 可重建性：删除整个 `.writing-index` 后可从原始文本恢复等价稳定引用和检索结果。
-- Reference 边界：保持确定性知识访问、无 LLM、无自动写回；第五工具只增加可观测性和派生诊断文件，Scene 仅按明确分隔条件生成，World/Lore/独立 Timeline 不作为 v1 必需存储节点。
+> 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
+
+- 15 个测试文件，覆盖：通用链路、MCP 协议与诊断、检索正确性（含 AUD-021 源复用）、基准与基线、私有语料（不入库）、TXT/EPUB/InkOS 适配器、路径安全、作品识别、索引生命周期与事实性（schema v4）、边界与原则。
+- 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制
 
