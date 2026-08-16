@@ -443,6 +443,7 @@ export class WritingStore {
     if(operation==="stats"){const c=this.counts(db);rows=[{span_ref:"stats",heading:"Index statistics",content:json(c),relative_path:".writing-index",start_line:1,end_line:1,score:1,kind:"stats"}];}
     else if(operation==="entity"||operation==="neighborhood"){const lookup=this.entityRows(db,query,limit);rows=lookup.rows;ambiguousRows=lookup.ambiguous;diagnostics=lookup.diagnostics;}
     else if(operation==="document"){rows=db.prepare("SELECT s.span_ref,s.heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,1 score,d.kind FROM spans s JOIN documents d ON d.document_ref=s.document_ref WHERE d.relative_path LIKE ? OR d.title LIKE ? ORDER BY d.source_ordinal,s.ordinal,s.span_ref LIMIT ?").all(`%${query}%`,`%${query}%`,limit) as Array<Record<string,unknown>>;}
+    else if(operation==="timeline"){const timeline=this.timelineRows(db,query,limit);rows=timeline.rows;diagnostics=timeline.diagnostics;}
     else {const searched=this.searchRows(db,query,limit);rows=searched.rows;diagnostics=searched.diagnostics;}
     const locatorsBySpan=this.locatorMap(db,rows.map(row=>String(row.span_ref)));
     let results=rows.map(row=>this.item({...row,revision,locators:locatorsBySpan.get(String(row.span_ref))}));let visitedNodes=results.length,maxActualHops=0,omittedEstimate=0,truncated=false;
@@ -465,6 +466,22 @@ export class WritingStore {
     const unique=[...new Set(spanRefs)];if(!unique.length)return new Map();const placeholders=unique.map(()=>"?").join(","),map=new Map<string,NonNullable<ExploreItem["evidence"]["locators"]>>();
     for(const row of db.prepare(`SELECT span_ref,ordinal,relative_path,start_line,end_line FROM span_locators WHERE span_ref IN (${placeholders}) ORDER BY span_ref,ordinal`).all(...unique) as Array<Record<string,unknown>>){const ref=String(row.span_ref),locator={relativePath:String(row.relative_path),startLine:asNumber(row.start_line),endLine:asNumber(row.end_line)};const existing=map.get(ref);if(existing)existing.push(locator);else map.set(ref,[locator]);}
     return map;
+  }
+
+  private timelineRows(db:DatabaseSync,query:string,limit:number):{rows:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}
+  {
+    const diagnostics:ExploreResult["diagnostics"]=[];
+    const chapterOrder=new Map<string,number>();
+    const chapters=db.prepare("SELECT e.entity_ref FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.kind='Chapter' ORDER BY d.source_ordinal,s.ordinal,e.entity_ref").all() as Array<Record<string,unknown>>;
+    chapters.forEach((row,index)=>chapterOrder.set(String(row.entity_ref),index));
+    const position=(ref:unknown)=>ref==null?Number.MAX_SAFE_INTEGER:chapterOrder.get(String(ref))??Number.MAX_SAFE_INTEGER;
+    const normalized=query.normalize("NFKC").trim().toLowerCase(),temporal="(valid_from_chapter IS NOT NULL OR valid_to_chapter IS NOT NULL OR narrative_time IS NOT NULL)";
+    const entityRows=db.prepare(`SELECT e.entity_ref ref,e.span_ref,e.name heading,e.kind,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.source_kind,e.confidence,e.revision,e.valid_from_chapter,e.valid_to_chapter,e.narrative_time FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE ${temporal} ORDER BY e.entity_ref`).all() as Array<Record<string,unknown>>;
+    const edgeRows=db.prepare(`SELECT e.edge_ref ref,e.span_ref,e.kind||': '||COALESCE(sn.name,e.source_ref)||' → '||COALESCE(tn.name,e.target_ref) heading,e.kind||'-relation' kind,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.source_kind,e.confidence,e.revision,e.valid_from_chapter,e.valid_to_chapter,e.narrative_time FROM edges e LEFT JOIN entities sn ON sn.entity_ref=e.source_ref LEFT JOIN entities tn ON tn.entity_ref=e.target_ref JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.kind='precedes' ORDER BY e.edge_ref`).all() as Array<Record<string,unknown>>;
+    const merged=[...entityRows,...edgeRows].filter(row=>!normalized||String(row.heading).toLowerCase().includes(normalized)).sort((left,right)=>position(left.valid_from_chapter)-position(right.valid_from_chapter)||position(left.valid_to_chapter)-position(right.valid_to_chapter)||compareText(String(left.narrative_time??""),String(right.narrative_time??""))||compareText(String(left.ref),String(right.ref)));
+    if(!merged.length)diagnostics.push({code:"NO_RESULTS",message:"No entity or relation carries temporal attributes (valid_from_chapter, valid_to_chapter, or narrative_time)"});
+    else diagnostics.push({code:"TIMELINE_PROJECTION",message:`Timeline projected ${merged.length} temporal item(s) ordered by chapter position, then narrative time, then reference`});
+    return{rows:merged.slice(0,limit),diagnostics};
   }
 
   private entityRows(db:DatabaseSync,query:string,limit:number):{rows:Array<Record<string,unknown>>;ambiguous:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}{

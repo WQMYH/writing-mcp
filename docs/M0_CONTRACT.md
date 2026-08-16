@@ -45,6 +45,8 @@ Moving a work or document intentionally changes its reference. Editing content w
 - Search returns `QUERY_ANALYZED`, `NO_MATCHING_TERMS`, `NO_RESULTS`, and `FTS_DEGRADED` diagnostics instead of silently turning analysis or FTS failures into ordinary empty success.
 - Entity lookup uses persisted aliases. Duplicate canonical identities, alternative source definitions, and unresolved bracket references are returned through `ambiguous`; `AMBIGUOUS_ENTITY` prevents neighborhood expansion from choosing a candidate automatically.
 - LIKE and document candidates are ordered by stable source/span keys before `LIMIT`; final ties use ordinal bytewise string comparison rather than host locale.
+- `timeline` is an independent deterministic projection, not full-text search: it returns entities carrying temporal attributes (`valid_from_chapter`, `valid_to_chapter`, or `narrative_time`) plus `precedes` sequence relations, ordered by chapter position, then `valid_to_chapter` position, then `narrative_time`, then reference. An optional query filters the projection by name substring. Results report `TIMELINE_PROJECTION`; an empty projection reports `NO_RESULTS`.
+- Chapter-tense filtering against a target chapter anchor is deferred until the target-chapter input exists (AUD-012); no new public parameter is introduced by this amendment.
 
 ### M4 requiredRefs amendment (2026-08-16)
 
