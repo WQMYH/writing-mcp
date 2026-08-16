@@ -69,6 +69,7 @@ Moving a work or document intentionally changes its reference. Editing content w
 - With `targetChapter`, the timeline projection keeps only temporal items valid at that 1-based chapter position: `valid_from_chapter` position is at most the anchor and `valid_to_chapter` position is at least the anchor. An absent `valid_from_chapter` means the book start; an absent `valid_to_chapter` means the book end. Items anchored to chapters that do not exist in the projection are never valid at a real anchor. Diagnostics report the anchor in `TIMELINE_PROJECTION` or `NO_RESULTS`.
 - `writing_context` accepts reserved inputs `targetChapter`, `entityRefs`, `documentRefs`, and `excludeRefs`, and its description marks them and `taskType` as reserved: they are validated but do not change assembly until the M4 amendment. No packet shape, status, or estimator changes here.
 - This amendment supersedes the chapter-tense filtering deferral recorded in the M3 query-correctness amendment.
+- Open TODO (AUD-012 remainder, M4 scope): the reserved `writing_context` inputs are not yet wired into assembly. Before M4 closes, `taskType` must drive a deterministic source strategy, `targetChapter` must scope assembly to a chapter anchor, `entityRefs`/`documentRefs` must resolve directly into blocks like `requiredRefs`, and `excludeRefs` must remove matching candidates. Until then every reserved input stays validated-and-ignored, and removing or repurposing any of them requires a new amendment.
 
 ## SQLite schema v1
 
