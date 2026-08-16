@@ -31,6 +31,7 @@
 | `context-reserved-params.test.ts` | AUD-012 stdio 契约：explore schema 暴露 targetChapter 且锚定 timeline 排除锚点外章节实体；context schema 接收 reserved 的 targetChapter/entityRefs/documentRefs/excludeRefs 且描述标注 reserved |
 | `search-source-trust.test.ts` | AUD-012 残留（M3 期）source-trust 排序因子：命中查询词的 deterministic 行获 +0.25 信任加分，反超原始分更高的 alias-only heuristic 行，重复运行确定性 |
 | `protocol-boundary.test.ts` | AUD-025 协议错误边界：数据 schema 单一真相源、输出失配记 failure 并返回 OUTPUT_SCHEMA_MISMATCH 一致信封、正常路径无协议错误、SDK 输入拒绝裸文本且无诊断记录、协议层未知消息经 onerror 上报 |
+| `generic-work-boundary.test.ts` | AUD-026 通用作品边界：双 EPUB 目录产生两个候选并返回 ambiguous、EPUB 候选与直接解析文件同 workRef/rootPath、capabilities 由实际输入决定（纯文本目录不含 epub）、纯文本目录仍为单一作品 |
 
 ## 覆盖清单（按能力域）
 
@@ -74,7 +75,8 @@
 ### 适配器（TXT / EPUB / InkOS）
 
 - TXT：GBK/GB18030 解码、章节切分、章节编号重置推断新卷、原始文件行号偏移。
-- EPUB：正常双章节 spine、OPF 属性顺序变化、元数据标题、封面过滤、跨 spine 章节续文、单作品多 EPUB 引用隔离，以及损坏 ZIP、缺 container、缺 OPF、无可读 spine 四类失败。
+- EPUB：正常双章节 spine、OPF 属性顺序变化、元数据标题、封面过滤、跨 spine 章节续文；单作品多 EPUB 引用隔离已升级为 AUD-026 边界语义（每个 EPUB 独立成作品，各自 documentRef 唯一），以及损坏 ZIP、缺 container、缺 OPF、无可读 spine 四类失败。
+- AUD-026 作品边界：目录内每个 EPUB 独立成候选（与直接解析该文件同 workRef/rootPath），其余文本合成一个目录作品；多书目录返回 ambiguous；capabilities 由实际输入决定（纯文本作品不声明 epub），无 epub 能力的目录作品不加载 EPUB 文件。
 - InkOS：静态最小 fixture 的稳定作品引用、原生文档类型和章节编号。
 
 ### 安全与作品识别

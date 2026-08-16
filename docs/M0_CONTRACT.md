@@ -174,6 +174,13 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Observation boundary: SDK-level input rejections (invalid arguments) happen before any tool handler runs, so they are outside the `mcp_calls_only` observation scope by definition. They return the SDK's bare error result (`isError: true`, no `structuredContent`) and must not produce any diagnostic record.
 - Protocol/transport-layer errors that never reach a tool handler (unknown message types, transport failures) surface through an injected `onerror` hook; the stdio entrypoint logs them to stderr prefixed `[writing-mcp][protocol]`. stderr is the only observability exit for this layer; MCP stdout remains reserved for protocol messages.
 
+### M1 generic work boundary amendment (2026-08-17)
+
+- Generic discovery defines a deterministic work boundary: a direct file is one work; in a directory each `.epub` file is a self-contained book container and becomes its own candidate with the same `workRef`/`rootPath` as resolving that file directly, while the remaining Markdown/TXT files merge into one directory work.
+- A directory holding several independent books therefore returns multiple candidates and resolves as `ambiguous` instead of one silently merged work; the existing `resolved`/`ambiguous`/`unsupported` statuses and `ResolveResult` shape are unchanged.
+- `capabilities` are derived from the actual input: generic works always declare `documents` and `full_text`, and declare `epub` only when the work actually contains an EPUB file. All declared values stay inside the frozen `WORK_CAPABILITIES` vocabulary.
+- A directory work without the `epub` capability never loads EPUB files even if such files exist under the directory; text-only directory behavior is otherwise unchanged.
+
 ## Benchmark gate
 
 - Dataset: `benchmarks/m0.json`, exactly 30 machine-readable tasks.

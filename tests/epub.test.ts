@@ -61,9 +61,9 @@ describe("generic EPUB technical validation",()=>{
     }finally{await rm(dir,{recursive:true,force:true});}
   });
 
-  test("keeps document references unique across EPUB files in one work",async()=>{
+  test("keeps document references unique when each EPUB is its own work (AUD-026)",async()=>{
     const dir=await mkdtemp(join(tmpdir(),"writing-mcp-epub-multiple-")),data=await convertedBookFixture();await writeFile(join(dir,"one.epub"),data);await writeFile(join(dir,"two.epub"),data);const adapter=new GenericAdapter();
-    try{const [candidate]=await adapter.discover(dir),work=await adapter.load(candidate!);expect(new Set(work.documents.map(document=>document.documentRef)).size).toBe(work.documents.length);}
+    try{const candidates=await adapter.discover(dir);expect(candidates).toHaveLength(2);for(const candidate of candidates){const work=await adapter.load(candidate);expect(new Set(work.documents.map(document=>document.documentRef)).size).toBe(work.documents.length);}}
     finally{await rm(dir,{recursive:true,force:true});}
   });
 
