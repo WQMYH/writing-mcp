@@ -44,6 +44,15 @@ export function layerRank(layer: ContextLayer): number {
   return layer === "L0" ? 0 : layer === "L1" ? 1 : layer === "L2" ? 2 : 3;
 }
 
+// AUD-012 direction (2026-08-17): taskType is an Agent-side workflow label and
+// NEVER drives assembly — MCP must not guess authoring intent (Reference §5.5's
+// rejected smart-routing). The Agent expresses assembly constraints via
+// query/requiredRefs/entityRefs/documentRefs/targetChapter/excludeRefs/budget;
+// taskType is accepted, validated, and recorded by the server layer only. The
+// previously drafted strategy engine (per-taskType layer fill orders) was
+// rejected and is intentionally absent: assembly fills L0 → L1 → L2 → L3
+// deterministically, with targetChapter proximity and pinning as tie-breakers.
+
 // AUD-013 evidence dedup: fold candidates sharing an evidenceHash, keeping the
 // first occurrence in the given order (deterministic). Callers that must never
 // fold certain blocks (e.g. required refs) place them first, so their hashes

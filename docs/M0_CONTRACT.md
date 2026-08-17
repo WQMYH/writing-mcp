@@ -56,6 +56,17 @@ Moving a work or document intentionally changes its reference. Editing content w
 - If the required minimum (pool and direct-resolved refs) exceeds `budgetTokens`, the packet status is `budget_unsatisfiable` and every required ref is listed in `omitted` with reason `required_minimum_exceeds_budget`.
 - The `ContextPacket` shape, status vocabulary, and estimator are unchanged by this amendment.
 
+### M4 constraint-interface wiring amendment (2026-08-17)
+
+- `writing_context` now wires the previously reserved inputs into assembly, superseding the "validated but do not change assembly yet" clause of the M3 timeline/reserved-inputs amendment:
+  - `excludeRefs` removes matching candidates from the search pool before dedup; excluded refs are reported in `omitted` with reason `excluded`. `requiredRefs` win over `excludeRefs` when both name the same ref.
+  - `entityRefs` and `documentRefs` resolve directly against the index (entity, then span, then document) like `requiredRefs`, enter `blocks` as non-required blocks with their semantic layer, and rank ahead of search hits within their layer. All four ref lists share the existing 128-item / 256-character validation (`CONTEXT_REFS_TOO_LARGE`).
+  - `targetChapter` anchors assembly ordering: within each layer, blocks from the anchor chapter fill first, then earlier chapters by distance, then later chapters by distance, then blocks whose document carries no chapter number. Layer rank (L0 → L1 → L2 → L3) dominates; anchoring is a deterministic tie-breaker, not a filter.
+  - `taskType` stays a reserved hint, value-open: its schema changed from a five-value enum to an open string (the five values `answer`/`revise`/`custom`/`continue_chapter`/`draft_chapter` remain documented conventions); unknown values are accepted, validated, and recorded in diagnostics, and never drive assembly (2026-08-17 direction: no taskType strategy engine).
+- The previously drafted per-taskType layer-order strategy engine is intentionally absent from `@writing-mcp/core`; assembly fills L0 → L1 → L2 → L3 deterministically, with targetChapter anchoring and explicit pinning as tie-breakers.
+- No packet shape, status vocabulary, or estimator changes.
+- Open TODO (AUD-012 remainder, M4 scope): the "来源目录" (source catalog) observability capability — stats/diagnose exposing the per-work list of usable context-source kinds — is designed (plan §8 Step 6) but not yet implemented; AUD-014 packet billing boundary and tokenizer profile remain.
+
 ### M3 graph vocabulary freeze amendment (2026-08-16)
 
 - The deterministic-extraction vocabulary is frozen in `@writing-mcp/core` as `ENTITY_KINDS` (Character, Location, Item, Event, Fact, Foreshadow, Chapter, OutlineNode), `EDGE_KINDS` (contains, appears_in, precedes), and `WORK_CAPABILITIES` (documents, full_text, epub, chapters, characters, outline, state, foreshadow), with matching `EntityKind`, `EdgeKind`, and `WorkCapability` union types.

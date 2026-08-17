@@ -43,5 +43,11 @@ export interface ExploreItem { ref: string; kind: string; title: string; score: 
 export interface ExploreMetrics { candidateCount: number; returnedCount: number; visitedNodes: number; maxActualHops: number; omittedEstimate: number; elapsedMs: number }
 export interface ExploreResult { workRef: string; revision: number; freshness: "fresh"; operation: ExploreOperation; results: ExploreItem[]; ambiguous: ExploreItem[]; truncated: boolean; metrics: ExploreMetrics; diagnostics: Diagnostic[] }
 export type ContextLayer = "L0" | "L1" | "L2" | "L3";
+// AUD-012 value-open (2026-08-17): taskType is an Agent-side workflow label.
+// The five original values stay as documented conventions; any future string is
+// accepted (recorded, never driving assembly) so new task types emerge from
+// real usage without an MCP release (see plan §8 Step 6 anti-bloat boundary).
+export type TaskType = "continue_chapter" | "draft_chapter" | "revise" | "answer" | "custom" | (string & {});
+export interface ContextOptions { excludeRefs?: string[]; entityRefs?: string[]; documentRefs?: string[]; targetChapter?: number; taskType?: TaskType }
 export interface ContextBlock extends ExploreItem { layer: ContextLayer; tokens: number; required: boolean }
 export interface ContextPacket { status: "complete" | "truncated" | "budget_unsatisfiable"; workRef: string; revision: number; budgetTokens: number; usedTokens: number; estimated: boolean; estimator: string; blocks: ContextBlock[]; omitted: Array<{ ref: string; reason: string; tokens: number }>; diagnostics: Diagnostic[] }
