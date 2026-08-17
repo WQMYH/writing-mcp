@@ -122,6 +122,13 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 按用户授权（2026-08-16）自主执行的修复，逐条记录方案内容并标注待审阅；审阅通过后归档入上节。AUD-035-3（Biome 格式化）经用户决策延后至 M3/M4 语义冻结后的重构窗口再评估，评估数据保留于末条供重构窗口参考。
 
+### AUD-012 接线审阅三缺陷修复（待审阅，2026-08-17）
+
+- **背景**：AUD-012 接线（`526ee36`）归档审阅发现三个缺陷，已按冻结执行顺序 ① 修复，锚点见计划 Step 6「M4 审阅锚点」。
+- **修复**：（1）`writing_context` 工具描述与契约/代码矛盾——描述误称 excludeRefs 胜出 requiredRefs，已修正为契约真实优先级（requiredRefs 胜出 excludeRefs，excludeRefs 胜出 entityRefs/documentRefs pin）；（2）`budget_unsatisfiable` 分支曾把 excluded/duplicates/pinned/unresolved 一律标成 `required_minimum_exceeds_budget`，已恢复各自真实原因（excluded/duplicate_evidence/budget_limit/not_found），仅 required 类承担该原因；（3）tests/README 映射漂移——补登记 `context-constraint-wiring.test.ts`、更新 `context-reserved-params.test.ts` 条目为约束接口措辞。另修复接线测试偶发：ch3 夹具标题补查询词使确定性 heading 加分打破三方同分，无锚点断言改为确定性首块断言。
+- **验证**：tsc 0 错、122/122 测试、30/30 基准、lint 0 警告、coverage lines 92.91%≥90。
+- **契约**：M4 constraint-interface wiring amendment 补两条（omitted 真实原因语义 + 描述优先级声明义务）。
+
 ### AUD-035 工程硬化第三阶段：Biome 格式化（用户决策延后，2026-08-17）
 
 - **原计划**：门禁 → 抽离 → 格式化三步中的最后一步，Biome 全量格式化（quoteStyle single / semicolons asNeeded / lineWidth 120）。

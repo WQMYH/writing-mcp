@@ -13,7 +13,10 @@ const makeWork = (rootPath: string): ParsedWork => {
       doc("linqiu.md", "林秋", "# 林秋\n林秋是守着北塔的記錄者。", "character"),
       doc("ch1.md", "第一篇", "# 第一篇\n林秋在北塔下等待。", "chapter", 1),
       doc("ch2.md", "第二篇", "# 第二篇\n林秋沿着旧城墙行走。", "chapter", 2),
-      doc("ch3.md", "第三篇", "# 第三篇\n林秋在码头眺望海面。", "chapter", 3),
+      // ch3's heading carries the query term, so its deterministic +0.5
+      // heading-match bonus breaks the three-way score tie (query 林秋 is a
+      // 2-char term: no FTS/BM25 component, coverage/proximity all equal).
+      doc("ch3.md", "第三篇 林秋", "# 第三篇 林秋\n林秋在码头眺望海面。", "chapter", 3),
     ],
   };
 };
@@ -77,10 +80,13 @@ describe("AUD-012 constraint interface wiring (store level)", () => {
       expect(pos(ch3DocRef)).not.toBe(-1);
       expect(pos(ch2DocRef)).toBeLessThan(pos(ch1DocRef));
       expect(pos(ch1DocRef)).toBeLessThan(pos(ch3DocRef));
-      // without targetChapter the anchor does not apply (pure score order)
+      // without targetChapter the anchor does not apply: pure deterministic
+      // score order (ch3 mentions 林秋 twice and scores highest), which can
+      // never start with the anchor chapter — asserts the anchor is inert.
       const unanchored = await store.context("林秋", 1_000_000);
       const unanchoredOrder = unanchored.blocks.filter(block => block.layer === "L2").map(block => block.evidence.documentRef);
-      expect(unanchoredOrder).not.toEqual(l2Order);
+      expect(unanchoredOrder[0], "highest-scoring chapter leads without an anchor").toBe(ch3DocRef);
+      expect(unanchoredOrder[0]).not.toBe(l2Order[0]);
     } finally { store.close(); await rm(root, { recursive: true, force: true }); }
   });
 
@@ -105,6 +111,24 @@ describe("AUD-012 constraint interface wiring (store level)", () => {
       await store.context("林秋", 1_000_000);
       const after = await store.explore("search", "林秋");
       expect(after.results.length).toBeGreaterThan(0);
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("budget_unsatisfiable keeps truthful omitted reasons per category", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-wire-unsat-")), store = new WritingStore(makeWork(root), join(root, "idx.sqlite"));
+    try {
+      await store.index("rebuild");
+      const { charDocRef } = await refsFromDb(root, join(root, "idx.sqlite"));
+      const baseline = await store.context("林秋", 1_000_000);
+      const excludedRef = baseline.blocks.find(block => block.kind === "chapter")!.ref;
+      const unknownRef = "entity:000000000000000000000000";
+      // required minimum (the resolved character document) exceeds the tiny budget.
+      const packet = await store.context("林秋", 1, [charDocRef], { excludeRefs: [excludedRef], entityRefs: [unknownRef] });
+      expect(packet.status).toBe("budget_unsatisfiable");
+      const reasonOf = (ref: string) => packet.omitted.find(entry => entry.ref === ref)?.reason;
+      expect(reasonOf(charDocRef), "required refs carry the required-minimum reason").toBe("required_minimum_exceeds_budget");
+      expect(reasonOf(excludedRef), "exclusion is not a budget event").toBe("excluded");
+      expect(reasonOf(unknownRef), "unresolvable refs stay not_found").toBe("not_found");
     } finally { store.close(); await rm(root, { recursive: true, force: true }); }
   });
 

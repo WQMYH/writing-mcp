@@ -30,7 +30,8 @@
 | `timeline.test.ts` | AUD-015 timeline 独立投影：章节+precedes 时序按章节位置排序、名称过滤、未知章节锚点稳定殿后、无时态数据 NO_RESULTS |
 | `graph-vocabulary.test.ts` | AUD-022 词汇表冻结：索引实体 kind 含 OutlineNode 且不超出 ENTITY_KINDS、边 kind 不超出 EDGE_KINDS、InkOS/generic 能力声明不超出 WORK_CAPABILITIES |
 | `timeline-tense-filter.test.ts` | AUD-012 章节时态过滤：targetChapter 锚点只保留当时态有效的实体/边（无界 from/to 视为书首/书尾）、锚点外章节排除、与名称过滤组合、重复运行确定性 |
-| `context-reserved-params.test.ts` | AUD-012 stdio 契约：explore schema 暴露 targetChapter 且锚定 timeline 排除锚点外章节实体；context schema 接收 reserved 的 targetChapter/entityRefs/documentRefs/excludeRefs 且描述标注 reserved |
+| `context-reserved-params.test.ts` | AUD-012 约束接口 MCP 契约（stdio）：explore schema 暴露 targetChapter 且锚定 timeline 排除锚点外章节实体；context schema 暴露四约束参数、taskType 值域开放（无 enum）且保留非驱动；描述声明 requiredRefs 胜出 excludeRefs 的优先级；exclude/pin 经 MCP 生效；未知 taskType 被接受且输出不变 |
+| `context-constraint-wiring.test.ts` | AUD-012 约束接口接线（store 级）：excludeRefs 过滤与 excluded 报告、requiredRefs 胜出 excludeRefs、entityRefs/documentRefs 直解入 blocks 及层归属、targetChapter 锚定层内排序（同章→前距→后距）且无锚点时不生效、taskType 值域开放且任意值输出恒等、共享数据库句柄不被 context 误关、四份 ref 列表均受 CONTEXT_REFS_TOO_LARGE 校验、budget_unsatisfiable 保留各类真实 omitted 原因（excluded/not_found 不冒充预算原因） |
 | `search-source-trust.test.ts` | AUD-012 残留（M3 期）source-trust 排序因子：命中查询词的 deterministic 行获 +0.25 信任加分，反超原始分更高的 alias-only heuristic 行，重复运行确定性 |
 | `protocol-boundary.test.ts` | AUD-025 协议错误边界：数据 schema 单一真相源、输出失配记 failure 并返回 OUTPUT_SCHEMA_MISMATCH 一致信封、正常路径无协议错误、SDK 输入拒绝裸文本且无诊断记录、协议层未知消息经 onerror 上报 |
 | `generic-work-boundary.test.ts` | AUD-026 通用作品边界：双 EPUB 目录产生两个候选并返回 ambiguous、EPUB 候选与直接解析文件同 workRef/rootPath、capabilities 由实际输入决定（纯文本目录不含 epub）、纯文本目录仍为单一作品 |

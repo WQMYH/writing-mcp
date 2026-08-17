@@ -29,6 +29,8 @@ describe("AUD-012 constraint interface through MCP", () => {
       expect((contextProperties.taskType as { enum?: unknown }).enum).toBeUndefined();
       expect(context.description).toMatch(/reserved/i);
       expect(context.description).toMatch(/taskType/i);
+      // The description must state the real precedence rule (contract: requiredRefs win over excludeRefs).
+      expect(context.description).toMatch(/requiredRefs win over excludeRefs/);
 
       const resolvedCall = await client.callTool({ name: "writing_resolve", arguments: { sourcePath: source } });
       const workRef = success<{ workRef: string }>(resolvedCall).data.workRef;
