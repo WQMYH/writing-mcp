@@ -193,6 +193,11 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Every breach is a stable coded error — `EPUB_TOO_MANY_ENTRIES`, `EPUB_DOCUMENT_TOO_LARGE`, `EPUB_TOTAL_TOO_LARGE` — never a hang or unbounded memory growth.
 - Limits are injectable for tests via `new GenericAdapter({ epub: Partial<EpubLimits> })`; `DEFAULT_EPUB_LIMITS` is exported from `@writing-mcp/adapter-generic`. No other interface changes.
 
+### M1 snapshot consistency amendment (2026-08-17)
+
+- Every adapter read is bracketed by source fingerprint checks (names + mtime + size of all files under the work root): if the fingerprint differs after the read, the service retries the read exactly once, then fails with stable code `SOURCE_CHANGED_DURING_READ`. A snapshot is never built from mixed-time source state; the client should retry the operation.
+- Text ingestion is bounded deterministically: per-file `maxDocumentBytes` (breach: `SOURCE_FILE_TOO_LARGE`) and per-work cumulative `maxTotalBytes` (breach: `SOURCE_TOTAL_TOO_LARGE`), defaults 16 MiB / 64 MiB. Injectable via `new GenericAdapter({ text: Partial<TextLimits> })`; `DEFAULT_TEXT_LIMITS` is exported. EPUB sizes remain governed by the EPUB resource limits amendment.
+
 ## Benchmark gate
 
 - Dataset: `benchmarks/m0.json`, exactly 30 machine-readable tasks.

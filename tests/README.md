@@ -34,6 +34,7 @@
 | `protocol-boundary.test.ts` | AUD-025 协议错误边界：数据 schema 单一真相源、输出失配记 failure 并返回 OUTPUT_SCHEMA_MISMATCH 一致信封、正常路径无协议错误、SDK 输入拒绝裸文本且无诊断记录、协议层未知消息经 onerror 上报 |
 | `generic-work-boundary.test.ts` | AUD-026 通用作品边界：双 EPUB 目录产生两个候选并返回 ambiguous、EPUB 候选与直接解析文件同 workRef/rootPath、capabilities 由实际输入决定（纯文本目录不含 epub）、纯文本目录仍为单一作品 |
 | `txt-numbering.test.ts` | AUD-027 章节编号语法：罗马数字章节不再被 Number("iv") 丢弃、中文数字支持到九百九十九（百位合成）、罗马数字重置推断新卷、非法罗马数字确定性跳过并入上一章、Markdown 中文数字章名识别为 chapter |
+| `snapshot-consistency.test.ts` | AUD-029 snapshot 一致性：读取期间源持续变化拒绝 `SOURCE_CHANGED_DURING_READ`（有界重试后仍不一致）、一次性写入稳定后有界重试成功、单文件超限 `SOURCE_FILE_TOO_LARGE`、作品总量超限 `SOURCE_TOTAL_TOO_LARGE`、默认上限正常加载 |
 
 ## 覆盖清单（按能力域）
 
@@ -81,13 +82,14 @@
 - EPUB：正常双章节 spine、OPF 属性顺序变化、元数据标题、封面过滤、跨 spine 章节续文；单作品多 EPUB 引用隔离已升级为 AUD-026 边界语义（每个 EPUB 独立成作品，各自 documentRef 唯一），以及损坏 ZIP、缺 container、缺 OPF、无可读 spine 四类失败。
 - AUD-026 作品边界：目录内每个 EPUB 独立成候选（与直接解析该文件同 workRef/rootPath），其余文本合成一个目录作品；多书目录返回 ambiguous；capabilities 由实际输入决定（纯文本作品不声明 epub），无 epub 能力的目录作品不加载 EPUB 文件。
 - AUD-028 资源上限：entry 数/单文档（含 OPF）/总解码量三级确定性上限，越限返回稳定错误码而非挂起或无限膨胀；上限可经 `new GenericAdapter({ epub })` 注入（默认 4096 entries / 16 MiB / 64 MiB）；EPUB 2.0 包默认上限下正常加载。
+- AUD-029 snapshot 一致性：每次适配器读取前后校验源指纹（文件名+mtime+size），不一致有界重试一次后仍不一致拒绝 `SOURCE_CHANGED_DURING_READ`；文本链路单文件/作品总量确定性上限（`SOURCE_FILE_TOO_LARGE`/`SOURCE_TOTAL_TOO_LARGE`，默认 16 MiB / 64 MiB，可经 `new GenericAdapter({ text })` 注入）。
 - InkOS：静态最小 fixture 的稳定作品引用、原生文档类型和章节编号。
 
 ### 安全与作品识别
 
 - 路径安全：MCP 缺少授权 roots 时拒绝访问，入口越界及作品目录内 symlink/junction 越界均被阻止。
 - 作品识别：覆盖单书、多书歧义、空目录、不支持扩展名、同目录直接文件隔离和 InkOS 新旧结构。
-- 稳定诊断：`AUTHORIZED_ROOTS_REQUIRED`、`PATH_NOT_ALLOWED`、四类 EPUB 确定性错误码与 AUD-028 三个资源上限错误码。
+- 稳定诊断：`AUTHORIZED_ROOTS_REQUIRED`、`PATH_NOT_ALLOWED`、四类 EPUB 确定性错误码、AUD-028 三个资源上限错误码与 AUD-029 源变化/文本上限错误码。
 
 ### 索引生命周期与事实性
 

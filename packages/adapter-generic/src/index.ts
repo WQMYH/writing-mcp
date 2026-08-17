@@ -40,6 +40,9 @@ interface EpubChunk { entryPath:string; content:string; fallbackTitle:string }
 // unbounded packages. Injected via `new GenericAdapter({ epub })`.
 export interface EpubLimits { maxEntries:number; maxDocumentBytes:number; maxTotalBytes:number }
 export const DEFAULT_EPUB_LIMITS:EpubLimits={maxEntries:4096,maxDocumentBytes:16*1024*1024,maxTotalBytes:64*1024*1024};
+// AUD-029: per-file and per-work bounds keep full-text loading finite.
+export interface TextLimits { maxDocumentBytes:number; maxTotalBytes:number }
+export const DEFAULT_TEXT_LIMITS:TextLimits={maxDocumentBytes:16*1024*1024,maxTotalBytes:64*1024*1024};
 
 const xmlAttribute=(tag:string,name:string)=>tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`,"i"))?.[1];
 const decodeXml=(value:string)=>value.replace(/&#x([0-9a-f]+);/gi,(_,code:string)=>String.fromCodePoint(Number.parseInt(code,16))).replace(/&#(\d+);/g,(_,code:string)=>String.fromCodePoint(Number(code))).replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").replace(/&quot;/gi,"\"").replace(/&apos;|&#39;/gi,"'");
@@ -111,7 +114,8 @@ async function epubDocuments(path:string,root:string,workRef:string,bookTitle:st
 export class GenericAdapter implements WorkAdapter {
   readonly kind="generic" as const;
   private readonly epubLimits:EpubLimits;
-  constructor(options?:{epub?:Partial<EpubLimits>}){this.epubLimits={...DEFAULT_EPUB_LIMITS,...options?.epub};}
+  private readonly textLimits:TextLimits;
+  constructor(options?:{epub?:Partial<EpubLimits>;text?:Partial<TextLimits>}){this.epubLimits={...DEFAULT_EPUB_LIMITS,...options?.epub};this.textLimits={...DEFAULT_TEXT_LIMITS,...options?.text};}
   async discover(sourcePath:string):Promise<WorkCandidate[]>{try{const real=await safeRealpath(sourcePath);const files=await filesUnder(real);if(!files.length)return[];const directory=(await stat(real)).isDirectory();
     // AUD-026 work boundary: each EPUB is a self-contained book container and
     // becomes its own candidate (identical to resolving the file directly);
@@ -122,5 +126,10 @@ export class GenericAdapter implements WorkAdapter {
     for(const epub of epubs)candidates.push({workRef:stableId("work","generic",epub),title:await bestEffortEpubTitle(epub)??basename(epub,extname(epub)),rootPath:dirname(epub),sourcePath:epub,adapter:this.kind,capabilities:["documents","full_text","epub"]});
     if(texts.length)candidates.push({workRef:stableId("work","generic",real),title:basename(real),rootPath:real,sourcePath:real,adapter:this.kind,capabilities:["documents","full_text"]});
     return candidates;}catch(error){if(typeof error==="object"&&error&&"code" in error&&error.code==="PATH_NOT_ALLOWED")throw error;return[];}}
-  async load(candidate:WorkCandidate):Promise<ParsedWork>{const epubCapable=candidate.capabilities.includes("epub");const files=(await filesUnder(candidate.sourcePath??candidate.rootPath)).filter(file=>epubCapable||extname(file).toLowerCase()!==".epub");const documents:SourceDocument[]=[];for(const file of files){const extension=extname(file).toLowerCase();if(extension===".epub"){documents.push(...await epubDocuments(file,candidate.rootPath,candidate.workRef,candidate.title,this.epubLimits));continue;}const info=await stat(file),content=decodeText(await readFile(file));if(extension===".txt"){const chapters=txtDocuments(file,candidate.rootPath,candidate.workRef,content,info.mtimeMs);if(chapters.length){documents.push(...chapters);continue;}}const title=titleOf(file,content);const label=(file+" "+title).toLowerCase();const kind=/chapter|章节|第\s*(?:\d+|[零〇○ｏ０一二三四五六七八九十两百两]+)\s*(?:章|回|节)/i.test(label)?"chapter":/characters?|角色|人物/.test(label)?"character":"document";documents.push({documentRef:stableId("doc",candidate.workRef,relative(candidate.rootPath,file)),relativePath:relative(candidate.rootPath,file).replaceAll("\\","/"),absolutePath:file,title,kind,content,chapterNumber:chapterOf(title),sourceMtimeMs:info.mtimeMs,sourceSize:info.size});}return{...candidate,documents};}
+  async load(candidate:WorkCandidate):Promise<ParsedWork>{const epubCapable=candidate.capabilities.includes("epub");const files=(await filesUnder(candidate.sourcePath??candidate.rootPath)).filter(file=>epubCapable||extname(file).toLowerCase()!==".epub");const documents:SourceDocument[]=[];let totalTextBytes=0;for(const file of files){const extension=extname(file).toLowerCase();if(extension===".epub"){documents.push(...await epubDocuments(file,candidate.rootPath,candidate.workRef,candidate.title,this.epubLimits));continue;}const info=await stat(file),data=await readFile(file);
+      // AUD-029: deterministic per-file and per-work size bounds; breaches
+      // are stable error codes, never unbounded memory growth.
+      if(data.byteLength>this.textLimits.maxDocumentBytes)throw codedError("SOURCE_FILE_TOO_LARGE","Text file exceeds the per-file size limit");
+      totalTextBytes+=data.byteLength;if(totalTextBytes>this.textLimits.maxTotalBytes)throw codedError("SOURCE_TOTAL_TOO_LARGE","Combined work text exceeds the total size limit");
+      const content=decodeText(data);if(extension===".txt"){const chapters=txtDocuments(file,candidate.rootPath,candidate.workRef,content,info.mtimeMs);if(chapters.length){documents.push(...chapters);continue;}}const title=titleOf(file,content);const label=(file+" "+title).toLowerCase();const kind=/chapter|章节|第\s*(?:\d+|[零〇○ｏ０一二三四五六七八九十两百两]+)\s*(?:章|回|节)/i.test(label)?"chapter":/characters?|角色|人物/.test(label)?"character":"document";documents.push({documentRef:stableId("doc",candidate.workRef,relative(candidate.rootPath,file)),relativePath:relative(candidate.rootPath,file).replaceAll("\\","/"),absolutePath:file,title,kind,content,chapterNumber:chapterOf(title),sourceMtimeMs:info.mtimeMs,sourceSize:info.size});}return{...candidate,documents};}
 }

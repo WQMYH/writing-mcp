@@ -1,4 +1,4 @@
-import type { AdapterKind, ContextPacket, ExploreOperation, ExploreResult, IndexResult, ResolveResult, WorkAdapter, WorkCandidate } from "./types.js";
+import type { AdapterKind, ContextPacket, ExploreOperation, ExploreResult, IndexResult, ParsedWork, ResolveResult, WorkAdapter, WorkCandidate } from "./types.js";
 import { WritingStore } from "./store.js";
 import { join } from "node:path";
 import { stat } from "node:fs/promises";
@@ -19,7 +19,7 @@ export class WritingService {
     for(const c of candidates)this.works.set(c.workRef,c);
     return{status:candidates.length===1?"resolved":candidates.length>1?"ambiguous":"unsupported",workRef:candidates.length===1?candidates[0]!.workRef:undefined,candidates,diagnostics:candidates.length?[]:[{code:"UNSUPPORTED_SOURCE",message:"No supported writing work found",path:sourcePath}]};
   }
-  private async store(workRef:string){let store=this.stores.get(workRef);if(store)return store;const candidate=this.works.get(workRef);if(!candidate)throw Object.assign(new Error("Unknown workRef; call writing_resolve first"),{code:"WORK_REF_NOT_FOUND"});const adapter=this.adapters.find(a=>a.kind===candidate.adapter)!;store=new WritingStore(await adapter.load(candidate));this.stores.set(workRef,store);return store;}
+  private async store(workRef:string){let store=this.stores.get(workRef);if(store)return store;const candidate=this.works.get(workRef);if(!candidate)throw Object.assign(new Error("Unknown workRef; call writing_resolve first"),{code:"WORK_REF_NOT_FOUND"});store=new WritingStore(await this.loadConsistent(candidate));this.stores.set(workRef,store);return store;}
   private async serial<T>(workRef:string,action:()=>Promise<T>):Promise<T>{
     const previous=this.queues.get(workRef)??Promise.resolve();
     const current=previous.catch(()=>undefined).then(action);
@@ -30,8 +30,7 @@ export class WritingService {
   private async indexUnlocked(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{
     const candidate=this.works.get(workRef);
     if(!candidate)throw Object.assign(new Error("Unknown workRef; call writing_resolve first"),{code:"WORK_REF_NOT_FOUND"});
-    const adapter=this.adapters.find(a=>a.kind===candidate.adapter)!;
-    const next=new WritingStore(await adapter.load(candidate));
+    const next=new WritingStore(await this.loadConsistent(candidate));
     this.stores.get(workRef)?.close();
     this.stores.set(workRef,next);
     return next.index(mode);
@@ -55,6 +54,20 @@ export class WritingService {
     await walk(root,0);
     entries.sort();
     return entries.join("|");
+  }
+  /** AUD-029: verify the source fingerprint before and after the adapter
+   * read; a mid-read change would otherwise mix states from different times
+   * into one snapshot. Retry once so a transient write can settle, then fail
+   * with a stable code instead of indexing mixed state. */
+  private async loadConsistent(candidate:WorkCandidate):Promise<ParsedWork>{
+    const adapter=this.adapters.find(a=>a.kind===candidate.adapter)!;
+    for(let attempt=0;attempt<2;attempt++){
+      const before=await this.sourceFingerprint(candidate);
+      const work=await adapter.load(candidate);
+      const after=await this.sourceFingerprint(candidate);
+      if(after===before)return work;
+    }
+    throw Object.assign(new Error("Source files changed while the work was being read; retry the operation"),{code:"SOURCE_CHANGED_DURING_READ"});
   }
   /** Reuse the existing store when the source fingerprint is unchanged; reload
    * only when files changed (AUD-021). The first query builds the store once. */
