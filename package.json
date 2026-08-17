@@ -12,15 +12,19 @@
     "benchmark": "pnpm build && node scripts/run-benchmark.mjs",
     "benchmark:private": "pnpm build && node scripts/run-private-acceptance.mjs",
     "check": "tsc -b --pretty false",
+    "lint": "oxlint -c oxlintrc.json --deny-warnings packages tests scripts",
+    "coverage": "vitest run --coverage",
     "start": "node packages/mcp-server/dist/index.js"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^24.10.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "@writing-mcp/adapter-generic": "workspace:*",
     "@writing-mcp/adapter-inkos": "workspace:*",
     "@writing-mcp/core": "workspace:*",
     "jszip": "^3.10.1",
+    "oxlint": "^1.78.0",
     "typescript": "^5.9.2",
     "vitest": "^4.0.0"
   }

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { stableId, WritingStore, type ParsedWork, type SourceDocument } from "@writing-mcp/core";
+import { stableId, WritingStore, type SourceDocument } from "@writing-mcp/core";
 
 describe("AUD-020 bounded fan-out and batched expansion",()=>{
   test("caps per-node fan-out deterministically on a wide graph",async()=>{

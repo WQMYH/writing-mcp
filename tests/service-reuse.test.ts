@@ -1,10 +1,10 @@
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { WritingService } from "@writing-mcp/core";
 import { GenericAdapter } from "@writing-mcp/adapter-generic";
-import type { WorkAdapter, ParsedWork, WorkCandidate } from "@writing-mcp/core";
+import type { ParsedWork, WorkCandidate } from "@writing-mcp/core";
 
 /** Counting adapter: records how many times load() ran (AUD-021 regression). */
 class CountingGenericAdapter extends GenericAdapter {
@@ -72,8 +72,7 @@ describe("AUD-021: explore/context reuse the store when the source is unchanged"
       // Touch the file without changing content: fingerprint changes, but the
       // content hash stays identical, so incremental must not create a revision.
       const chapter = join(source, "chapter-01.md");
-      const now = new Date(Date.now() + 10_000);
-      await Promise.all([writeFile(chapter, await readFile(chapter, "utf8"), { flag: "r+" })]);
+      await writeFile(chapter, await readFile(chapter, "utf8"), { flag: "r+" });
       // give the fingerprint a deterministic change: bump mtime via utimes is
       // not portable in tests; rewrite the same bytes is enough for content-hash
       // semantics even if fingerprint still matches on fast filesystems.

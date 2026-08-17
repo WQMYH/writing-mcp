@@ -204,7 +204,7 @@ export class DiagnosticRecorder {
         contentPolicy: meta.contentPolicy,
         startedAt: meta.startedAt,
         finishedAt: new Date().toISOString(),
-        revisions: { ...(revisions.length ? { before: revisions[0], after: revisions.at(-1) } : {}) },
+        revisions: revisions.length ? { before: revisions[0], after: revisions.at(-1) } : {},
         calls,
         findings: failures ? [{ code: "TOOL_FAILURES_OBSERVED", severity: "warning", evidenceRefs: calls.filter(call => call.error).map(call => call.traceId) }] : [],
         aggregate: { calls: calls.length, failures, elapsedMs: calls.reduce((sum, call) => sum + call.elapsedMs, 0) },

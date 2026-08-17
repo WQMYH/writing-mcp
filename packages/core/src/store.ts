@@ -417,7 +417,7 @@ export class WritingStore {
           position=content.indexOf(name,position+Math.max(1,name.length));
         }
       }
-      for(const match of content.matchAll(/\[\[([^\[\]\n]{1,100})\]\]/g)){
+      for(const match of content.matchAll(/\[\[([^[\]\n]{1,100})\]\]/g)){
         const text=match[1]!.trim(),entity=byName.get(text.toLowerCase());
         if(!entity){db.prepare("INSERT OR IGNORE INTO unresolved_mentions VALUES(?,?,?,?,?)").run(stableId("unresolved",spanRef,text,String(match.index)),text,spanRef,"NO_MATCHING_ENTITY",revision);continue;}
         const entityRef=String(entity.entity_ref),offset=match.index??0,from=entity.valid_from_chapter==null?null:String(entity.valid_from_chapter),to=entity.valid_to_chapter==null?null:String(entity.valid_to_chapter);

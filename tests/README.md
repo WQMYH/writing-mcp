@@ -2,7 +2,7 @@
 
 > 文档定位：这是 `docs/IMPLEMENTATION_STATUS.md`「当前测试覆盖」一节的**详细清单宿主**。状态文档只保留概述与指向本文件的抽取路径；本文件随测试文件一起维护。
 >
-> 运行：`pnpm build && pnpm test`（vitest）。基准门禁：`pnpm benchmark`。私有语料验收：`pnpm benchmark:private`（需 `WRITING_MCP_PRIVATE_ACCEPTANCE`）。
+> 运行：`pnpm build && pnpm test`（vitest）。基准门禁：`pnpm benchmark`。lint 门禁：`pnpm lint`（oxlint，0 警告；`store.ts` 暂因 minified-file 启发式被忽略，AUD-035 拆分后移除）。覆盖率棘轮门禁：`pnpm coverage`（阈值见 `vitest.config.ts`）。私有语料验收：`pnpm benchmark:private`（需 `WRITING_MCP_PRIVATE_ACCEPTANCE`）。
 
 ## 测试文件 → 主题映射
 
