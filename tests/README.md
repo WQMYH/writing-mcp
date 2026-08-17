@@ -12,6 +12,7 @@
 | `benchmark.test.ts` | 30 个机器可读基准任务的确定性门禁 |
 | `diagnostics.test.ts` | 诊断链：脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用、不可持久化降级、AUD-023 开发捕获有界命中 ref/score/locator 哈希（不存正文）、AUD-024 general JSONL 串行轮转/并发不丢不乱/写失败降级 |
 | `epub.test.ts` | EPUB：正常双章节 spine、OPF 属性顺序变化、元数据标题、封面过滤、跨 spine 续章、单作品多 EPUB 引用隔离、损坏 ZIP/缺 container/缺 OPF/无可读 spine 四类失败 |
+| `epub-resource-limits.test.ts` | AUD-028 EPUB 资源上限：entry 数超限 `EPUB_TOO_MANY_ENTRIES`、单文档超限 `EPUB_DOCUMENT_TOO_LARGE`、总解码量超限 `EPUB_TOTAL_TOO_LARGE`（均可经构造器注入）、EPUB 2.0 包在默认上限下正常加载 |
 | `explore-bfs.test.ts` | 0~3 跳 BFS、fan-out/全局上限、逐边 pathEvidence、截断 |
 | `generic-txt.test.ts` | TXT：GBK/GB18030 解码、章节切分、章节编号重置推断新卷、原始文件行号偏移 |
 | `graph-identity-evidence.test.ts` | schema v4 图：重复 Chapter 标题独立身份、按源 ordinal 排序、同名实体全部定义、规范来源晋升、多次 mention、多 span 关系证据 |
@@ -79,13 +80,14 @@
 - AUD-027 编号语法：阿拉伯数字/中文数字（一至九百九十九，含百位合成）/规范罗马数字（i…mmmcmxcix）三种章号确定性支持；命中章题形状但编号非法（如 chapter im）时确定性跳过并入上一章；卷重置推断对三种编号一致生效；Markdown 中文数字章名识别为 chapter 并解析章号。
 - EPUB：正常双章节 spine、OPF 属性顺序变化、元数据标题、封面过滤、跨 spine 章节续文；单作品多 EPUB 引用隔离已升级为 AUD-026 边界语义（每个 EPUB 独立成作品，各自 documentRef 唯一），以及损坏 ZIP、缺 container、缺 OPF、无可读 spine 四类失败。
 - AUD-026 作品边界：目录内每个 EPUB 独立成候选（与直接解析该文件同 workRef/rootPath），其余文本合成一个目录作品；多书目录返回 ambiguous；capabilities 由实际输入决定（纯文本作品不声明 epub），无 epub 能力的目录作品不加载 EPUB 文件。
+- AUD-028 资源上限：entry 数/单文档（含 OPF）/总解码量三级确定性上限，越限返回稳定错误码而非挂起或无限膨胀；上限可经 `new GenericAdapter({ epub })` 注入（默认 4096 entries / 16 MiB / 64 MiB）；EPUB 2.0 包默认上限下正常加载。
 - InkOS：静态最小 fixture 的稳定作品引用、原生文档类型和章节编号。
 
 ### 安全与作品识别
 
 - 路径安全：MCP 缺少授权 roots 时拒绝访问，入口越界及作品目录内 symlink/junction 越界均被阻止。
 - 作品识别：覆盖单书、多书歧义、空目录、不支持扩展名、同目录直接文件隔离和 InkOS 新旧结构。
-- 稳定诊断：`AUTHORIZED_ROOTS_REQUIRED`、`PATH_NOT_ALLOWED` 以及四类 EPUB 确定性错误码。
+- 稳定诊断：`AUTHORIZED_ROOTS_REQUIRED`、`PATH_NOT_ALLOWED`、四类 EPUB 确定性错误码与 AUD-028 三个资源上限错误码。
 
 ### 索引生命周期与事实性
 

@@ -187,6 +187,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Headings that match the heading shape but carry an unsupported or malformed number (for example `chapter im`) are deterministically skipped and absorbed into the previous chapter's content; the parser never guesses a number.
 - Volume-reset inference (numbering restart implies a new volume) applies equally to digits, Chinese numerals, and roman numerals; locator format `v<volume>-c<local>` is unchanged.
 
+### M1 EPUB resource limits amendment (2026-08-17)
+
+- EPUB ingestion enforces deterministic resource limits before and during ZIP expansion: ZIP entry count (`maxEntries`), per-document decoded size including the OPF package (`maxDocumentBytes`), and total decoded spine size (`maxTotalBytes`). Defaults: 4096 entries, 16 MiB per document, 64 MiB total.
+- Every breach is a stable coded error — `EPUB_TOO_MANY_ENTRIES`, `EPUB_DOCUMENT_TOO_LARGE`, `EPUB_TOTAL_TOO_LARGE` — never a hang or unbounded memory growth.
+- Limits are injectable for tests via `new GenericAdapter({ epub: Partial<EpubLimits> })`; `DEFAULT_EPUB_LIMITS` is exported from `@writing-mcp/adapter-generic`. No other interface changes.
+
 ## Benchmark gate
 
 - Dataset: `benchmarks/m0.json`, exactly 30 machine-readable tasks.
