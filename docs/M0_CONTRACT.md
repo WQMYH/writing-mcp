@@ -181,6 +181,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - `capabilities` are derived from the actual input: generic works always declare `documents` and `full_text`, and declare `epub` only when the work actually contains an EPUB file. All declared values stay inside the frozen `WORK_CAPABILITIES` vocabulary.
 - A directory work without the `epub` capability never loads EPUB files even if such files exist under the directory; text-only directory behavior is otherwise unchanged.
 
+### M1 chapter-number syntax amendment (2026-08-17)
+
+- Supported chapter-number syntax is explicit and deterministic for TXT headings and Markdown/generic document titles: Arabic digits, Chinese numerals from 一 up to 九百九十九 (百 composition, including 第一百零三/第一百一十章 forms), and canonical roman numerals `i`…`mmmcmxcix` after `chapter`.
+- Headings that match the heading shape but carry an unsupported or malformed number (for example `chapter im`) are deterministically skipped and absorbed into the previous chapter's content; the parser never guesses a number.
+- Volume-reset inference (numbering restart implies a new volume) applies equally to digits, Chinese numerals, and roman numerals; locator format `v<volume>-c<local>` is unchanged.
+
 ## Benchmark gate
 
 - Dataset: `benchmarks/m0.json`, exactly 30 machine-readable tasks.
