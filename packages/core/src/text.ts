@@ -7,21 +7,25 @@ export function splitDocument(document: SourceDocument, makeId: (ordinal: number
   const sourceLineOffset = (document.sourceStartLine ?? 1) - 1;
   const spans: Span[] = [];
   let start = 0, heading = document.title, buffer: string[] = [];
+  const mapLocators = (documentStartLine: number, documentEndLine: number) => document.sourceSegments?.flatMap(segment => {
+    const overlapStart = Math.max(documentStartLine, segment.documentStartLine);
+    const overlapEnd = Math.min(documentEndLine, segment.documentEndLine);
+    if (overlapStart > overlapEnd) return [];
+    return [{
+      relativePath: segment.relativePath,
+      startLine: segment.startLine + overlapStart - segment.documentStartLine,
+      endLine: segment.startLine + overlapEnd - segment.documentStartLine,
+    }];
+  }) ?? [{ relativePath: document.relativePath, startLine: sourceLineOffset + documentStartLine, endLine: sourceLineOffset + documentEndLine }];
   const flush = () => {
-    const content = buffer.join("\n").trim();
-    if (content) {
-      const documentStartLine = start + 1, documentEndLine = start + buffer.length;
-      const locators = document.sourceSegments?.flatMap(segment => {
-        const overlapStart = Math.max(documentStartLine, segment.documentStartLine);
-        const overlapEnd = Math.min(documentEndLine, segment.documentEndLine);
-        if (overlapStart > overlapEnd) return [];
-        return [{
-          relativePath: segment.relativePath,
-          startLine: segment.startLine + overlapStart - segment.documentStartLine,
-          endLine: segment.startLine + overlapEnd - segment.documentStartLine,
-        }];
-      }) ?? [{ relativePath: document.relativePath, startLine: sourceLineOffset + documentStartLine, endLine: sourceLineOffset + documentEndLine }];
-      spans.push({ spanRef: makeId(spans.length), documentRef: document.documentRef, ordinal: spans.length, startLine: sourceLineOffset + documentStartLine, endLine: sourceLineOffset + documentEndLine, heading, content, locators });
+    // AUD-030 locator exactness: trim blank lines out of the recorded range
+    // so locators never cover lines the trimmed content does not contain.
+    let first = 0, last = buffer.length - 1;
+    while (first <= last && !buffer[first]!.trim()) first++;
+    while (last >= first && !buffer[last]!.trim()) last--;
+    if (first <= last) {
+      const documentStartLine = start + first + 1, documentEndLine = start + last + 1;
+      spans.push({ spanRef: makeId(spans.length), documentRef: document.documentRef, ordinal: spans.length, startLine: sourceLineOffset + documentStartLine, endLine: sourceLineOffset + documentEndLine, heading, content: buffer.slice(first, last + 1).join("\n"), locators: mapLocators(documentStartLine, documentEndLine) });
     }
     buffer = [];
   };
@@ -30,6 +34,19 @@ export function splitDocument(document: SourceDocument, makeId: (ordinal: number
     const nextHeading = line.match(/^#{1,6}\s+(.+)/)?.[1]?.trim();
     if (nextHeading && buffer.some((v) => v.trim())) { flush(); start = i; heading = nextHeading; }
     else if (!buffer.length) { start = i; if (nextHeading) heading = nextHeading; }
+    // AUD-030 hard cap: a single line longer than maxChars is hard-split into
+    // bounded chunk spans sharing that one source line, instead of surviving
+    // as one oversized span.
+    if (line.length > maxChars) {
+      if (buffer.some(v => v.trim())) flush();
+      const documentLine = i + 1;
+      for (let offset = 0; offset < line.length; offset += maxChars) {
+        const chunk = line.slice(offset, offset + maxChars);
+        spans.push({ spanRef: makeId(spans.length), documentRef: document.documentRef, ordinal: spans.length, startLine: sourceLineOffset + documentLine, endLine: sourceLineOffset + documentLine, heading, content: chunk, locators: mapLocators(documentLine, documentLine) });
+      }
+      buffer = [];
+      continue;
+    }
     buffer.push(line);
     if (buffer.join("\n").length >= maxChars) flush();
   }

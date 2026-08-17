@@ -35,6 +35,7 @@
 | `generic-work-boundary.test.ts` | AUD-026 通用作品边界：双 EPUB 目录产生两个候选并返回 ambiguous、EPUB 候选与直接解析文件同 workRef/rootPath、capabilities 由实际输入决定（纯文本目录不含 epub）、纯文本目录仍为单一作品 |
 | `txt-numbering.test.ts` | AUD-027 章节编号语法：罗马数字章节不再被 Number("iv") 丢弃、中文数字支持到九百九十九（百位合成）、罗马数字重置推断新卷、非法罗马数字确定性跳过并入上一章、Markdown 中文数字章名识别为 chapter |
 | `snapshot-consistency.test.ts` | AUD-029 snapshot 一致性：读取期间源持续变化拒绝 `SOURCE_CHANGED_DURING_READ`（有界重试后仍不一致）、一次性写入稳定后有界重试成功、单文件超限 `SOURCE_FILE_TOO_LARGE`、作品总量超限 `SOURCE_TOTAL_TOO_LARGE`、默认上限正常加载 |
+| `span-hard-split.test.ts` | AUD-030 span 硬上限与边界规则：超长单行硬切为共享同一源行的有界 chunk、locator 不含被裁空行、相邻 span 连续平铺无重叠无遗漏且内容可重组、硬切后后续 span 行号连续、heading 边界 locator 精确 |
 
 ## 覆盖清单（按能力域）
 
@@ -94,6 +95,7 @@
 ### 索引生命周期与事实性
 
 - 索引生命周期：不兼容 schema 只读报告/显式重建、失败事务保留上一 revision、未解析方括号引用入库。
+- AUD-030 span 硬上限：超长单行硬切为共享同一源行的有界 chunk（span 内容永不超 `maxChars`）；locator 精确排除被裁空行；相邻 span 连续平铺无重叠无遗漏（重叠方案已评估并拒绝：重复行会使确定性 mention/边证据重复计数）。
 - 索引事实性：源正文/标题/kind/章节号/源顺序/起始行变化使 status 变 stale；同作品并发串行、live/stale writer lock、`.previous/tmp` 恢复和用户 `.gitignore` 保持。
 - 增量影响范围：无关文档的派生记录不改写 revision；新增实体会重新解析其他文档中匹配的未解析引用。
 - 属性图：重复 Chapter 标题保持独立身份并按源 ordinal 排序；同名实体保存全部定义且规范来源可稳定晋升；多次 mention 和多 span 关系证据不再静默丢失。
