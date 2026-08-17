@@ -1,12 +1,12 @@
 ---
 name: writing-mcp-plan
 description: Execute the Writing MCP Server v2 implementation plan: recovery, gate probing, task routing, doc navigation, and commit rules for the writing-mcp monorepo at E:\Programming\AI\Agents\Writing\writing-mcp. Use when continuing implementation work, resuming after interruption, auditing plan-vs-code consistency, or deciding what to fix next.
-version: 0.6.0
+version: 0.7.0
 ---
 
 # Writing MCP 计划执行 Skill
 
-本 Skill 由 `plan-to-skill` 元技能生成（处理协议 5 步 + 教训固化），是 `Writing_MCP_Server_v2.md` 执行计划的**操作手册**：在哪读什么、恢复时做什么、按什么顺序修、何时提交。它不是契约本身——契约细节以各文档为准。
+本 Skill 由 `plan-to-skill` 元技能（v0.2.0）生成：先经步骤 0 计划审查（状态唯一、文件边界合格），再按生成规则产出。它是 `Writing_MCP_Server_v2.md` 执行计划的**操作手册**：在哪读什么、恢复时做什么、按什么顺序修、何时提交。不是契约本身——契约细节以各文档为准。
 
 ## 文档地图（先读这个，不清晰就点开原文）
 
@@ -16,11 +16,11 @@ version: 0.6.0
 | 项目定位/工具语义/架构 | `E:\Programming\AI\Agents\Writing\.qoder\plans\Writing_MCP_Server_README.md` | 理解工具/边界时 |
 | 冻结契约（协议/schema/错误/基准） | `writing-mcp/docs/M0_CONTRACT.md` | 改接口/schema/验收前 |
 | **实施状态（唯一事实源）** | `writing-mcp/docs/IMPLEMENTATION_STATUS.md` | **每次恢复核对；所有"当前状态"判断以此为准** |
-| 问题证据库（AUD-001~036） | `writing-mcp/docs/REVIEW_2026-08-15_CONSOLIDATED.md` | 决定修哪个 AUD 时 |
+| 问题库/审查（AUD-001~036） | `writing-mcp/docs/REVIEW_2026-08-15_CONSOLIDATED.md` | 决定修哪个 AUD 时 |
 | 测试覆盖清单 | `writing-mcp/tests/README.md` | 新增/删除测试时 |
 | 未来构想（非承诺） | `E:\Programming\AI\Agents\Writing\.qoder\plans\Writing_MCP_Server_IDEAS.md` | 评估扩展时 |
 
-**状态单一事实源纪律**：`IMPLEMENTATION_STATUS.md` 是唯一状态文件。计划、README、REVIEW 文档**只引用它，不维护状态副本**。若发现其他文件记载了状态，以状态文件为准并修正该文件——历史教训见「历史教训」。
+**状态单一事实源纪律**：`IMPLEMENTATION_STATUS.md` 是唯一状态文件。计划、README、REVIEW 文档**只引用它，不维护状态副本**。若发现其他文件记载了状态，以状态文件为准并修正该文件。
 
 ## 恢复协议（每次继续先做）
 
@@ -48,9 +48,9 @@ pnpm test                   # = pnpm build && vitest run（含 build 前置）
 3. **核对代码事实**：对每个"声称已完成"的 AUD，用 grep 定位对应代码路径 + 回归测试存在性（按「任务代码锚点」表核对）。
 4. **判定分类**：
    - 声称完成 + 门禁绿 + 代码/测试在 → **确认完成**
-   - 声称完成但缺代码或测试 → **虚报完成**（教训 2：修正状态，先补测试）
-   - 代码/测试在但文档未记 → **超前完成**（教训 3：回写状态文件，标记完成）
-   - 文档标记未开发（M4/M5）→ **预期未完成**（教训 4：不是缺陷，不进入路由候选）
+   - 声称完成但缺代码或测试 → **虚报完成**（修正状态，先补测试）
+   - 代码/测试在但文档未记 → **超前完成**（回写状态文件，标记完成）
+   - 文档标记未开发（M4/M5）→ **预期未完成**（不是缺陷，不进入路由候选）
 5. **输出**：`{ 当前Step, 已关闭AUD集, 剩余AUD集, 漂移项[], 超前项[] }`，写入工作记忆（不落盘，不污染唯一状态源）。
 
 ## 精准路由协议（状态确定后，输出下一步）
@@ -59,10 +59,10 @@ pnpm test                   # = pnpm build && vitest run（含 build 前置）
 
 1. **顺序主规则**：按 Step 1→7 推进，不跳步。Step N 未全关，不路由到 Step N+1 的 AUD。
 2. **Step 内部**：按 AUD 编号升序修；每条路由输出 = `{ 目标AUD, 完成门禁(测试文件+必须新建的失败测试), 契约影响(是否需要 amendment/ADR) }`。
-3. **超前项处理**：路由第一步永远是"回写状态文件"，把超前完成 AUD 标记完成——漏报完成教训的正规化。
-4. **未开发里程碑特例**：M4/M5 的 AUD 不进入候选，除非前置 Step 门禁全关（教训 4 正规化）。
+3. **超前项处理**：路由第一步永远是"回写状态文件"，把超前完成 AUD 标记完成。
+4. **未开发里程碑特例**：M4/M5 的 AUD 不进入候选，除非前置 Step 门禁全关。
 5. **契约影响判定**：公共输出/schema/错误码变化 → 必须带 amendment 或 ADR 一起路由；索引 schema 变化 → 走重建不迁移。
-6. **开发中判定**：每次路由到修复前，先问"开发中还是已发布"（教训 5）——决定能否改契约、能否依赖 SDK 行为、失败形态是否保守。
+6. **开发中判定**：每次路由到修复前，先问"开发中还是已发布"——决定能否改契约、能否依赖 SDK 行为、失败形态是否保守。
 
 ## 任务代码锚点（路由判定用，非状态）
 
@@ -102,11 +102,4 @@ pnpm test                   # = pnpm build && vitest run（含 build 前置）
 - `REVIEW_2026-08-14.md`/`REVIEW_2026-08-15.md` 是未跟踪的局部审查，未确认来源前不作为正式基线提交。
 - 不要为模块化重写已稳定工具注册/stdio；不引入动态插件。
 - 门禁命令：`check`=tsc、`test`/`benchmark` 均含 `pnpm build` 前置（来自 package.json 实测）。
-
-## 历史教训（本项目的，每次恢复与审阅时警惕重演）
-
-1. **状态多源漂移**：测试计数曾 13/14/15/12 四文件漂移；完成判定靠人维护文本。→ 唯一状态文件 + 门禁绑定。
-2. **虚报完成（AUD-021）**：声称完成但 `service.index()` 未记录指纹致测试失败。→ 完成声称必须能由失败回归测试证伪。
-3. **漏报完成**：AUD-005/015/020/022 已实现但文档未记。→ 文档可能落后于代码，审阅先核对代码事实。
-4. **审阅框架错误**：把未开发里程碑（M4/M5）门禁当缺陷审阅。→ 未开发的门禁未关闭是预期状态。
-5. **开发中 ≠ 已发布**：AUD-025 方案先按已发布约束设计（不动契约/双校验），实为开发中修复（可 amendment/单点所有权/isError 短路）。→ 设计修复前先判定开发中/已发布。
+- 本 skill 由 `plan-to-skill` v0.2.0 生成；计划结构变化时按元技能步骤 0 重新审查并再生成，不手工改本文件维持。
