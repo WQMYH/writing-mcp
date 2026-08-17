@@ -36,6 +36,7 @@
 | `txt-numbering.test.ts` | AUD-027 章节编号语法：罗马数字章节不再被 Number("iv") 丢弃、中文数字支持到九百九十九（百位合成）、罗马数字重置推断新卷、非法罗马数字确定性跳过并入上一章、Markdown 中文数字章名识别为 chapter |
 | `snapshot-consistency.test.ts` | AUD-029 snapshot 一致性：读取期间源持续变化拒绝 `SOURCE_CHANGED_DURING_READ`（有界重试后仍不一致）、一次性写入稳定后有界重试成功、单文件超限 `SOURCE_FILE_TOO_LARGE`、作品总量超限 `SOURCE_TOTAL_TOO_LARGE`、默认上限正常加载 |
 | `span-hard-split.test.ts` | AUD-030 span 硬上限与边界规则：超长单行硬切为共享同一源行的有界 chunk、locator 不含被裁空行、相邻 span 连续平铺无重叠无遗漏且内容可重组、硬切后后续 span 行号连续、heading 边界 locator 精确 |
+| `lifecycle.test.ts` | AUD-032 进程生命周期：SIGTERM/SIGINT 在时限内终止进程（POSIX 优雅 exit 0 / Windows 信号终止）、stdin EOF 优雅退出 exit 0、完整会话 stdout 只输出 JSON-RPC 且干净退出、进程内 shutdown 链先关 server 再关 service 幂等且零 stdout 写入 |
 
 ## 覆盖清单（按能力域）
 
@@ -51,6 +52,7 @@
 - AUD-023：开发捕获事件保存有界 `outputHits`（命中 ref/kind/sourceKind/score + locator 哈希、omitted 原因、候选 workRef，各列上限 100），正文/标题/路径不入捕获；通用 JSONL 与逐调用报告仍只保存数量。
 - AUD-024：general JSONL 的轮转检查与追加在同一按目录串行队列内执行，注入小容量上限验证轮转保留最新半数、并发 20 条记录不丢不乱且保持提交顺序、写失败降级为 persistence=failed 不替换业务结果。
 - AUD-025：输出 data schema 是注册信封与 wrapper 自校验的单一真相源；wrapper 记录前自校验失配抛出 `OUTPUT_SCHEMA_MISMATCH`（记 failure + isError 一致信封 + 专用 recovery）；正常 in-process 调用无协议错误；SDK 输入拒绝返回裸 isError 文本、不产生诊断记录且不写 stderr；协议层未知消息类型经注入的 onerror 上报。
+- AUD-032：SIGINT/SIGTERM/stdin EOF 统一走同一优雅关闭链（先关 MCP server 再关 service）并确定性退出（exit 0，5 秒 grace guard 兜底强制终止，同步 SQLite 长操作不可取消也不能挂住进程）；stdout 专属 JSON-RPC——会话全程与关闭过程每一行 stdout 均可解析为 JSON-RPC 消息，生命周期诊断只走 stderr；`createStdioRuntime` 暴露的 shutdown 幂等且在进程内测试中零 stdout 写入。
 
 ### 检索正确性（M3）
 

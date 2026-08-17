@@ -96,6 +96,25 @@ export interface ServerOptions {
   readonly onerror?: (error: Error) => void;
 }
 
+export interface StdioRuntime {
+  readonly server: ReturnType<typeof createServer>;
+  /** AUD-032: idempotent graceful shutdown — closes the MCP server (transport)
+   * before the service. Never writes to stdout: stdout is the JSON-RPC channel. */
+  readonly shutdown: () => Promise<void>;
+}
+
+export function createStdioRuntime(service: WritingService, options?: ServerOptions): StdioRuntime {
+  const server = createServer(service, undefined, options);
+  let closing = false;
+  const shutdown = async (): Promise<void> => {
+    if (closing) return;
+    closing = true;
+    try { await server.close(); } catch (error) { console.error(`[writing-mcp][lifecycle] server close failed: ${error instanceof Error ? error.message : String(error)}`); }
+    try { service.close(); } catch (error) { console.error(`[writing-mcp][lifecycle] service close failed: ${error instanceof Error ? error.message : String(error)}`); }
+  };
+  return { server, shutdown };
+}
+
 export function createServer(service = createService(), recorder = new DiagnosticRecorder(workRef => service.diagnosticDirectory(workRef)), options?: ServerOptions) {
   const server = new McpServer({ name: "writing-mcp", version: "0.1.0" });
   // onerror lives on the underlying low-level Server (Protocol), not on the McpServer wrapper.
@@ -131,8 +150,18 @@ export async function runStdio(): Promise<void> {
   const service = createService();
   // stderr is the only observability exit for protocol-layer errors (AUD-025):
   // SDK input rejections and handler-level failures stay in the MCP envelope.
-  const server = createServer(service, undefined, { onerror: error => console.error(`[writing-mcp][protocol] ${error instanceof Error ? error.stack ?? error.message : String(error)}`) });
-  const close = () => service.close();
-  process.once("SIGINT", close); process.once("SIGTERM", close); process.once("exit", close);
-  await server.connect(new StdioServerTransport());
+  // stdout stays pure JSON-RPC; shutdown closes server and service (AUD-032).
+  const runtime = createStdioRuntime(service, { onerror: error => console.error(`[writing-mcp][protocol] ${error instanceof Error ? error.stack ?? error.message : String(error)}`) });
+  const terminate = (): void => {
+    void runtime.shutdown().finally(() => process.exit(0));
+    // Grace guard: synchronous SQLite work cannot be cancelled, but the process
+    // must still exit deterministically once shutdown is requested (AUD-032).
+    setTimeout(() => process.exit(1), 5_000).unref();
+  };
+  process.once("SIGINT", terminate);
+  process.once("SIGTERM", terminate);
+  // stdin EOF (client disconnect) closes the transport and fires onclose.
+  runtime.server.server.onclose = terminate;
+  process.once("exit", () => service.close());
+  await runtime.server.connect(new StdioServerTransport());
 }
