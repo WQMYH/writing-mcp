@@ -50,8 +50,17 @@ describe("AUD-013 source provider registry", () => {
 
   test("profileFor promotes required refs to L0 and falls back to L3 for unknown kinds", () => {
     expect(contextSourceProfile("Character", true).layer).toBe("L0");
-    expect(contextSourceProfile("chapter", false).layer).toBe("L3");
     expect(contextSourceProfile("Character", false).layer).toBe("L1");
+    expect(contextSourceProfile("document", false).layer).toBe("L3");
+    expect(contextSourceProfile("some-unknown-kind", false).layer).toBe("L3");
+  });
+
+  test("lowercase document kinds normalize to their entity counterparts (search rows carry d.kind)", () => {
+    expect(contextSourceProfile("character", false).layer).toBe("L1");
+    expect(contextSourceProfile("state", false).layer).toBe("L1");
+    expect(contextSourceProfile("foreshadow", false).layer).toBe("L1");
+    expect(contextSourceProfile("chapter", false).layer).toBe("L2");
+    expect(contextSourceProfile("outline", false).layer).toBe("L2");
   });
 
   test("dedupByEvidence keeps the first occurrence; callers protect required blocks by ordering them first", () => {
@@ -75,16 +84,19 @@ describe("AUD-013 context assembly uses semantic layers instead of positions", (
       const dbPath = join(root, ".writing-index", work.workRef.replace(":", "-"), "index.sqlite"), db = new DatabaseSync(dbPath);
       let characterRef = "";
       try { characterRef = String((db.prepare("SELECT entity_ref FROM entities WHERE name='林秋' AND kind='Character'").get() as { entity_ref: string }).entity_ref); } finally { db.close(); }
-      const packet = await store.context("林秋", 10_000, [characterRef]);
-      const character = packet.blocks.find(item => item.ref === characterRef);
+      const packet = await store.context("林秋", 10_000);
+      const characterDocHits = packet.blocks.filter(item => item.kind === "character");
+      expect(characterDocHits.length, "character-document span hits must appear via the real search path").toBeGreaterThan(0);
+      for (const block of characterDocHits) expect(block.layer, "lowercase document kind 'character' must normalize to L1").toBe("L1");
+      const chapterBlocks = packet.blocks.filter(item => item.kind === "chapter");
+      expect(chapterBlocks.length, "chapter span hits must appear").toBeGreaterThan(0);
+      for (const block of chapterBlocks) expect(block.layer, "lowercase document kind 'chapter' must normalize to L2").toBe("L2");
+      expect(packet.blocks.every(item => item.layer === "L1" || item.layer === "L2"), "no block may fall back to L3 in this fixture — a blanket L3 means the kind input mismatches the registry").toBe(true);
+      const requiredPacket = await store.context("林秋", 10_000, [characterRef]);
+      const character = requiredPacket.blocks.find(item => item.ref === characterRef);
       expect(character, "the required Character entity must be resolved").toBeDefined();
       expect(character!.layer).toBe("L0");
       expect(character!.required).toBe(true);
-      const chapterBlocks = packet.blocks.filter(item => item.kind === "chapter" && !item.required);
-      expect(chapterBlocks.length, "chapter span hits must appear").toBeGreaterThan(0);
-      for (const block of chapterBlocks) expect(block.layer).toBe("L3");
-      const characterPoolHits = packet.blocks.filter(item => item.kind === "Character" && !item.required);
-      for (const block of characterPoolHits) expect(block.layer).toBe("L1");
     } finally { store.close(); await rm(root, { recursive: true, force: true }); }
   });
 

@@ -22,9 +22,22 @@ export const CONTEXT_SOURCE_REGISTRY: Readonly<Record<string, ContextSourceProfi
 
 export const DEFAULT_CONTEXT_SOURCE_PROFILE: ContextSourceProfile = { layer: "L3", priority: 9 };
 
+// AUD-013 kind normalization: context candidates come from search rows whose
+// kind is the lowercase document kind (d.kind), not the entity kind. Document
+// kinds normalize to their entity counterparts (same mapping store.ts uses
+// when deriving entities from document headings); "document" and unknown
+// kinds stay background material (L3).
+export const DOCUMENT_KIND_ALIASES: Readonly<Record<string, string>> = {
+  character: "Character",
+  state: "Fact",
+  foreshadow: "Foreshadow",
+  chapter: "Chapter",
+  outline: "OutlineNode",
+};
+
 export function contextSourceProfile(kind: string, required: boolean): ContextSourceProfile {
   if (required) return { layer: "L0", priority: 0 };
-  return CONTEXT_SOURCE_REGISTRY[kind] ?? DEFAULT_CONTEXT_SOURCE_PROFILE;
+  return CONTEXT_SOURCE_REGISTRY[kind] ?? CONTEXT_SOURCE_REGISTRY[DOCUMENT_KIND_ALIASES[kind] ?? ""] ?? DEFAULT_CONTEXT_SOURCE_PROFILE;
 }
 
 export function layerRank(layer: ContextLayer): number {

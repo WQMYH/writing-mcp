@@ -122,8 +122,9 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 ### AUD-013 来源提供器注册表与 evidenceHash 去重（待审阅，2026-08-17）
 
 - **方案**：context 装配的分层从位置阈值（`i<3?L1:i<10?L2:L3`，L0 从不产生）改为冻结的来源提供器注册表（新纯模块 `packages/core/src/context-assembly.ts`）：Character/Fact/Foreshadow→L1，Chapter/Event/OutlineNode→L2，Location/Item 与未知 kind→L3，required 块（池内命中与直解）晋升 L0；同 evidenceHash 候选折叠（required 前置保证不被折，折叠项以 `duplicate_evidence` 进 omitted）；预算填充改为 L0→L3（层序→分数降→注册表 priority→ref），实现 README 的"自 L3 向 L0 裁剪"。`ContextPacket` 形状与既有 omitted 原因不变；minTokens/preferredTokens/maxTokens 保留未声明（AUD-014 预留）。
-- **验证**：新增 `tests/context-source-registry.test.ts` 6 项回归（注册表全覆盖/未知回落/required L0/去重单元与集成/L3 优先裁剪）；闸门全绿：tsc 0 错、114/114 测试、30/30 基准、lint 0 警告、coverage lines 92.88%≥90（exit 0）。
-- **契约**：M0_CONTRACT 新增 M4 context source registry amendment。
+- **验证**：新增 `tests/context-source-registry.test.ts` 7 项回归（注册表全覆盖/未知回落/required L0/文档类型归一/去重单元与集成/L3 优先裁剪）；闸门全绿：tsc 0 错、115/115 测试、30/30 基准、lint 0 警告、coverage lines 92.88%≥90。
+- **审阅发现缺陷已修**：初版 kind 输入接错——searchRows 返回小写文档类型（d.kind）而注册表键为大写实体类型，全部回落 L3，L1/L2 从未生效；修复为 DOCUMENT_KIND_ALIASES 归一（character→Character、state→Fact、foreshadow→Foreshadow、chapter→Chapter、outline→OutlineNode，document/未知仍 L3），并补真实路径 L1 归属集成断言与"不得整体落 L3"护栏。教训：原 6 项测试因绕过真实输入路径（单元喂实体类型字符串、集成断言恰好等于回落值）而漏检。
+- **契约**：M0_CONTRACT 新增 M4 context source registry amendment（含归一规则）。
 
 ### AUD-035 工程硬化第三阶段：Biome 格式化（用户决策延后，2026-08-17）
 
