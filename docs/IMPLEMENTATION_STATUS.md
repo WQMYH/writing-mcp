@@ -89,32 +89,19 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 继续 v2 Step 3 剩余子门禁：中文完整问句、别名/歧义/未解析引用、稳定排序、输入边界、FTS 降级语义已落地（`4030085`）；AUD-021 源指纹复用 store 与 AUD-018 执行时间上限已落地（`c376df7`）。REVIEW_2026-08-16 的唯一 P0 AUD-005（requiredRefs 直接解析）已落地并新增 5 项回归测试；P1 首项 AUD-020 主体已落地：BFS 逐层批量边查询（CTE frontier + ROW_NUMBER 每节点 fan-out 封顶）与 locator/span 批量加载，语义（fan-out 64、全局 512、逐边证据、确定性排序）不变，新增 2 项宽图护栏测试；真实语料百万字 P95 门禁待代表性语料可得后补。AUD-015 主体已落地：timeline 为携带时态属性实体与 precedes 边的确定性投影（章节位置排序，新增 TIMELINE_PROJECTION 诊断），章节时态过滤待目标章节输入。AUD-022 主体已落地：确定性可抽取词汇表冻结为 ENTITY_KINDS/EDGE_KINDS/WORK_CAPABILITIES（EntityKind 补入 OutlineNode，新增 EdgeKind/WorkCapability 类型，capabilities 类型收窄），未实现关系不作为已有能力（M0_CONTRACT 新增 M3 graph vocabulary freeze amendment）。AUD-012 M3 范围已落地（按用户里程碑优先路线，M4 深水区延后）：writing_explore 新增可选 targetChapter，timeline 投影按 from ≤ 锚点 ≤ to 做章节时态过滤（无界 from/to 视为书首/书尾）；writing_context 新增 reserved 输入 targetChapter/entityRefs/documentRefs/excludeRefs 且描述显式标注 taskType 等参数 reserved（接收验证、不改变装配，M0_CONTRACT 新增对应 amendment）。AUD-012 残留的 source_kind 排序因子已落地（按用户决策，M3 期内唯一排序变更）：search 中命中查询词的 deterministic 行获固定 +0.25 信任加分，不被原始分更高的 alias-only heuristic 行压过（M0_CONTRACT 新增 source-trust amendment，新增 1 项翻转回归测试）。AUD-023 主体已落地：开发捕获事件新增有界 outputHits（命中 ref/kind/sourceKind/score + locator 哈希、omitted 原因、候选 workRef，各列上限 100），正文/标题/路径不入捕获；通用 JSONL 与逐调用报告保持只存数量（M0_CONTRACT 新增 capture bounded-refs amendment，新增 1 项回归测试）。AUD-024 主体已落地：general diagnostics.jsonl 的轮转检查与追加入同一按目录串行队列，并发记录不再交错轮转重写与追加；容量上限（1000 事件/5 MiB）生产不变、测试可注入，写失败降级为 persistence=failed（M0_CONTRACT 新增 general JSONL serialization amendment，新增 3 项回归测试）。AUD-025 主体已落地：批次 B 关闭——五个工具的输出 data schema 导出为单一真相源（注册信封与 wrapper 自校验共用）；wrapper 记录成功前自校验，失配抛出新错误码 `OUTPUT_SCHEMA_MISMATCH`（记 failure + isError 一致信封 + 专用 recovery）；`createServer` 支持注入 `onerror`（接在底层 Server 上），stdio 入口把协议层错误写入 stderr（`[writing-mcp][protocol]` 前缀）；SDK 输入拒绝属协议层、在 mcp_calls_only 观察边界外（裸 isError 文本、无诊断记录）；M0_CONTRACT 新增 protocol error boundary amendment，新增 `tests/protocol-boundary.test.ts` 5 项回归。AUD-026 主体已落地：generic 作品边界确定化——目录内每个 EPUB 独立成候选（与直接解析该文件同 workRef/rootPath），其余文本合成一个目录作品，多书目录返回 ambiguous 而非静默合并；capabilities 由实际输入决定（纯文本作品不再声明 epub），无 epub 能力的目录作品不加载 EPUB 文件（M0_CONTRACT 新增 generic work boundary amendment，新增 4 项回归并更新 epub 多书测试）。AUD-027 主体已落地：章节编号语法明确化——阿拉伯数字/中文数字（一至九百九十九，含百位合成，修复罗马数字被 Number("iv") 丢弃、百以上中文数字不支持）、规范罗马数字（i…mmmcmxcix）三种章号确定性支持；非法编号确定性跳过并入上一章，卷重置推断对三种编号一致生效，Markdown 中文数字章名识别为 chapter（M0_CONTRACT 新增 chapter-number syntax amendment，新增 5 项回归）。下一子门禁：批次 C 继续（M1：AUD-028 EPUB 资源上限 → AUD-029 snapshot 一致性 → AUD-030 splitDocument 硬切 → AUD-032 生命周期 → AUD-035 工程硬化）；完整重排按用户决策搁置到 M4 + 代表性语料之后，候选统计校准待语料。M4 剩余：taskType/目标与排除引用（AUD-012）、L0～L3 语义分层与去重（AUD-013）、tokenizer profile（AUD-014）。status 的 mtime/size 快速路径（不牺牲语义 snapshot）仍待实现。
 
-## 待审阅修复方案（Pending Review）
+## 已审阅修复记录（原 Pending Review 节归档）
 
-> 本节按用户要求，逐条记录已执行修复的方案内容与验证结果，标注**待审阅**。审阅时若对某条有异议，可按提交回滚或提出修订；各条对应的 amendment/测试已在正文与 `tests/README.md` 同步。
+> 本节原为「待审阅修复方案」，逐条记录已执行修复的方案内容。**2026-08-16 审阅通过后归档**：方案细节见对应提交的 commit message 与 `tests/README.md`，此处只保留审阅结论，不再复制完整方案。
 
-### AUD-025 协议层错误边界（批次 B 收尾，待审阅）
+| AUD | 审阅结论 | 提交 | 测试 | 接口影响 |
+|---|---|---|---|---|
+| **AUD-025** 协议层错误边界 | ✅ 合格：输出 data schema 单一真相源、wrapper 记录前自校验（`OUTPUT_SCHEMA_MISMATCH`）、`createServer` 可注入 `onerror`→stderr、SDK 输入拒绝属协议层观察边界外 | `35fcd3f` | `protocol-boundary.test.ts` 5 项 | 加法式（新错误码 + 可选构造参数） |
+| **AUD-026** 通用作品边界与 capabilities 实际化 | ✅ 合格：逐 EPUB 独立候选、多书目录 ambiguous、capabilities 由实际输入决定 | `4675458` | `generic-work-boundary.test.ts` | 仅 generic 发现语义变更（行为变更已记录） |
+| **AUD-027** 章节编号语法明确化 | ✅ 合格：阿拉伯/中文（至九百九十九）/规范罗马三语法冻结、非法编号确定性跳过、卷重置一致生效 | `9ca427b` | `txt-numbering.test.ts` 5 项 | 仅解析覆盖面扩大 |
 
-- **依据**：REVIEW_2026-08-16 §6.3 P2 #13（M0.1 残留：wrapper 与 SDK 双层输出校验可能不一致、协议层错误无可观测出口）；用户在会话中确认的 5 步方案。
-- **方案**：① 五个工具的输出 data schema 导出为命名常量（`TOOL_*_DATA_SCHEMA`），registerTool 的 outputSchema 信封与 wrapper 自校验共用同一份，杜绝双源漂移；② `handleDiagnosed` 在记录成功前用对应 data schema 自校验裸结果，失配抛新错误码 `OUTPUT_SCHEMA_MISMATCH`（加法式，不改既有码表）并记 failure，返回标准失败信封 + `isError: true`，与 SDK 后置输出校验保持一致；③ `createServer` 新增可选 `ServerOptions.onerror`，接在底层 Server（Protocol）上（McpServer 包装类自身无此属性），stdio 入口把协议层错误写入 stderr（`[writing-mcp][protocol]` 前缀，stdout 仍仅协议消息）；④ M0_CONTRACT 新增 protocol error boundary amendment（新错误码 + 观察边界定义：SDK 输入拒绝在 handler 前发生，属 mcp_calls_only 边界外，返回裸 isError 文本且不留诊断记录）；⑤ 新增 `tests/protocol-boundary.test.ts` 5 项：schema 单一真相源、输出失配一致信封、正常路径无协议错误、SDK 输入拒绝无诊断记录且 stderr 为空、协议层未知消息经 onerror 上报。
-- **调研中发现的 SDK 事实**（v1.30 源码核实）：输入拒绝被 CallToolRequest handler 内部捕获转 `createToolError`，不触发 onerror；未知 notification 被静默忽略，只有不匹配任何消息类型判定的消息才走 `Unknown message type` → onerror；McpServer 的 `onerror` 实际在 `server.server`（底层 Server）上。
-- **验证**：pnpm check EXIT=0；vitest 80/80（含新增 5 项）；benchmark 30/30（factRecall/evidenceCoverage/tokenReduction 三闸门均达标）。
-- **接口影响**：仅加法式——新增一个错误码与一个可选构造参数；无既有信封/schema/码表变更。
+**审阅附注（2026-08-16）**：三条均在已提交的 HEAD 上通过 `tsc -b` 与 30/30 基准验证。
 
-### AUD-026 通用作品边界与 capabilities 实际化（批次 C 首项，待审阅）
-
-- **依据**：REVIEW_2026-08-15_CONSOLIDATED P2 AUD-026（generic 目录把所有支持文件递归合成一个作品，不能识别目录内多个独立书籍；capabilities 总是声明 epub）；完成条件：定义通用作品边界/歧义候选，capabilities 由实际输入决定。
-- **方案（推荐方式，已按用户授权执行）**：① 确定性作品边界——直接文件仍为单一作品；目录内每个 `.epub` 是自包含书容器，独立成候选（workRef/rootPath 与直接解析该文件完全一致），其余 Markdown/TXT 合成一个目录作品；候选 >1 时自然落入既有 `ambiguous` 机制（`ResolveResult` 形状不变）；② capabilities 实际化——generic 作品恒声明 `documents`/`full_text`，仅当作品实际含 EPUB 时才声明 `epub`（均在冻结的 WORK_CAPABILITIES 词汇表内）；③ `load()` 对无 `epub` 能力的候选跳过 EPUB 文件，即使目录下存在。
-- **行为变更（需审阅重点）**：多 EPUB 目录从“静默合并为一个作品”变为“返回多个候选→ambiguous”；原 epub.test.ts 中固化旧语义的“单作品多 EPUB 引用隔离”测试已同步改写为“每个 EPUB 独立成作品且各自 documentRef 唯一”。纯文本目录与单文件行为不变。
-- **验证**：pnpm check EXIT=0；vitest 84/84（含新增 4 项）；benchmark 30/30；M0_CONTRACT 新增 generic work boundary amendment。
-- **接口影响**：无新错误码/新字段；`ResolveResult` 与信封不变；变更仅在 generic 发现语义（更诚实的歧义暴露）。
-
-### AUD-027 章节编号语法明确化（待审阅）
-
-- **依据**：REVIEW_2026-08-15_CONSOLIDATED P2 AUD-027（TXT regex 接受罗马数字 chapter 但 `Number("iv")` 解析导致跳过；中文数字百以上不支持；Markdown 中文数字章名覆盖不足）；完成条件：明确支持语法并增加罗马/中文/重置/异常编号 fixture。
-- **方案（推荐方式，已按用户授权执行）**：① 支持语法冻结为三种：阿拉伯数字、中文数字一～九百九十九（百位合成，含 第一百零三/第一百一十章 形式）、`chapter` 后的规范罗马数字 i…mmmcmxcix（严格正则，非规范形式不解析）；② 命中章题形状但编号非法/不支持时确定性跳过并并入上一章内容，不猜测；③ 卷重置推断（编号回落→新卷）对三种编号一致生效，locator 格式 `v<volume>-c<local>` 不变；④ Markdown/通用文档标题的 kind 识别与 chapterNumber 同步支持中文数字章名与罗马数字。
-- **验证**：修复前新增 5 项测试 5/5 失败；修复后 pnpm check EXIT=0；vitest 89/89；benchmark 30/30；M0_CONTRACT 新增 chapter-number syntax amendment。
-- **接口影响**：无新错误码/字段；仅解析覆盖面扩大（原本被静默丢弃的章节变为确定性解析或确定性跳过）。EPUB 章题识别未扩展罗马数字，保持 AUD-027 范围不变。
+**当前工作区待办（审阅发现，非本节范围）**：AUD-028（EPUB 资源上限）的改动在**工作区未提交**，且 `packages/adapter-generic/src/index.ts` L102 存在语法错误（`.replace(/^\/+/ "")` 缺逗号，应为 `.replace(/^\/+/, "")`），**当前工作区无法通过 `tsc -b`**。AUD-028 实现与 `tests/epub-resource-limits.test.ts` 需先修复语法错误、跑全量验证后提交，再更新本节与测试计数。
 
 ## 可追溯提交清单
 
