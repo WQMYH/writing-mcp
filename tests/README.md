@@ -25,6 +25,7 @@
 | `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限、响应字节上限（RESPONSE_TRUNCATED） |
 | `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见、超大 query 拒绝 |
 | `context-required-refs.test.ts` | AUD-005 requiredRefs 直接解析：池外 span/entity 强制命中、不存在 ref 进 omitted（not_found）、直解 ref 触发 budget_unsatisfiable、池内去重与优先 |
+| `context-source-registry.test.ts` | AUD-013 来源提供器注册表：ENTITY_KINDS 全覆盖的语义分层映射、required 晋升 L0、未知 kind 回落 L3、evidenceHash 折叠去重（required 前置保护、duplicate_evidence 进 omitted）、预算压力下自 L3 向低层裁剪 |
 | `bfs-batching.test.ts` | AUD-020 批量化护栏：宽图每节点 fan-out 确定性截断与重复运行一致、宽图 BFS 在确定性耗时预算内完成 |
 | `timeline.test.ts` | AUD-015 timeline 独立投影：章节+precedes 时序按章节位置排序、名称过滤、未知章节锚点稳定殿后、无时态数据 NO_RESULTS |
 | `graph-vocabulary.test.ts` | AUD-022 词汇表冻结：索引实体 kind 含 OutlineNode 且不超出 ENTITY_KINDS、边 kind 不超出 EDGE_KINDS、InkOS/generic 能力声明不超出 WORK_CAPABILITIES |

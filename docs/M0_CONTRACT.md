@@ -210,6 +210,13 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - stdout is reserved for JSON-RPC messages only: lifecycle and shutdown diagnostics go to stderr (`[writing-mcp][lifecycle]` prefix); every stdout line must parse as a JSON-RPC message.
 - `createStdioRuntime(service, options?)` exposes the `{ server, shutdown }` pair so the shutdown chain is testable in process; `shutdown` is idempotent.
 
+### M4 context source registry amendment (2026-08-17)
+
+- Context assembly assigns layers through a frozen source provider registry instead of candidate positions: Character/Fact/Foreshadow → L1, Chapter/Event/OutlineNode → L2, Location/Item and unknown kinds → L3; required blocks (pool-hit and direct-resolved `requiredRefs`) are promoted to L0 (task goals and mandatory constraints).
+- Candidates sharing an evidence excerpt hash are folded: the first occurrence survives under required-first, deterministic score order, and the folded refs appear in `omitted` with reason `duplicate_evidence`.
+- Budget filling proceeds L0→L3 (layer rank, then score descending, then registry priority, then ref), implementing trim-from-L3 toward L0. Existing omitted reasons (`budget_limit`, `not_found`, `required_minimum_exceeds_budget`) and the `ContextPacket` shape are unchanged.
+- Registry fields `minTokens`/`preferredTokens`/`maxTokens` remain reserved and are deliberately undeclared; token accounting stays `mixed-cjk-v1` with `estimated: true` until AUD-014.
+
 ## Benchmark gate
 
 - Dataset: `benchmarks/m0.json`, exactly 30 machine-readable tasks.
