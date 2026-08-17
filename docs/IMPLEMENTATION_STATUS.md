@@ -136,6 +136,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
+- `2ddb40c` — feat(m4): AUD-013 来源提供器注册表 + evidenceHash 去重（待审阅；分层改来源类型映射、required 晋升 L0、duplicate_evidence 折叠、预算填充 L0→L3；新增 context-assembly.ts 纯模块与 6 项回归；114/114 + 30/30 + lint 0 + coverage 92.88%；同提交含状态文档已审阅叙事精简）。
 - `f9fa97d` — docs(m4): 采纳 REVIEW_2026-08-17 方向（M4 行按审议顺序重排：AUD-013 来源语义化+去重 → AUD-012 残留接线 → AUD-014 tokenizer；含 M4 审议下一步记录）。
 - `04152cd` — chore: 移除已迁至工作区级 .agents/ 的两个 SKILL.md（仓库内不再保留技能副本）。
 - `4b3d647` — docs(review): M4 能力与边界第四次审阅（REVIEW_2026-08-17，本地化文档）。
