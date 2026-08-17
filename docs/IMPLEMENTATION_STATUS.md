@@ -102,58 +102,24 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 | **AUD-025** 协议层错误边界 | ✅ 合格：输出 data schema 单一真相源、wrapper 记录前自校验（`OUTPUT_SCHEMA_MISMATCH`）、`createServer` 可注入 `onerror`→stderr、SDK 输入拒绝属协议层观察边界外 | `35fcd3f` | `protocol-boundary.test.ts` 5 项 | 加法式（新错误码 + 可选构造参数） |
 | **AUD-026** 通用作品边界与 capabilities 实际化 | ✅ 合格：逐 EPUB 独立候选、多书目录 ambiguous、capabilities 由实际输入决定 | `4675458` | `generic-work-boundary.test.ts` | 仅 generic 发现语义变更（行为变更已记录） |
 | **AUD-027** 章节编号语法明确化 | ✅ 合格：阿拉伯/中文（至九百九十九）/规范罗马三语法冻结、非法编号确定性跳过、卷重置一致生效 | `9ca427b` | `txt-numbering.test.ts` 5 项 | 仅解析覆盖面扩大 |
+| **AUD-028** EPUB 资源上限 | ✅ 合格：三级确定性上限（4096 entries / 16 MiB / 64 MiB）、稳定错误码、可注入上限 | `0b83baf` | `epub-resource-limits.test.ts` 4 项 | 加法式（新错误码 + 新导出 + 可选构造参数） |
+| **AUD-029** snapshot 一致性 | ✅ 合格：读取前后指纹校验、有界重试、文本内存上限、源变化显式错误 | `b4b2cb9` | `snapshot-consistency.test.ts` 5 项 | 加法式（新错误码 + 新导出 + 构造参数扩展） |
+| **AUD-030** splitDocument 硬切与边界规则 | ✅ 合格：超长行硬切、locator 精确排除空行、连续平铺无重叠无遗漏、重叠方案拒绝 | `2f4916d` | `span-hard-split.test.ts` 5 项 | 无接口变更（仅切分行为变化） |
+| **AUD-032** 进程生命周期与优雅关闭 | ✅ 合格：`createStdioRuntime` 统一关闭链、信号/stdin EOF 确定性退出、stdout 纯 JSON-RPC | `3a53209` | `lifecycle.test.ts` 5 项 | 加法式（新导出 + 行为变更：挂起→确定性退出） |
+| **AUD-035-1** lint/coverage 门禁 | ✅ 合格：oxlint 0 警告、coverage 阈值棘轮、vitest 别名修复覆盖率失真 | `3041650` | 108/108 回归 | 无产品接口变更（工程基建） |
+| **AUD-035-2** generic 适配器模块抽离 | ✅ 合格：21.8KB 单文件拆为 errors/numbering/txt/epub 四策略模块、公共 API 兼容、覆盖率逐位不变 | `8764652` | 108/108 回归 | 无（纯结构重构） |
 
 **审阅附注（2026-08-16）**：三条均在已提交的 HEAD 上通过 `tsc -b` 与 30/30 基准验证。
 
 > 2026-08-16 审阅时发现的工作区待办（AUD-028 半成品与 L102 语法错误）已在 AUD-028 提交中修复并全量验证。
 
+**审阅附注（2026-08-17）**：批次 C 六条（AUD-028～032 + AUD-035-1/2）审阅通过，全部归档。
+
 ## 待审阅修复方案（Pending Review）
 
 > 按用户授权（2026-08-16）自主执行的修复，逐条记录方案内容并标注待审阅；审阅通过后归档入上节。
 
-### AUD-028 EPUB 资源上限（待审阅，2026-08-17）
-
-- **依据**：REVIEW_2026-08-15_CONSOLIDATED AUD-028——EPUB 链路未限制 ZIP 展开大小、entry 数与单文档大小，存在 ZIP bomb 与无限膨胀风险。
-- **方案**：在 `adapter-generic` 新增可注入 `EpubLimits`（`maxEntries`/`maxDocumentBytes`/`maxTotalBytes`，默认 4096 / 16 MiB / 64 MiB，`DEFAULT_EPUB_LIMITS` 导出）；`epubDocuments` 在 ZIP 加载后立即检查 entry 数，逐 spine 文档解码后检查单文档大小与累计总量，`epubPackage` 对 OPF 本体同样受 per-document 上限保护；越限一律抛稳定错误码 `EPUB_TOO_MANY_ENTRIES`/`EPUB_DOCUMENT_TOO_LARGE`/`EPUB_TOTAL_TOO_LARGE`，不挂起、不静默截断。构造器 `new GenericAdapter({ epub?: Partial<EpubLimits> })` 供测试注入；同时修复上一轮半成品引入的 `.replace(/^\/+/ ")` 语法错误（改为 `.replace(/^\/+/g,"")`，行为不变）。
-- **验证**：新增 `tests/epub-resource-limits.test.ts` 4 项（三个错误码 + EPUB 2.0 默认上限加载）；三闸门通过：`pnpm check` EXIT=0、vitest 93/93（26 文件）、基准 30/30。
-- **接口影响**：加法式——三个新错误码、新导出 `EpubLimits`/`DEFAULT_EPUB_LIMITS`、可选构造参数；默认行为对合规 EPUB 不变。
-
-### AUD-029 snapshot 一致性（待审阅，2026-08-17）
-
-- **依据**：REVIEW_2026-08-15_CONSOLIDATED AUD-029——读取多文件期间源可能变化，snapshot 可混合不同时间状态；全文和 EPUB 整体驻留内存。完成条件：读取前后快照校验或重试；文件/作品内存上限和源变化错误。
-- **方案**：`WritingService` 新增 `loadConsistent`：每次适配器 `load` 前后各算一次源指纹（复用 AUD-021 的 names+mtime+size 指纹），不一致则重试一次，仍不一致抛稳定错误码 `SOURCE_CHANGED_DURING_READ`；`indexUnlocked` 与 `store()` 统一改走该入口，snapshot 永不混合不同时刻状态。文本内存上限：`TextLimits`（单文件/作品累计，默认 16 MiB / 64 MiB，`DEFAULT_TEXT_LIMITS` 导出），越限抛 `SOURCE_FILE_TOO_LARGE`/`SOURCE_TOTAL_TOO_LARGE`；构造器扩展为 `new GenericAdapter({ epub?, text? })`。EPUB 体积仍由 AUD-028 上限管辖，不重复计入。
-- **验证**：新增 `tests/snapshot-consistency.test.ts` 5 项（持续变化拒绝、一次性写入后有界重试成功、单文件超限、总量超限、默认上限正常加载）；三闸门通过：`pnpm check` EXIT=0、vitest 98/98（27 文件）、基准 30/30。
-- **接口影响**：加法式——三个新错误码、新导出 `TextLimits`/`DEFAULT_TEXT_LIMITS`、构造参数扩展（与 AUD-028 同入口合并）；读取期源变化从静默混合状态变为显式错误（行为变更：客户端需重试）。
-
-### AUD-030 splitDocument 硬切与边界规则（待审阅，2026-08-17）
-
-- **依据**：REVIEW_2026-08-15_CONSOLIDATED AUD-030——`splitDocument` 对超长单行不硬切分，trim 后 locator 含被裁空行，跨 span 无重叠。完成条件：最大 span 硬上限、locator 精确规则、边界证据回归。
-- **方案**：（1）硬上限：单行长度超 `maxChars` 时硬切为多个 chunk span，全部共享同一源行（startLine=endLine，locator 同步），先 flush 已累积内容；span 内容从此永不超 `maxChars`。（2）locator 精确：flush 时逐行收缩首尾空行，startLine/endLine 与 locator 仅覆盖内容实际包含的行。（3）边界证据：明确冻结为「连续平铺、无重叠、无遗漏」（下一 span 起始行 = 上一 span 结束行 + 1，内容可重组）。重叠方案实现后实测导致确定性 mention 重复计数（graph-identity 测试 3→5 翻转），且与「每个源位置计一次」的图语义冲突，故拒绝并在 M0_CONTRACT 记录理由。
-- **验证**：新增 `tests/span-hard-split.test.ts` 5 项（超长行硬切、locator 不含空行、连续平铺重组、硬切后行号连续、heading 边界 locator）；三闸门通过：`pnpm check` EXIT=0、vitest 103/103（28 文件）、基准 30/30。
-- **接口影响**：无接口变更；span 切分行为变化仅影响存在超长单行或首尾空行的文档（既有 fixture 与基准不受影响，全量回归通过）。
-
-### AUD-032 进程生命周期与优雅关闭（待审阅，2026-08-17）
-
-- **依据**：REVIEW_2026-08-15_CONSOLIDATED AUD-032——SIGINT/SIGTERM handler 只关闭 service，不关闭 MCP server/不显式退出；同步 SQLite 长操作不可取消。完成条件：进程生命周期、取消、优雅关闭和无 stdout 污染测试。
-- **方案**：`server.ts` 新增导出 `createStdioRuntime(service, options?)` 返回 `{ server, shutdown }`：shutdown 先关 MCP server（transport）再关 service，幂等，关闭失败只写 stderr（`[writing-mcp][lifecycle]` 前缀），永不触碰 stdout。`runStdio` 将 SIGINT/SIGTERM 与 stdin EOF（transport 关闭触发 `onclose`）接到同一 terminate 链：`shutdown().finally(() => process.exit(0))`，另设 5 秒 grace guard 强制 exit 1——同步 SQLite 操作无法中途取消，但进程退出确定性有界；`process.once("exit")` 保留同步 best-effort 关闭。取消语义：MCP 层取消不变（由 SDK 管辖），生命周期层保证是确定性终止而非挂起。
-- **验证**：新增 `tests/lifecycle.test.ts` 5 项（SIGTERM/SIGINT 时限内终止、stdin EOF exit 0、完整会话 stdout 纯 JSON-RPC 且干净退出、进程内 shutdown 链幂等且零 stdout 写入）；三闸门通过：`pnpm check` EXIT=0、vitest 108/108（29 文件）、基准 30/30。
-- **接口影响**：加法式——新导出 `createStdioRuntime`/`StdioRuntime`；行为变更：信号/stdin EOF 从可能挂起变为确定性退出（POSIX exit 0；Windows 上信号由操作系统直接终止进程，测试对两种语义分别断言）。
-
-### AUD-035 工程硬化第一阶段：lint/coverage 门禁（待审阅，2026-08-17）
-
-- **依据**：REVIEW_2026-08-15_CONSOLIDATED AUD-035——无 lint/format/coverage 门禁，修改和审查容易漏差异。路线：先修正确性（已由 AUD-026～032 完成），再在行为测试保护下硬化工程。本阶段只做门禁，不动源码逻辑与格式（用户确认顺序：门禁 → 抽离 → 格式化）。
-- **方案**：（1）`pnpm lint`：oxlint（-c oxlintrc.json --deny-warnings），修复全部 7 处代码警告（未用导入/变量、单元素 Promise.all、冗余 spread、字符类内多余转义）至 0 警告；`store.ts` 暂时列入 ignorePatterns——oxlint 内置 minified-file 启发式警告无法按规则关闭，模块拆分（下一阶段）后同步移除，TODO 见下。（2）`pnpm coverage`：@vitest/coverage-v8，vitest.config.ts 新增 workspace 别名指向 src（修复覆盖率失真：此前测试经包别名走 dist，行覆盖仅显 29.85%；指向 src 后真实行覆盖 92.78%）并设棘轮阈值 lines 90 / statements 87 / functions 85 / branches 73。（3）正则修复验证：`store.ts` 未解析引用正则改为 `[^\[\]\n]` 后以临时脚本确认匹配语义不变，108 项行为测试回归通过。
-- **验证**：`pnpm lint` EXIT=0（0 警告）；`pnpm coverage` 阈值内通过（108/108，行 92.78%）；三闸门：`pnpm check` EXIT=0、vitest 108/108、基准 30/30。
-- **TODO（不得遗忘）**：AUD-035-2 模块拆分后从 oxlintrc.json 移除 `packages/core/src/store.ts` 忽略项，使其回到 lint 覆盖。
-- **接口影响**：无产品接口变更（无 M0_CONTRACT amendment；门禁为工程基建，记录于 tests/README 与本文档）；新增 devDependencies oxlint、@vitest/coverage-v8。
-
-### AUD-035 工程硬化第二阶段：generic 适配器策略模块抽离（待审阅，2026-08-17）
-
-- **依据**：REVIEW_2026-08-15_CONSOLIDATED AUD-035——适配器职责集中；路线第二步：在行为测试保护下抽离已批准策略模块。用户确认范围：只抽纯函数（EPUB 解析），图构建明确延后。
-- **方案**：`packages/adapter-generic/src/index.ts`（21.8 KB 单文件）拆为五个职责模块：`errors.ts`（codedError 稳定错误辅助）、`numbering.ts`（AUD-027 章号解析：中文/罗马/阿拉伯三语法）、`txt.ts`（TXT 解码与章节切分 + TextLimits）、`epub.ts`（OPF/spine 解析、HTML 提文、封面过滤、跨 spine 章节切分 + EpubLimits）、`index.ts` 只留发现（AUD-026 作品边界）与装载编排；公共 API 不变（`GenericAdapter`/`EpubLimits`/`DEFAULT_EPUB_LIMITS`/`TextLimits`/`DEFAULT_TEXT_LIMITS` 经再导出兼容）。逻辑逐字搬迁，无任何行为修改。
-- **验证**：覆盖率与抽离前逐位一致（行 92.78% / 语句 89.12% / 函数 87.5% / 分支 75.9%，证明纯结构重构）；四闸门：`pnpm check` EXIT=0、vitest 108/108、基准 30/30、`pnpm lint` 0 警告。
-- **TODO（不得遗忘）**：`store.ts` 图构建/检索 SQL 抽离明确延后（与 SQLite 句柄缠绕，风险高）；oxlint 对 store.ts 的 ignorePatterns 忽略项保持，待 store.ts 拆分后移除（第一阶段 TODO 合并于此）。
-- **接口影响**：无；新增模块内部导出（epubPackage/htmlText/splitEpubChunks/epubDocuments/bestEffortEpubTitle/decodeText/txtDocuments/chapterNumber 等）供后续细粒度测试使用。
+**2026-08-17 批次 C 全部归档**：AUD-028～032 + AUD-035-1/2 共六条已审阅通过，归档入上节。AUD-035-3（Biome 格式化）经用户决策延后至 M3/M4 语义冻结后的重构窗口再评估（记录于「下一步」与「已审阅」章节）。
 
 ### AUD-035 工程硬化第三阶段：Biome 格式化（用户决策延后，2026-08-17）
 
