@@ -140,6 +140,8 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
+- `798592e` — fix(m4): AUD-012 接线审阅三缺陷修复（待审阅；描述优先级矛盾/budget_unsatisfiable 真实 omitted 原因/tests-README 漂移；另修接线测试偶发——ch3 夹具标题补查询词打破同分；契约补两条；122/122 + 30/30 + lint 0 + coverage 92.91%）。
+- `e506a08` — docs(status): AUD-012 接线完成归档 + AUD-013 审阅通过 + 验证记录。
 - `526ee36` — feat(m4): AUD-012 约束接口接线完成（excludeRefs/entityRefs/documentRefs/targetChapter 接线、taskType 值域开放且非驱动；移除被否决的 taskType 策略引擎；修复 WIP 的 db.close 共享句柄 bug 与 excluded 伪造 block hack；新增 context-constraint-wiring.test.ts 6 项 + 更新 context-reserved-params.test.ts；tsc 0 错 / lint 0 警告 / benchmark 30/30 / store 级接线脚本 16/16；契约新增 M4 constraint-interface wiring amendment）。
 - `eb28def` — docs(contract): AUD-012 方向修订——taskType 不再驱动确定性来源策略，MCP 完善 Agent 自主上下文组装的约束接口（对齐 Reference §5.5 否决的智能路由）。
 - `d47b2da` — fix(m4): AUD-013 文档类型大小写归一（DOCUMENT_KIND_ALIASES：character→Character 等；修复 searchRows 小写 d.kind 全落 L3 缺陷，补真实路径 L1/L2 断言）。
