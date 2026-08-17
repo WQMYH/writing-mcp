@@ -1,7 +1,7 @@
 ---
 name: plan-to-skill
 description: Transform a plan document set into a runnable execution skill. Input is a plan collection (plan/contract/status/review/test-list docs for one project); output is a SKILL.md with document map, state-resolution protocol, precise routing protocol, fix discipline, and commit rules. The meta-skill first audits the plan structure (single status source, clear file boundaries, split-vs-merge decisions) and refuses to generate from a structurally broken plan. Use when a project has a plan doc set and needs a durable execution skill, or when validating that a plan is skill-ready.
-version: 0.3.0
+version: 0.4.0
 ---
 
 # Plan → Skill 元技能
@@ -21,11 +21,12 @@ version: 0.3.0
 
 | 角色 | 典型文件 | 缺失后果 |
 |---|---|---|
-| 计划/执行顺序 | `*_plan.md`、`*_v2.md` | 无法生成路由，输出降级为"仅状态确定" |
+| 计划/执行顺序 | `*_plan.md`、任意用户指明的计划文档 | 无法生成路由，输出降级为"仅状态确定" |
 | 契约/协议 | `CONTRACT.md`、schema/ADR 目录 | 无法判定契约影响，路由规则 5 失效 |
 | 状态 | `*_STATUS.md`（**必须唯一**） | 违反单一事实源，需先指定 |
 | 问题库/审查 | `REVIEW_*.md`、`CONSOLIDATED.md` | 生成规则无输入问题可对照 |
-| 测试清单 | `tests/README.md` 或测试目录 | 门禁锚点表无法生成 |
+| 测试清单 | `tests/README.md` 或用户指明测试目录 | 门禁锚点表无法生成 |
+| git/提交约定 | `CONTRIBUTING.md`、计划的提交章节、git commit template | 产物「提交规范」降级为通用模板（无项目约定） |
 
 ## 处理协议（6 步，顺序执行）
 
@@ -48,11 +49,15 @@ version: 0.3.0
 
 **输出**：`{ 结构判定: 合格|需拆分, 拆分建议[], 唯一状态文件: <path> }`。仅"合格"进入步骤 1；"需拆分"则输出建议并停下，由调用方决定是否拆分后重来。
 
-### 步骤 1：探测门禁命令（读 package.json，不得伪造）
+### 步骤 1：探测门禁命令与 git 约定（读 package.json，不得伪造）
 
 - 读目标仓库 `package.json` 的 `scripts`，记录 `check`/`test`/`benchmark`/`build` 的真实命令。
 - 若脚本名与计划文档写的不一致，**以 package.json 为准**并在输出中标注偏差。
 - 记录运行环境事实（Node 版本、沙箱限制如 vitest spawn EPERM），写入"已知边界"。
+- **提取 git/提交约定**（一次性生成成本，非执行期探测）：
+  - 读 `CONTRIBUTING.md`、计划中的提交章节（如 §13.2）、git commit template，提取：提交点、信息格式（conventional commits 等）、分支/merge 策略、**不提交清单**（书稿/私有数据/生成产物）。
+  - 这些约定直接写入产物「提交规范」，**替代通用模板**；无项目约定时才用通用兜底。
+  - 通用兜底（放入产物「已知边界」，一行）：推送前检查远程是否超前；远程有历史需 `--allow-unrelated-histories` 合并时，明确文件取舍策略（保留本地还是远程），不默认 force push。
 
 ### 步骤 2：识别文档地图
 
@@ -146,12 +151,13 @@ version: 0.1.0
 5. 闭环：完成 → 更新唯一状态文件 → 重新状态确定 → 路由下一目标。
 
 ## 提交规范
+<项目 git 约定（步骤 1 提取，优先于通用模板）。无项目约定时用通用兜底：>
 - 提交点：可独立回滚修复 / 子门禁完成 / 计划调整 / 稳定阶段成果。
 - 提交信息：标题 + 正文（动机/改动/验证）。
 - 不提交：书稿/私有数据/生成产物/未授权审查文件。
 
 ## 已知边界
-<步骤 1 探测到的环境限制 + 输入未提供的角色>
+<步骤 1 探测到的环境限制 + 输入未提供的角色 + git 通用提示：推送前检查远程是否超前；远程有历史需 --allow-unrelated-histories 合并时明确文件取舍（保留本地还是远程），不默认 force push。>
 ```
 
 ## 使用示例（对照基准）
