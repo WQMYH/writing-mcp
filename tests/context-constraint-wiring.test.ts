@@ -90,6 +90,20 @@ describe("AUD-012 constraint interface wiring (store level)", () => {
     } finally { store.close(); await rm(root, { recursive: true, force: true }); }
   });
 
+  test("explicit pins outrank targetChapter anchor proximity within a layer", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-wire-pin-anchor-")), store = new WritingStore(makeWork(root), join(root, "idx.sqlite"));
+    try {
+      await store.index("rebuild");
+      const { ch1DocRef, ch3DocRef } = await refsFromDb(root, join(root, "idx.sqlite"));
+      // Query "码头" only hits chapter 3 (the anchor chapter at 3); chapter 1 is
+      // pinned explicitly but lives before the anchor — the pin must lead L2.
+      const packet = await store.context("码头", 1_000_000, [], { targetChapter: 3, documentRefs: [ch1DocRef] });
+      const l2Order = packet.blocks.filter(block => block.layer === "L2").map(block => block.evidence.documentRef);
+      expect(l2Order[0], "the pinned block leads L2 ahead of the anchor-chapter search hit").toBe(ch1DocRef);
+      expect(l2Order.indexOf(ch1DocRef)).toBeLessThan(l2Order.indexOf(ch3DocRef));
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
   test("taskType is value-open and never drives assembly; unknown values are accepted", async () => {
     const root = await mkdtemp(join(tmpdir(), "writing-mcp-wire-tasktype-")), store = new WritingStore(makeWork(root), join(root, "idx.sqlite"));
     try {
