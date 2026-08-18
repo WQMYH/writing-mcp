@@ -160,6 +160,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
+- `c559f07` — docs: AUD-012 审阅修复二归档（契约 review clarification + Open TODO 更新 + 已知限制补充 + 提交清单补 1b4cd78/ca8d29a）。
 - `ca8d29a` — fix(m4): AUD-012 审阅修复二（C4 contextSourceCounts ORDER BY kind 显式确定 / C5 byFill pinned 提升优先于锚定近距 / C6 pinned 边界文档化；新增 C5 回归测试；tsc 0 + lint 0 + node 验证脚本 6/6；vitest 与 benchmark 待用户环境）。
 - `1b4cd78` — chore: 删除 b83ee6b 误提交的 `.commit-msg-tmp.txt` 临时文件。
 - `b83ee6b` — feat(m4): AUD-012 残留「来源目录」可观测能力完成（writing_explore stats 操作新增 contextSources 字段：byLayer L1/L2/L3 + byKind 按文档种类计数；复用 AUD-013 注册表与归一逻辑；新增 source-directory-observable.test.ts；123/123 + 30/30 + lint 0；契约补 M4 source directory observable amendment）。
