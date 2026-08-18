@@ -84,7 +84,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - EPUB 仍采用确定性轻量解析，尚未覆盖 DRM/加密、复杂命名空间、导航目录语义、脚注回链、图片内容和全部 EPUB 2/3 变体；内部章节切分目前依赖独占行的中英文编号标题。
 - `workRef` 只在当前 server 进程中注册；重启后客户端需重新调用 `writing_resolve`。
 - schema v4 writer lock 是 Writing MCP 进程间的合作式协议，不能强制无关程序释放 SQLite 句柄；此类占用稳定返回 `INDEX_BUSY`。
-- status 当前为保证正确性会重新读取适配器全部来源；mtime/size 快速路径仍待在不牺牲语义 snapshot 的前提下实现。
+- status 的 mtime/size 快速路径已实现（2026-08-18，待审阅）：指纹（文件名+mtime+size）未变时复用既有 store，不重读来源。前提与 AUD-021 相同：不改变 mtime/size 的文件内容变化（如恢复同 mtime 备份）在指纹变化前不会被 status/explore/context 察觉；进程重启或任一文件 mtime/size 变化即回退全量语义路径。
 - 私有长篇仍有 1 条 optional 事实未进入前 20，900 字抽取摘要的逐字证据暴露率为 88.10%；这些指标与 span 召回、来源覆盖分别报告。
 - 中文问句分析当前是有界规则与 n-gram，不是通用分词器；问题短语表会继续通过真实调用链回归校准。
 - `stats` 的 content 受 900 字符 excerpt 截断（既有模式，`item()` 切片）；`contextSources` 增大了 stats JSON，现实 kind 数下安全，但 stats 内容截断属潜在坑。
@@ -96,8 +96,8 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - AUD-035 第三阶段（Biome 格式化）已由用户决策延后：store.ts 即将被 M3/M4 修改，现在做巨型函数展开与全量格式化必然返工；正确时机是 M3/M4 语义冻结后的重构窗口，届时再评估格式化是否必要。
 - **M3 语料基准已完成**（2026-08-17）：491 万字《语料B》语料测试，索引 25.7 秒（~19 万字/秒）、Explore P95 673ms、Context P95 382.5ms、Token 降幅 99.92%、内存 54.3MB。建议阈值已获用户接受（索引≤60s/百万字、Explore P95≤1000ms、Context P95≤500ms、Token 降幅≥95%），待正式写入门禁。
 - M3/M4 语义冻结后的重构窗口 TODO：（1）store.ts 图构建/检索 SQL 抽离；（2）移除 oxlintrc.json 对 store.ts 的 ignorePatterns 忽略项；（3）评估 Biome 格式化（若执行：quoteStyle single / semicolons asNeeded / lineWidth 120）。
-- M4 剩余：AUD-014 tokenizer profile **已决策延后**（2026-08-18：保持 mixed-cjk-v1 启发式，理由见 IDEAS 文件 AUD-014 决策记录）。status 的 mtime/size 快速路径（不牺牲语义 snapshot）仍待实现。
-- M4 审议：`docs/REVIEW_2026-08-17.md` 已审阅 M4 功能与边界——requiredRefs 直解真实生效、L0-L3 语义化未开始（缺口=来源提供器注册表）、reserved 参数边界诚实。方向已执行：AUD-013（来源语义化+去重，审阅通过含缺陷修复 `d47b2da`）→ AUD-012 残留接线（excludeRefs → targetChapter → entityRefs/documentRefs → taskType 值域开放，`526ee36`）→ 来源目录 stats 可观测（`b83ee6b`）→ 剩余：AUD-014（tokenizer）+ 可选 diagnose 摘要 → 完整重排（M4 后，语料可复用《语料B》基准）。模块化：context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已随 AUD-013 落地，sources/budget/layer 随 AUD-014 顺势而为）。
+- M4 剩余：无待实现项——AUD-014 tokenizer profile **已决策延后**（2026-08-18：保持 mixed-cjk-v1 启发式，理由见 IDEAS 文件 AUD-014 决策记录）；status mtime/size 快速路径 + diagnose 摘要已落地（2026-08-18，待审阅）。下一步为完整重排（M4 后，语料可复用《语料B》基准）。
+- M4 审议：`docs/REVIEW_2026-08-17.md` 已审阅 M4 功能与边界——requiredRefs 直解真实生效、L0-L3 语义化未开始（缺口=来源提供器注册表）、reserved 参数边界诚实。方向已执行：AUD-013（来源语义化+去重，审阅通过含缺陷修复 `d47b2da`）→ AUD-012 残留接线（excludeRefs → targetChapter → entityRefs/documentRefs → taskType 值域开放，`526ee36`）→ 来源目录 stats 可观测（`b83ee6b`）→ AUD-014 决策延后（`c81be41`）→ status 快速路径 + diagnose 摘要（2026-08-18，待审阅）→ 剩余：完整重排（M4 后，语料可复用《语料B》基准）。模块化：context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已随 AUD-013 落地，sources/budget/layer 随重排顺势而为）。
 
 > 更早阶段（Step 3 / AUD-005～035）的逐条落地叙事已于 2026-08-17 移除：事实由「可追溯提交清单」与 commit message 承载，审阅结论由下节表格承载，不在此重复。
 
@@ -149,6 +149,16 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
   - C2/C3：契约 Open TODO 更新（来源目录 stats 已实现、diagnose 摘要可选未实现）；计划 §8 Step 6 措辞 stats/diagnose → stats（diagnose 可选）。
 - **验证**：tsc 0 错、lint 0 警告；node 验证脚本 6/6（C5 pinned 优先锚定生效、无 pin 锚定顺序不变、C4 byKind 有序、stats 确定、db 句柄存活）；新增 C5 回归测试（`context-constraint-wiring.test.ts`，vitest 待用户环境）；benchmark 未重跑（行为仅排序键序变化，30/30 风险极低，建议用户环境一并跑）。
 
+### M4 status 快速路径 + diagnose 摘要（2026-08-18，待审阅）
+
+- **背景**：M4 最后两个待办——status 的 mtime/size 快速路径（不牺牲语义 snapshot）与来源目录的 diagnose 摘要（AUD-012 残留可选部分）。
+- **实现**：
+  - 快速路径落在 **service 层**（`service.ts#indexUnlocked`）：status 且 store 已存在且源指纹（AUD-021 同一 name+mtime+size 指纹）未变 → 复用既有 store，不重读来源；`index()` 在 status 后也回写指纹（连续 status 才能命中）。指纹即适配器解析输入，未变则 ParsedWork 必然相同，语义判定不变。
+  - **失败尝试记录**：初版把快速路径放在 store 层（mtime/size 与 documents 表比对即返回 fresh），破坏既有契约——index-lifecycle 两条测试证明语义字段（title/kind/排序）变化而 mtime/size 不变时 status 必须报 stale；且 service 层首版指纹复用也触发同样失败。最终形态：store 层语义快照比对永远是 stale/fresh 唯一权威，快速路径只免除重读文件。
+  - diagnose 摘要：`writing_index(status)` 新增可选 `contextSources`（byLayer/byKind，复用 `contextSourceCounts`）；`writing_diagnose(inspect)` 的 `index` 摘要携带同形状字段；`IndexResult` 类型与两个 zod data schema 同步扩展。
+- **验证**：tsc 0 错、127/127 测试（新增 `status-fast-path.test.ts` 3 条：零重载+语义一致、编辑击穿报 stale、status 携 contextSources；`mcp-stdio.test.ts` 补 inspect 摘要断言）、30/30 基准、lint 0 警告。
+- **契约**：新增 M4 status fast path and diagnose summary amendment；wiring amendment 的 Open TODO 收尾（来源目录 stats+diagnose 均完成）。tests/README 补录 `source-directory-observable.test.ts`（上次遗漏）与 `status-fast-path.test.ts`。
+
 ### AUD-035 工程硬化第三阶段：Biome 格式化（用户决策延后，2026-08-17）
 
 - **原计划**：门禁 → 抽离 → 格式化三步中的最后一步，Biome 全量格式化（quoteStyle single / semicolons asNeeded / lineWidth 120）。
@@ -160,6 +170,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
+- `fcb5500` — feat(m4): status mtime/size 快速路径 + diagnose 来源目录摘要（service 层指纹复用免重读，store 层语义快照仍为 stale/fresh 唯一权威；IndexResult/inspect 摘要新增可选 contextSources；新增 status-fast-path.test.ts 3 条 + mcp-stdio 摘要断言；127/127 + 30/30 + lint 0；契约新增 M4 status fast path and diagnose summary amendment）。待审阅。
 - `c81be41` — docs: AUD-014 tokenizer 决策延后（保持 mixed-cjk-v1 启发式，理由见 IDEAS 文件 AUD-014 Tokenizer 决策记录）。
 - `c559f07` — docs: AUD-012 审阅修复二归档（契约 review clarification + Open TODO 更新 + 已知限制补充 + 提交清单补 1b4cd78/ca8d29a）。
 - `ca8d29a` — fix(m4): AUD-012 审阅修复二（C4 contextSourceCounts ORDER BY kind 显式确定 / C5 byFill pinned 提升优先于锚定近距 / C6 pinned 边界文档化；新增 C5 回归测试；tsc 0 + lint 0 + node 验证脚本 6/6；vitest 与 benchmark 待用户环境）。
