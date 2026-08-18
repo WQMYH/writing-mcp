@@ -87,6 +87,8 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - status 当前为保证正确性会重新读取适配器全部来源；mtime/size 快速路径仍待在不牺牲语义 snapshot 的前提下实现。
 - 私有长篇仍有 1 条 optional 事实未进入前 20，900 字抽取摘要的逐字证据暴露率为 88.10%；这些指标与 span 召回、来源覆盖分别报告。
 - 中文问句分析当前是有界规则与 n-gram，不是通用分词器；问题短语表会继续通过真实调用链回归校准。
+- `stats` 的 content 受 900 字符 excerpt 截断（既有模式，`item()` 切片）；`contextSources` 增大了 stats JSON，现实 kind 数下安全，但 stats 内容截断属潜在坑。
+- `entityRefs`/`documentRefs` 的 pinned 块不参与 evidenceHash 去重（显式请求豁免，与 requiredRefs 一致）；已是搜索命中的 pinned ref 保持搜索命中排名，不再获得 pinned 提升。
 
 ## 下一步
 
@@ -95,7 +97,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - **M3 语料基准已完成**（2026-08-17）：491 万字《语料B》语料测试，索引 25.7 秒（~19 万字/秒）、Explore P95 673ms、Context P95 382.5ms、Token 降幅 99.92%、内存 54.3MB。建议阈值已获用户接受（索引≤60s/百万字、Explore P95≤1000ms、Context P95≤500ms、Token 降幅≥95%），待正式写入门禁。
 - M3/M4 语义冻结后的重构窗口 TODO：（1）store.ts 图构建/检索 SQL 抽离；（2）移除 oxlintrc.json 对 store.ts 的 ignorePatterns 忽略项；（3）评估 Biome 格式化（若执行：quoteStyle single / semicolons asNeeded / lineWidth 120）。
 - M4 剩余：AUD-014 tokenizer profile（至少对一个真实 tokenizer 校准，不可用降级 mixed-cjk-v1 + estimated:true）。status 的 mtime/size 快速路径（不牺牲语义 snapshot）仍待实现。
-- M4 审议：`docs/REVIEW_2026-08-17.md` 已审阅 M4 功能与边界——requiredRefs 直解真实生效、L0-L3 语义化未开始（缺口=来源提供器注册表）、reserved 参数边界诚实。方向已执行：AUD-013（来源语义化+去重，审阅通过含缺陷修复 `d47b2da`）→ AUD-012 残留接线（excludeRefs → targetChapter → entityRefs/documentRefs → taskType 值域开放，`526ee36`）→ 剩余：来源目录可观测 + AUD-014（tokenizer）→ 完整重排（M4 后，语料可复用《语料B》基准）。模块化：context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已随 AUD-013 落地，sources/budget/layer 随来源目录与 AUD-014 顺势而为）。
+- M4 审议：`docs/REVIEW_2026-08-17.md` 已审阅 M4 功能与边界——requiredRefs 直解真实生效、L0-L3 语义化未开始（缺口=来源提供器注册表）、reserved 参数边界诚实。方向已执行：AUD-013（来源语义化+去重，审阅通过含缺陷修复 `d47b2da`）→ AUD-012 残留接线（excludeRefs → targetChapter → entityRefs/documentRefs → taskType 值域开放，`526ee36`）→ 来源目录 stats 可观测（`b83ee6b`）→ 剩余：AUD-014（tokenizer）+ 可选 diagnose 摘要 → 完整重排（M4 后，语料可复用《语料B》基准）。模块化：context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已随 AUD-013 落地，sources/budget/layer 随 AUD-014 顺势而为）。
 
 > 更早阶段（Step 3 / AUD-005～035）的逐条落地叙事已于 2026-08-17 移除：事实由「可追溯提交清单」与 commit message 承载，审阅结论由下节表格承载，不在此重复。
 
@@ -136,6 +138,17 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - **验证**：tsc 0 错、123/123 测试（新增 `source-directory-observable.test.ts`）、30/30 基准。闸门待跑。
 - **契约**：M0_CONTRACT 新增 M4 source directory observable amendment。
 
+### AUD-012 审阅修复二（2026-08-18 审计 C4/C5/C6，待审阅）
+
+- **背景**：AUD-012 实现审阅（含 `526ee36` 接线与 `b83ee6b` 来源目录）发现 7 项问题，用户决策全部处理；其中 C1-C3 为仓库卫生与文档陈旧，C4-C6 为代码/语义，C7 记录进已知限制。
+- **修复**：
+  - C1：`b83ee6b` 误提交 `.commit-msg-tmp.txt`（17 行临时提交信息文件）→ 删除。
+  - C4：`contextSourceCounts` 的 `GROUP BY kind` 补 `ORDER BY kind`——byKind JSON 键序显式确定（原依赖 SQLite 分组输出序，实践确定但未形式化）。
+  - C5：byFill 调整——pinned 提升从 anchorKey 之后移到之前（**显式指定 > 锚定近距**）：`layerRank → pinned → anchorKey → score → priority → ref`；工具描述、契约 wiring amendment 同步（review clarification 2026-08-18）。
+  - C6：pinned 边界文档化（不进 evidenceHash 去重 / 池内 pinned ref 保持搜索命中排名）——store.ts 注释 + 工具描述 + 契约 + 已知限制。
+  - C2/C3：契约 Open TODO 更新（来源目录 stats 已实现、diagnose 摘要可选未实现）；计划 §8 Step 6 措辞 stats/diagnose → stats（diagnose 可选）。
+- **验证**：tsc 0 错、lint 0 警告；node 验证脚本 6/6（C5 pinned 优先锚定生效、无 pin 锚定顺序不变、C4 byKind 有序、stats 确定、db 句柄存活）；新增 C5 回归测试（`context-constraint-wiring.test.ts`，vitest 待用户环境）；benchmark 未重跑（行为仅排序键序变化，30/30 风险极低，建议用户环境一并跑）。
+
 ### AUD-035 工程硬化第三阶段：Biome 格式化（用户决策延后，2026-08-17）
 
 - **原计划**：门禁 → 抽离 → 格式化三步中的最后一步，Biome 全量格式化（quoteStyle single / semicolons asNeeded / lineWidth 120）。
@@ -147,6 +160,8 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
+- `ca8d29a` — fix(m4): AUD-012 审阅修复二（C4 contextSourceCounts ORDER BY kind 显式确定 / C5 byFill pinned 提升优先于锚定近距 / C6 pinned 边界文档化；新增 C5 回归测试；tsc 0 + lint 0 + node 验证脚本 6/6；vitest 与 benchmark 待用户环境）。
+- `1b4cd78` — chore: 删除 b83ee6b 误提交的 `.commit-msg-tmp.txt` 临时文件。
 - `b83ee6b` — feat(m4): AUD-012 残留「来源目录」可观测能力完成（writing_explore stats 操作新增 contextSources 字段：byLayer L1/L2/L3 + byKind 按文档种类计数；复用 AUD-013 注册表与归一逻辑；新增 source-directory-observable.test.ts；123/123 + 30/30 + lint 0；契约补 M4 source directory observable amendment）。
 - `798592e` — fix(m4): AUD-012 接线审阅三缺陷修复（待审阅；描述优先级矛盾/budget_unsatisfiable 真实 omitted 原因/tests-README 漂移；另修接线测试偶发——ch3 夹具标题补查询词打破同分；契约补两条；122/122 + 30/30 + lint 0 + coverage 92.91%）。
 - `e506a08` — docs(status): AUD-012 接线完成归档 + AUD-013 审阅通过 + 验证记录。
