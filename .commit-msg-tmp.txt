@@ -1,0 +1,17 @@
+feat(m4): AUD-012 残留「来源目录」可观测能力完成
+
+实现 writing_explore 的 stats 操作新增 contextSources 字段，暴露作品可用上下文来源清单：
+- byLayer: L1/L2/L3 文档计数（复用 AUD-013 注册表与归一逻辑）
+- byKind: 按文档种类计数（character/chapter/location/state 等）
+
+让 Agent 在调用 writing_context 前可见作品有哪些类型的上下文可用，无需从原始 entity/document 计数猜测。
+
+技术细节：
+- store.ts 新增 contextSourceCounts 私有方法，查询 documents 表按 kind 分组
+- 复用 CONTEXT_SOURCE_REGISTRY 与 DOCUMENT_KIND_ALIASES 确保分层与上下文装配一致
+- 纯读取，无新写入路径、无新错误码、无 ContextPacket 形状变化
+
+验证：
+- tsc 0 错、123/123 测试（新增 source-directory-observable.test.ts）
+- 30/30 基准、lint 0 警告
+- M0_CONTRACT 新增 M4 source directory observable amendment

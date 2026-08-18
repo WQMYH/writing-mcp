@@ -440,8 +440,24 @@ export class WritingStore {
 
   private counts(db=this.db!){const n=(t:string)=>asNumber((db.prepare(`SELECT COUNT(*) n FROM ${t}`).get() as Record<string,unknown>).n);return {documents:n("documents"),spans:n("spans"),entities:n("entities"),edges:n("edges")};}
 
+  // AUD-012 residual: source directory observable — expose what context sources
+  // are available for a work, grouped by layer (L1/L2/L3) and by kind. This
+  // lets the Agent see what kinds of context are available before calling
+  // writing_context, without guessing from entity/document counts alone.
+  private contextSourceCounts(db:DatabaseSync):{byLayer:Record<string,number>;byKind:Record<string,number>}{
+    const rows=db.prepare("SELECT kind,COUNT(*) n FROM documents GROUP BY kind").all() as Array<{kind:string;n:number}>;
+    const byLayer:Record<string,number>={L1:0,L2:0,L3:0},byKind:Record<string,number>={};
+    for(const row of rows){
+      const kind=row.kind,count=asNumber(row.n);
+      byKind[kind]=(byKind[kind]??0)+count;
+      const profile=contextSourceProfile(kind,false);
+      byLayer[profile.layer]=(byLayer[profile.layer]??0)+count;
+    }
+    return {byLayer,byKind};
+  }
+
   async explore(operation:ExploreOperation,query="",limit=20,maxHops=2,targetChapter?:number):Promise<ExploreResult>{if(query.length>2048)throw codedError("QUERY_TOO_LARGE","Query exceeds the 2048-character deterministic limit");const started=performance.now(),db=await this.open();const revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);limit=Math.max(1,Math.min(100,Math.trunc(limit)));maxHops=Math.max(0,Math.min(3,maxHops));let rows:Array<Record<string,unknown>>=[],ambiguousRows:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
-    if(operation==="stats"){const c=this.counts(db);rows=[{span_ref:"stats",heading:"Index statistics",content:json(c),relative_path:".writing-index",start_line:1,end_line:1,score:1,kind:"stats"}];}
+    if(operation==="stats"){const c={...this.counts(db),contextSources:this.contextSourceCounts(db)};rows=[{span_ref:"stats",heading:"Index statistics",content:json(c),relative_path:".writing-index",start_line:1,end_line:1,score:1,kind:"stats"}];}
     else if(operation==="entity"||operation==="neighborhood"){const lookup=this.entityRows(db,query,limit);rows=lookup.rows;ambiguousRows=lookup.ambiguous;diagnostics=lookup.diagnostics;}
     else if(operation==="document"){rows=db.prepare("SELECT s.span_ref,s.heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,1 score,d.kind FROM spans s JOIN documents d ON d.document_ref=s.document_ref WHERE d.relative_path LIKE ? OR d.title LIKE ? ORDER BY d.source_ordinal,s.ordinal,s.span_ref LIMIT ?").all(`%${query}%`,`%${query}%`,limit) as Array<Record<string,unknown>>;}
     else if(operation==="timeline"){const timeline=this.timelineRows(db,query,limit,targetChapter);rows=timeline.rows;diagnostics=timeline.diagnostics;}

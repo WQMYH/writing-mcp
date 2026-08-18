@@ -231,6 +231,13 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Budget filling proceeds L0→L3 (layer rank, then score descending, then registry priority, then ref), implementing trim-from-L3 toward L0. Existing omitted reasons (`budget_limit`, `not_found`, `required_minimum_exceeds_budget`) and the `ContextPacket` shape are unchanged.
 - Registry fields `minTokens`/`preferredTokens`/`maxTokens` remain reserved and are deliberately undeclared; token accounting stays `mixed-cjk-v1` with `estimated: true` until AUD-014.
 
+### M4 source directory observable amendment (2026-08-18)
+
+- `writing_explore` with `operation: "stats"` now returns a `contextSources` field alongside the existing `documents`/`spans`/`entities`/`edges` counts.
+- `contextSources` contains two breakdowns: `byLayer` (L1/L2/L3 document counts per semantic layer) and `byKind` (document counts per document kind, using the lowercase document kinds from the index).
+- Layer assignment uses the same registry and normalization as context assembly: character/state/foreshadow → L1, chapter/outline → L2, location/document/unknown → L3. This lets the Agent see what kinds of context are available before calling `writing_context`, without guessing from raw entity/document counts.
+- The feature is read-only and adds no new write paths, no new error codes, and no changes to `ContextPacket` shape.
+
 ## Benchmark gate
 
 - Dataset: `benchmarks/m0.json`, exactly 30 machine-readable tasks.
