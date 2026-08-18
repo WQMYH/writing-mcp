@@ -34,7 +34,7 @@ export interface WorkAdapter {
   load(candidate: WorkCandidate): Promise<ParsedWork>;
 }
 export interface IndexStats { added: number; updated: number; deleted: number; skipped: number; documents: number; spans: number; entities: number; edges: number }
-export interface IndexResult { workRef: string; revision: number; schemaVersion: number; freshness: "fresh" | "stale" | "missing" | "incompatible"; stats: IndexStats; diagnostics: Diagnostic[]; elapsedMs: number }
+export interface IndexResult { workRef: string; revision: number; schemaVersion: number; freshness: "fresh" | "stale" | "missing" | "incompatible"; stats: IndexStats; contextSources?: { byLayer: Record<string, number>; byKind: Record<string, number> }; diagnostics: Diagnostic[]; elapsedMs: number }
 export type ExploreOperation = "search" | "entity" | "neighborhood" | "timeline" | "document" | "stats";
 export interface EvidenceLocator { relativePath: string; startLine: number; endLine: number }
 export interface Evidence { documentRef: string; relativePath: string; startLine: number; endLine: number; excerpt: string; evidenceHash: string; revision: number; locators?: EvidenceLocator[] }

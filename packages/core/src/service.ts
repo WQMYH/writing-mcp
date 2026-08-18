@@ -30,6 +30,17 @@ export class WritingService {
   private async indexUnlocked(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{
     const candidate=this.works.get(workRef);
     if(!candidate)throw Object.assign(new Error("Unknown workRef; call writing_resolve first"),{code:"WORK_REF_NOT_FOUND"});
+    // Mtime/size fast path (status only): the source fingerprint is the file
+    // name+mtime+size directory, so an unchanged fingerprint means adapter.load
+    // would produce an identical ParsedWork and the semantic snapshot verdict
+    // cannot change — reuse the existing store instead of re-reading every
+    // source file. Any file change falls through to the full semantic path;
+    // incremental/rebuild never use the fast path.
+    const existing=this.stores.get(workRef);
+    if(mode==="status"&&existing){
+      const fingerprint=await this.sourceFingerprint(candidate);
+      if(this.fingerprints.get(workRef)===fingerprint)return existing.index(mode);
+    }
     const next=new WritingStore(await this.loadConsistent(candidate));
     this.stores.get(workRef)?.close();
     this.stores.set(workRef,next);
@@ -81,7 +92,7 @@ export class WritingService {
     if(previous===undefined||previous===fingerprint)return;
     await this.indexUnlocked(workRef,"incremental");
   }
-  async index(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{return this.serial(workRef,async()=>{const result=await this.indexUnlocked(workRef,mode);if(mode!=="status"){const candidate=this.works.get(workRef);if(candidate)this.fingerprints.set(workRef,await this.sourceFingerprint(candidate));}return result;});}
+  async index(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{return this.serial(workRef,async()=>{const result=await this.indexUnlocked(workRef,mode);const candidate=this.works.get(workRef);if(candidate)this.fingerprints.set(workRef,await this.sourceFingerprint(candidate));return result;});}
   async explore(workRef:string,operation:ExploreOperation,query="",limit=20,maxHops=2,targetChapter?:number):Promise<ExploreResult>{
     const started=performance.now();
     const result=await this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).explore(operation,query,limit,maxHops,targetChapter);});

@@ -262,6 +262,7 @@ export class WritingStore {
         schemaVersion: SCHEMA_VERSION,
         freshness: currentRevision ? (changed ? "stale" : "fresh") : "missing",
         stats: { added, updated, deleted, skipped, ...this.counts(db) },
+        contextSources: this.contextSourceCounts(db),
         diagnostics: changed ? [{ code: "INDEX_SOURCE_CHANGED", message: "Source documents differ from the current valid index revision" }] : diagnostics,
         elapsedMs: performance.now()-started,
       };

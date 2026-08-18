@@ -85,8 +85,13 @@ describe("MCP stdio transport", () => {
       expect(closedRun.diagnostic).toMatchObject({ tool: "writing_index", outcome: "failure", persistence: "persisted", persistenceError: "DIAGNOSTIC_RUN_CLOSED" });
 
       const inspectedCall = await client.callTool({ name: "writing_diagnose", arguments: { action: "inspect", purpose: "usage", workRef } });
-      const inspected = success<{ status: string; observationScope: string }>(inspectedCall);
+      const inspected = success<{ status: string; observationScope: string; index: { revision: number; freshness: string; documents: number; contextSources?: { byLayer: Record<string, number>; byKind: Record<string, number> } } }>(inspectedCall);
       expect(inspected.data.observationScope).toBe("mcp_calls_only");
+      // Source catalog summary: the inspect index digest carries the same
+      // contextSources breakdown as writing_explore stats (M4 source directory).
+      expect(inspected.data.index.contextSources).toBeDefined();
+      expect(inspected.data.index.contextSources!.byLayer).toMatchObject({ L1: 1, L2: 2, L3: 0 });
+      expect(Object.values(inspected.data.index.contextSources!.byKind).reduce((sum: number, n: number) => sum + n, 0)).toBe(inspected.data.index.documents);
       expect(inspected.diagnostic).toMatchObject({ tool: "writing_diagnose", outcome: "success", persistence: "persisted" });
 
       const failedCall = await client.callTool({ name: "writing_index", arguments: { workRef: "work:missing", mode: "status" } });

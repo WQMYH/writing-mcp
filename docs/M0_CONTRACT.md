@@ -67,7 +67,7 @@ Moving a work or document intentionally changes its reference. Editing content w
 - Omitted reasons always reflect the true omission cause. In `budget_unsatisfiable` only required candidates (pool hits and direct-resolved `requiredRefs`) carry `required_minimum_exceeds_budget`; excluded, folded, pinned, and unresolved entries keep their own reasons `excluded`, `duplicate_evidence`, `budget_limit`, and `not_found`.
 - The `writing_context` tool description states the real precedence rule: `requiredRefs` win over `excludeRefs`, and `excludeRefs` win over `entityRefs`/`documentRefs` pins.
 - No packet shape, status vocabulary, or estimator changes.
-- Open TODO (AUD-012 remainder, M4 scope): the "来源目录" (source catalog) observability — stats exposure implemented (2026-08-18, `b83ee6b`; see the M4 source directory observable amendment), the optional diagnose-report summary remains unimplemented (plan §8 Step 6 wording reconciled to stats-only); AUD-014 packet billing boundary and tokenizer profile remain.
+- Open TODO (AUD-012 remainder, M4 scope): the "来源目录" (source catalog) observability is complete — stats exposure implemented (2026-08-18, `b83ee6b`; see the M4 source directory observable amendment) and the diagnose-report summary implemented (see the M4 status fast path and diagnose summary amendment); AUD-014 packet billing boundary and tokenizer profile remain deferred to post-v1 (2026-08-18 decision).
 
 ### M3 graph vocabulary freeze amendment (2026-08-16)
 
@@ -237,6 +237,13 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - `contextSources` contains two breakdowns: `byLayer` (L1/L2/L3 document counts per semantic layer) and `byKind` (document counts per document kind, using the lowercase document kinds from the index).
 - Layer assignment uses the same registry and normalization as context assembly: character/state/foreshadow → L1, chapter/outline → L2, location/document/unknown → L3. This lets the Agent see what kinds of context are available before calling `writing_context`, without guessing from raw entity/document counts.
 - The feature is read-only and adds no new write paths, no new error codes, and no changes to `ContextPacket` shape.
+
+### M4 status fast path and diagnose summary amendment (2026-08-18)
+
+- `writing_index` with `mode: "status"` gains an optional `contextSources` field with the same `byLayer`/`byKind` breakdown as `writing_explore` stats, so a single status call doubles as the source-catalog check. Other modes do not carry the field.
+- `writing_diagnose` with `action: "inspect"` now includes `contextSources` in its `index` summary digest (same shape, sourced from the status call it already performs). No new diagnose actions, inputs, or artifacts.
+- Status mtime/size fast path: when the source fingerprint (file name+mtime+size directory, the same AUD-021 fingerprint that guards explore/context reuse) is unchanged since the store was last loaded, `status` reuses the existing store instead of re-reading every source file. Because the fingerprint is the adapter's parse input, the reuse cannot change the semantic snapshot verdict. Any file change, first call in a process, or non-status mode falls through to the full semantic path; the store-level semantic snapshot comparison remains the sole authority for `stale`/`fresh` and is unchanged.
+- No schema, error-code, freshness-vocabulary, or `IndexStats` shape changes; `contextSources` is additive and optional.
 
 ## Benchmark gate
 
