@@ -7,3 +7,4 @@ reports/
 # Review and private acceptance docs are local-only artifacts
 docs/REVIEW*.md
 docs/PRIVATE*.md
+.commit*.txt
