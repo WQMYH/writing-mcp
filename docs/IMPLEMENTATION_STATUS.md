@@ -28,6 +28,8 @@ pnpm start
 
 最近验证（2026-08-17，AUD-012 接线后）：tsc 0 错、lint 0 警告、benchmark 30/30（recall 1.0 / evidence 1.0 / Token 降幅 61.24%）、store 级接线脚本 16/16（exclude/pin/锚定/未知 taskType 非驱动/db 句柄存活回归/确定性）；vitest 全量须在用户环境运行（会话沙箱 spawn EPERM 既定边界，`pnpm test`）。
 
+最近验证（2026-08-19，完整重排后）：tsc 0 错、benchmark 30/30（无冲突）、评测集 Recall@5=83.33%/MRR=0.4493（优化后 +5.79%）、holdout 24 条待验证；vitest 全量须在用户环境运行（会话沙箱 spawn EPERM 既定边界，`pnpm test`）。
+
 ## 已实现闭环
 
 - TypeScript monorepo：`core`、`adapter-inkos`、`adapter-generic`、`mcp-server`。
@@ -170,7 +172,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
-- `fcb5500` — feat(m4): status mtime/size 快速路径 + diagnose 来源目录摘要（service 层指纹复用免重读，store 层语义快照仍为 stale/fresh 唯一权威；IndexResult/inspect 摘要新增可选 contextSources；新增 status-fast-path.test.ts 3 条 + mcp-stdio 摘要断言；127/127 + 30/30 + lint 0；契约新增 M4 status fast path and diagnose summary amendment）。待审阅。
+- `f3ddd1f` — feat(m4): 完整重排落地——因子 ablation 优化排序公式（待审阅；评测集《语料A》42 facts，基线 Recall@5=83.33%/MRR=0.4247；ablation 测试 6 因子，决策保留 3 因子 coverage×4/aliasBoost/proximity，移除 3 因子 headingMatches/bm25/trustBonus；优化后 MRR=0.4493（+5.79%），Recall 不变；30/30 基准无冲突；新增 evaluate-reranking.mjs + ablation-test.mjs；契约补 M4 complete re-ranking amendment；.gitignore 保护私有数据）。
 - `c81be41` — docs: AUD-014 tokenizer 决策延后（保持 mixed-cjk-v1 启发式，理由见 IDEAS 文件 AUD-014 Tokenizer 决策记录）。
 - `c559f07` — docs: AUD-012 审阅修复二归档（契约 review clarification + Open TODO 更新 + 已知限制补充 + 提交清单补 1b4cd78/ca8d29a）。
 - `ca8d29a` — fix(m4): AUD-012 审阅修复二（C4 contextSourceCounts ORDER BY kind 显式确定 / C5 byFill pinned 提升优先于锚定近距 / C6 pinned 边界文档化；新增 C5 回归测试；tsc 0 + lint 0 + node 验证脚本 6/6；vitest 与 benchmark 待用户环境）。
