@@ -49,7 +49,9 @@
 | `scripts/gold-hit.mjs` | 黄金 span 命中口径唯一宿主（2026-08-20 拍板）：fact 命中 ⟺ 前 k 个返回 span 中 ref ∈ goldRefs(fact)（goldRefs = 解析期全量 span 中逐字包含任一 evidenceQuote 者）；含 holdout 切分（前3+后2章）与章节诊断，所有评测面共用，禁止第二套判定 |
 | `scripts/evaluate-reranking.mjs` | 完整重排评测（gold-span 口径）：读取私有标注数据（《语料A》42 facts），一次查询 limit=50 后按 k=5/10/50 真截断计 recall + MRR；仪表自检（单调性 + 阴性对照 + 冒烟）；goldSpanCount=0 归 annotation_anomalies 桶不进分母，required 落入该桶告警；支持 train/holdout/all 切分 |
 | `scripts/run-private-acceptance.mjs` | 私有验收（gold-span 口径，命中判定经 gold-hit.mjs）：top-20 命中 + probe-100 rank + quoteExposure 诊断 + 性能门禁 |
-| `scripts/ablation-test.mjs` | 因子 ablation：逐个禁用排序因子（coverage×4、aliasBoost、proximity、headingMatches×0.5、bm25、trustBonus+0.25），测量 recall@5/MRR 变化，阈值 recall@5>2%/MRR>5% 触发调整 |
+| `scripts/ablation-test.mjs` | 因子 ablation（2026-08-20 重写，gold-span 口径）：经 `WRITING_MCP_ABLATE` 运行时开关逐变体禁用（coverage/alias/proximity/heading/bm25 项/FTS 候选合并/trust，bm25 两操作分离），train-only 测 recall@5/10/50 + MRR，§251 阈值裁决 KEEP/REMOVABLE；报告落盘 `reports/ablation-gold-span.json`（gitignored） |
+| `scripts/gate-gold-evidence.mjs` | 黄金证据门禁 + 基线快照（§266）：train/holdout 双切分跑 gold-span 仪表，门禁 recall@50≥0.9 + required@50=1.0，失败 exit 1；快照落盘 `reports/gold-evidence-baseline.json`（已提交，纯数字无私有内容） |
+| `scripts/attribute-misses.mjs` | miss 三层归因（数据层→机制层）：L1 查询词条可达性 / L2 候选可达性（LIKE 匹配数 vs candidateLimit）/ L3 公式因子分解；镜像 store 私有逻辑，需与 store.ts 手工同步 |
 | `scripts/load-corpus.mjs` | 语料加载：扫描目录、统计文件数量/大小/字符数、检测编码格式 |
 | `scripts/run-corpus-benchmark.mjs` | 语料基准：索引计时、Explore 查询延迟、Context 装配、内存监控、P95 延迟计算 |
 

@@ -32,6 +32,8 @@ pnpm start
 
 最近验证（2026-08-20，评测仪表重写 + P1 卷感知切分修复后，`214bb8f`/`ab4af79`）：口径用户拍板 gold-span hit（逐字包含 + ref 匹配），唯一宿主 `scripts/gold-hit.mjs`；仪表自检全过（单调性、阴性对照 hit=false、冒烟）。P1 修复：holdout 切分按卷取前3+后2，territories 从语料章题现算（卷1:1-30 head 1-3 tail 29-30；卷2:1-25 head 1-3 tail 24-25），切分恢复计划 §250 的 18/24。**6 因子真基线**：train（18 条）recall@5=77.8% / @10=83.3% / @50=100%，MRR=0.580，required@50=1.0；holdout（24 条）@5=83.3% / @10=91.7% / @50=100%，MRR=0.690，required@50=1.0。**miss 归因**（attribute-misses.mjs）：train 4 条 + character-001 全部 L2 候选可达、非 tie-break——纯排序因子问题，核心是 coverage 缺口（查询词 vs 证据 span 措辞不重叠，如 event-004 查询"受伤/住院"而引文是"病床/点滴瓶"）。待办：逐因子 ablation 落盘（预期：删因子不会动黄金门禁，价值在证明不可删）、门禁脚本 + baseline.json 快照、契约重新 ratify。
 
+最近验证（2026-08-20，路线 A 完成后，本提交）：**§266 形式达标**。（1）store.ts 加 `WRITING_MCP_ABLATE` 运行时开关（默认空=行为不变，7 变体；bm25 项与 FTS 候选合并按拍板分为两个独立操作）；（2）ablation-test.mjs 重写（弃旧版源码 regex 变异，改 env 开关 + gold-span 口径 + train-only），数据表落盘 `reports/ablation-gold-span.json`；（3）gate-gold-evidence.mjs 门禁脚本 4/4 PASS（train/holdout recall@50≥0.9 + required@50=1.0），快照 `reports/gold-evidence-baseline.json` 已提交（.gitignore 白名单豁免，纯数字无私有内容）。**ablation 裁决表（train，§251 阈值 recall@5 降>2pp 或 MRR 相对降>5% 则 KEEP）**：coverage KEEP（删后 @5 77.8→27.8）、alias KEEP（@50 100→94.4、MRR -16.4%）、proximity/heading/trust REMOVABLE（门禁指标零变化）、bm25 项与 FTS 合并均为负因子（删后 MRR 0.580→0.607↑）。结论与用户 P5 预判一致：**公式层不是杠杆**；"无一可删"预期未成立，按实证归档。公式暂冻结不动（删因子属公式变更，与 B 的候选层改进正交，待 B 落地后统一重审）。127/127 测试 + 30/30 基准绿。下一步（路线 B，已拍板）：PRF 式伪相关反馈查询扩展（候选层，数据源=语料共现统计，禁读 expectedTerms），契约 amendment + 新测试，用 baseline.json 度量 @5 是否动。
+
 ## 已实现闭环
 
 - TypeScript monorepo：`core`、`adapter-inkos`、`adapter-generic`、`mcp-server`。
@@ -174,6 +176,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
+- 本提交（路线 A）— feat(eval): §266 形式达标——`WRITING_MCP_ABLATE` 运行时开关（store.ts，默认行为不变）+ ablation-test.mjs 重写（gold-span 口径，bm25 项/FTS 合并分离）+ gate-gold-evidence.mjs 门禁 4/4 PASS + `reports/gold-evidence-baseline.json` 快照提交（.gitignore 白名单）。ablation 实证：coverage/alias KEEP，proximity/heading/trust REMOVABLE，bm25 项与 FTS 合并为负因子（删后 MRR↑）——公式层非杠杆，与归因结论互证；127/127 + 30/30 绿。
 - `ab4af79` — fix(eval): P1 卷感知 holdout 切分（chaptersOf 带 volume、territories 从语料章题现算、容忍卷内章序异常与双 span heading）+ P3 miss 探针 rankAt100 + attribute-misses.mjs 三层归因工具（L1 词条可达/L2 候选可达/L3 因子分解）；切分恢复 18/24，归因结论：miss 全部纯排序因子问题（coverage 缺口）。
 - `214bb8f` — refactor(eval): 评测仪表按用户拍板的 gold-span 口径重写（scripts/gold-hit.mjs 命中口径唯一宿主 + evaluate-reranking.mjs 真截断 recall@k/自检/异常分桶 + run-private-acceptance.mjs 改用共享模块行为等价；train recall@50=100% 够用门禁过、holdout @50=100%、acceptance 结果与历史金标准一致；127/127 + 30/30 绿）。
 - `69a2b52` — revert(m4): 完整重排验证作废——回退 6 因子排序基线（用户审查 R1-R5 证实 f3ddd1f 验证无效：评测仪表缺陷 recall@k 忽略 k/词共现弱代理/章节 TODO、holdout 未验证、黄金证据门禁与 baseline.json 未落地；store.ts 公式恢复 6 因子、两个排序测试还原、状态与契约降级为作废；127/127 测试 + 30/30 基准全绿；评测脚本保留待重写）。

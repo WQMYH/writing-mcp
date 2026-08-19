@@ -1,135 +1,87 @@
-#!/usr/bin/env node
-/**
- * 因子 Ablation 脚本
- * 
- * 逐个禁用排序因子，测量对 recall@5 和 MRR 的影响。
- * 阈值：recall@5>2%/MRR>5% 变化触发调整。
- * 
- * 注意：此脚本需要修改 store.ts 中的排序公式，仅用于本地评测。
- */
+// Factor ablation on the gold-span criterion (rewritten 2026-08-20).
+// The old version mutated store.ts source with regex and parsed a dead
+// console format — both voided with the old instrument. This version drives
+// the WRITING_MCP_ABLATE runtime switch in searchRows: no source mutation,
+// one index build, hit judgement imported from gold-hit.mjs only.
+//
+// Variants: baseline + one per factor. bm25 is split into TWO operations
+// (ratified 2026-08-20): no_bm25_term (drop the score term, FTS candidates
+// still merged) vs no_fts_merge (drop the FTS candidate merge; the term
+// then naturally scores 0). no_alias removes both alias candidate terms and
+// the aliasBoost factor, since aliases are one mechanism.
+//
+// Verdict per plan §251: recall@5 drops >2pp or MRR drops >5% relative
+// → KEEP (factor matters); otherwise REMOVABLE on train. Holdout is NOT
+// touched here — ablation decisions are made on train only.
+//
+// Usage: WRITING_MCP_PRIVATE_ACCEPTANCE=<json> node scripts/ablation-test.mjs
+import { readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { GenericAdapter } from "../packages/adapter-generic/dist/index.js";
+import { WritingService } from "../packages/core/dist/index.js";
+import { splitAllSpans, buildGoldRefs, goldRank, splitFacts, territoriesFromParsedSpans } from "./gold-hit.mjs";
 
-import { readFileSync, writeFileSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const STORE_PATH = resolve(__dirname, '../packages/core/src/store.ts');
-
-// 因子配置
-const FACTORS = [
-  { name: 'coverage', pattern: /coverage\*4/g, replacement: '0' },
-  { name: 'aliasBoost', pattern: /\+aliasBoost\+proximity/g, replacement: '+proximity' },
-  { name: 'proximity', pattern: /\+proximity/g, replacement: '+0' },
-  { name: 'headingMatches', pattern: /\+headingMatches\*\.5/g, replacement: '+0' },
-  { name: 'bm25', pattern: /Math\.min\(1,Number\(row\.bm25_score\?\?0\)\/10\)/g, replacement: '0' },
-  { name: 'trustBonus', pattern: /\+trustBonus/g, replacement: '+0' }
+const QUERY_LIMIT=50;
+const VARIANTS=[
+  {name:"baseline",flag:""},
+  {name:"coverage(×4)",flag:"no_coverage"},
+  {name:"aliasBoost(+aliases)",flag:"no_alias"},
+  {name:"proximity",flag:"no_proximity"},
+  {name:"headingMatches(×0.5)",flag:"no_heading"},
+  {name:"bm25 term only",flag:"no_bm25_term"},
+  {name:"FTS candidate merge",flag:"no_fts_merge"},
+  {name:"trustBonus(+0.25)",flag:"no_trust"}
 ];
 
-// 备份原始文件
-function backupFile() {
-  const backup = STORE_PATH + '.backup';
-  writeFileSync(backup, readFileSync(STORE_PATH));
-  console.log(`已备份: ${backup}`);
-  return backup;
-}
+const annotationPath=process.env.WRITING_MCP_PRIVATE_ACCEPTANCE;
+if(!annotationPath)throw new Error("Set WRITING_MCP_PRIVATE_ACCEPTANCE to the local annotation JSON path");
+const annotations=JSON.parse(await readFile(annotationPath,"utf8"));
+if(annotations?.schemaVersion!==2||annotations?.work?.private!==true||!Array.isArray(annotations?.facts))throw new Error("Private annotation data must use schemaVersion 2, private=true, and a facts array");
 
-// 恢复文件
-function restoreFile(backup) {
-  writeFileSync(STORE_PATH, readFileSync(backup));
-  console.log(`已恢复: ${STORE_PATH}`);
-}
+const adapter=new GenericAdapter(),service=new WritingService([adapter],[dirname(annotations.work.sourcePath)]);
+try{
+  const resolved=await service.resolve(annotations.work.sourcePath,"generic");
+  if(resolved.status!=="resolved"||!resolved.workRef)throw new Error(`Source resolution failed: ${resolved.status}`);
+  const parsed=await adapter.load(resolved.candidates[0]);
+  const allSpans=splitAllSpans(parsed);
+  await service.index(resolved.workRef,"rebuild");
+  const territories=territoriesFromParsedSpans(allSpans);
+  const{train}=splitFacts(annotations.facts,territories);
 
-// 禁用单个因子
-function disableFactor(factor) {
-  const content = readFileSync(STORE_PATH, 'utf-8');
-  const modified = content.replace(factor.pattern, factor.replacement);
-  writeFileSync(STORE_PATH, modified);
-  console.log(`已禁用因子: ${factor.name}`);
-}
-
-// 重新构建
-function rebuild() {
-  console.log('重新构建...');
-  execSync('pnpm build', { cwd: resolve(__dirname, '..'), stdio: 'inherit' });
-}
-
-// 运行评测
-function runEvaluation() {
-  console.log('运行评测...');
-  const output = execSync('node scripts/evaluate-reranking.mjs', { 
-    cwd: resolve(__dirname, '..'),
-    encoding: 'utf-8'
-  });
-  
-  // 解析结果
-  const recallMatch = output.match(/Recall@5: ([\d.]+)%/);
-  const mrrMatch = output.match(/MRR: ([\d.]+)/);
-  
-  return {
-    recall: recallMatch ? parseFloat(recallMatch[1]) : 0,
-    mrr: mrrMatch ? parseFloat(mrrMatch[1]) : 0
+  const measure=async()=>{
+    const ranks=[];
+    for(const fact of train){
+      const goldRefs=buildGoldRefs(fact,allSpans);
+      if(!goldRefs.size)continue;
+      const result=await service.explore(resolved.workRef,"search",fact.query,QUERY_LIMIT);
+      ranks.push(goldRank(result.results,goldRefs,QUERY_LIMIT));
+    }
+    const denom=ranks.length;
+    const recallAt=k=>denom?ranks.filter(rank=>rank>0&&rank<=k).length/denom:0;
+    const metrics={facts:denom,recallAt5:recallAt(5),recallAt10:recallAt(10),recallAt50:recallAt(50),mrr:denom?ranks.reduce((sum,rank)=>sum+(rank>0?1/rank:0),0)/denom:0};
+    if(!(metrics.recallAt5<=metrics.recallAt10&&metrics.recallAt10<=metrics.recallAt50))throw new Error(`Self-check failed under variant: recall not monotonic (${metrics.recallAt5}/${metrics.recallAt10}/${metrics.recallAt50})`);
+    return metrics;
   };
-}
 
-// 主函数
-async function ablate() {
-  console.log('=== 因子 Ablation 测试 ===\n');
-  
-  const backup = backupFile();
-  const baseline = runEvaluation();
-  console.log(`\n基线: Recall@5=${baseline.recall}%, MRR=${baseline.mrr}\n`);
-  
-  const results = [];
-  
-  for (const factor of FACTORS) {
-    console.log(`\n--- 测试因子: ${factor.name} ---`);
-    
-    try {
-      disableFactor(factor);
-      rebuild();
-      const result = runEvaluation();
-      
-      const recallDelta = result.recall - baseline.recall;
-      const mrrDelta = ((result.mrr - baseline.mrr) / baseline.mrr) * 100;
-      
-      results.push({
-        factor: factor.name,
-        recall: result.recall,
-        mrr: result.mrr,
-        recallDelta: recallDelta,
-        mrrDelta: mrrDelta,
-        significant: Math.abs(recallDelta) > 2 || Math.abs(mrrDelta) > 5
-      });
-      
-      console.log(`结果: Recall@5=${result.recall}% (Δ${recallDelta.toFixed(2)}), MRR=${result.mrr} (Δ${mrrDelta.toFixed(2)}%)`);
-      console.log(`显著性: ${results[results.length - 1].significant ? '是' : '否'}`);
-      
-    } catch (err) {
-      console.error(`测试失败: ${err.message}`);
-      results.push({
-        factor: factor.name,
-        error: err.message
-      });
-    }
-    
-    // 恢复原始文件
-    restoreFile(backup);
+  const rows=[];
+  for(const variant of VARIANTS){
+    if(variant.flag)process.env.WRITING_MCP_ABLATE=variant.flag;else delete process.env.WRITING_MCP_ABLATE;
+    const metrics=await measure();
+    rows.push({variant:variant.name,flag:variant.flag||null,...metrics});
+    console.error(`[ablation] ${variant.name}: recall@5=${(metrics.recallAt5*100).toFixed(2)}% @10=${(metrics.recallAt10*100).toFixed(2)}% @50=${(metrics.recallAt50*100).toFixed(2)}% MRR=${metrics.mrr.toFixed(4)}`);
   }
-  
-  // 输出汇总
-  console.log('\n\n=== Ablation 汇总 ===');
-  console.log('因子\t\tRecall@5\tMRR\t\t显著性');
-  for (const result of results) {
-    if (result.error) {
-      console.log(`${result.factor}\t错误: ${result.error}`);
-    } else {
-      console.log(`${result.factor}\t${result.recall}%\t\t${result.mrr}\t${result.significant ? '✓' : ''}`);
-    }
-  }
-}
+  delete process.env.WRITING_MCP_ABLATE;
 
-ablate().catch(err => {
-  console.error('Ablation 失败:', err);
-  process.exit(1);
-});
+  const base=rows[0];
+  const table=rows.map(row=>{
+    const deltaRecall5=(row.recallAt5-base.recallAt5)*100;
+    const deltaMrrRelative=base.mrr?(row.mrr-base.mrr)/base.mrr*100:0;
+    const verdict=row===base?"baseline":deltaRecall5<-2||deltaMrrRelative<-5?"KEEP":"REMOVABLE";
+    return{variant:row.variant,flag:row.flag,recallAt5:+row.recallAt5.toFixed(4),recallAt10:+row.recallAt10.toFixed(4),recallAt50:+row.recallAt50.toFixed(4),mrr:+row.mrr.toFixed(4),deltaRecall5pp:+deltaRecall5.toFixed(2),deltaMrrPct:+deltaMrrRelative.toFixed(2),verdict};
+  });
+  const report={schemaVersion:1,instrument:"gold-span hit (gold-hit.mjs), limit=50 true truncation, train split only",criterion:"recall@5 drop >2pp or MRR drop >5% relative => KEEP (plan §251)",splitInfo:{train:train.length,territories},baseline:base,table,note:"WRITING_MCP_ABLATE runtime switch; no source mutation; bm25 term and FTS candidate merge are separate operations"};
+  const outPath=new URL("../reports/ablation-gold-span.json",import.meta.url);
+  await writeFile(outPath,JSON.stringify(report,null,2),"utf8");
+  console.error(`[ablation] report written to ${outPath.pathname}`);
+  console.log(JSON.stringify(report,null,2));
+}finally{delete process.env.WRITING_MCP_ABLATE;service.close();}

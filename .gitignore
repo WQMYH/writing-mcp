@@ -3,7 +3,11 @@ dist/
 coverage/
 .writing-index/
 *.tsbuildinfo
-reports/
+reports/*
+# Exception: the gold-evidence baseline snapshot is metrics only (no corpus
+# excerpts) and is a committable §266 deliverable used as the comparison
+# anchor for later mechanism changes.
+!reports/gold-evidence-baseline.json
 # Review and private acceptance docs are local-only artifacts
 docs/REVIEW*.md
 docs/PRIVATE*.md
