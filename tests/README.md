@@ -46,7 +46,9 @@
 
 | 文件 | 用途 |
 |---|---|
-| `scripts/evaluate-reranking.mjs` | 完整重排评测：读取私有标注数据（《语料A》42 facts），执行 search 查询，计算 Recall@5/Recall@10/MRR/命中数；分离训练集（18 条）与 holdout 集（前 3+后 2 章，24 条） |
+| `scripts/gold-hit.mjs` | 黄金 span 命中口径唯一宿主（2026-08-20 拍板）：fact 命中 ⟺ 前 k 个返回 span 中 ref ∈ goldRefs(fact)（goldRefs = 解析期全量 span 中逐字包含任一 evidenceQuote 者）；含 holdout 切分（前3+后2章）与章节诊断，所有评测面共用，禁止第二套判定 |
+| `scripts/evaluate-reranking.mjs` | 完整重排评测（gold-span 口径）：读取私有标注数据（《语料A》42 facts），一次查询 limit=50 后按 k=5/10/50 真截断计 recall + MRR；仪表自检（单调性 + 阴性对照 + 冒烟）；goldSpanCount=0 归 annotation_anomalies 桶不进分母，required 落入该桶告警；支持 train/holdout/all 切分 |
+| `scripts/run-private-acceptance.mjs` | 私有验收（gold-span 口径，命中判定经 gold-hit.mjs）：top-20 命中 + probe-100 rank + quoteExposure 诊断 + 性能门禁 |
 | `scripts/ablation-test.mjs` | 因子 ablation：逐个禁用排序因子（coverage×4、aliasBoost、proximity、headingMatches×0.5、bm25、trustBonus+0.25），测量 recall@5/MRR 变化，阈值 recall@5>2%/MRR>5% 触发调整 |
 | `scripts/load-corpus.mjs` | 语料加载：扫描目录、统计文件数量/大小/字符数、检测编码格式 |
 | `scripts/run-corpus-benchmark.mjs` | 语料基准：索引计时、Explore 查询延迟、Context 装配、内存监控、P95 延迟计算 |

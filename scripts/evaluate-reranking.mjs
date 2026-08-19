@@ -1,200 +1,84 @@
-#!/usr/bin/env node
-/**
- * 完整重排评测脚本
- * 
- * 读取私有标注数据，执行查询并计算 recall@k、MRR、位置偏差指标。
- * 标注数据路径：../../Materials/语料A/structured-data/标注数据.json
- * 
- * 注意：标注数据含证据引文（原文摘录），绝不提交 Git。
- */
+// Reranking evaluation instrument — rewritten 2026-08-20 after the previous
+// instrument was voided (weak word-co-occurrence proxy, recall@k ignored k).
+//
+// Hit criterion (single host: scripts/gold-hit.mjs): a fact hits at cutoff k
+// iff one of the first k returned spans has ref ∈ goldRefs(fact). Gold refs
+// are built over the FULL parsed span set via verbatim evidenceQuote
+// containment. One query at limit=50; recall@5/10/50 slice the same run.
+//
+// Instrument self-checks (fail the run if violated):
+//   1. monotonicity   recall@5 <= recall@10 <= recall@50 (per split)
+//   2. negative ctrl  a synthetic fact whose quote exists nowhere must score
+//                     hit=false / goldRank=-1 / goldSpanCount=0 — guards
+//                     against an always-true instrument
+//   3. smoke          the negative control query returns results at all
+//
+// Facts with goldSpanCount=0 (quote verbatim-absent, annotation or chunking
+// anomaly) are excluded from the recall denominator and reported in
+// annotation_anomalies; a required fact in that bucket is a hard warning.
+//
+// Usage: WRITING_MCP_PRIVATE_ACCEPTANCE=<annotation json> node scripts/evaluate-reranking.mjs [train|holdout|all]
+import { readFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { GenericAdapter } from "../packages/adapter-generic/dist/index.js";
+import { WritingService } from "../packages/core/dist/index.js";
+import { splitAllSpans, buildGoldRefs, goldRank, quoteExposed, chaptersOf, splitFacts } from "./gold-hit.mjs";
 
-import { readFileSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { GenericAdapter } from '../packages/adapter-generic/dist/index.js';
-import { WritingService } from '../packages/core/dist/service.js';
+const CUTS=[5,10,50],QUERY_LIMIT=50;
+const annotationPath=process.env.WRITING_MCP_PRIVATE_ACCEPTANCE;
+if(!annotationPath)throw new Error("Set WRITING_MCP_PRIVATE_ACCEPTANCE to the local annotation JSON path");
+const splitArg=process.argv[2]??"train";
+if(!["train","holdout","all"].includes(splitArg))throw new Error(`Unknown split "${splitArg}" (use train|holdout|all)`);
+const annotations=JSON.parse(await readFile(annotationPath,"utf8"));
+if(annotations?.schemaVersion!==2||annotations?.work?.private!==true||!Array.isArray(annotations?.facts))throw new Error("Private annotation data must use schemaVersion 2, private=true, and a facts array");
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ANNOTATION_PATH = resolve(__dirname, '../../Materials/语料A/structured-data/标注数据.json');
+const{train,holdout,head,tail}=splitFacts(annotations.facts);
+const evalFacts=splitArg==="train"?train:splitArg==="holdout"?holdout:annotations.facts;
 
-// 加载标注数据
-function loadAnnotation() {
-  const raw = readFileSync(ANNOTATION_PATH, 'utf-8');
-  return JSON.parse(raw);
-}
+const adapter=new GenericAdapter(),service=new WritingService([adapter],[dirname(annotations.work.sourcePath)]);
+try{
+  const resolved=await service.resolve(annotations.work.sourcePath,"generic");
+  if(resolved.status!=="resolved"||!resolved.workRef)throw new Error(`Source resolution failed: ${resolved.status}`);
+  const parsed=await adapter.load(resolved.candidates[0]);
+  const allSpans=splitAllSpans(parsed);
+  await service.index(resolved.workRef,"rebuild");
 
-// 执行 MCP 查询（直接调用 core 库）
-async function executeQuery(service, workRef, query) {
-  const result = await service.explore(workRef, 'search', query, 10);
-  return result;
-}
+  const negatives=[{id:"__negative_control__",query:"zzqqxx 不存在的事实 校验探针",evidenceQuotes:["ZZQQXX_仪表阴性对照_此引文必然不存在于任何 span"],required:false}];
+  const perFact=[],anomalies=[],negativeFindings=[];
 
-// 检查结果是否包含期望术语
-function checkExpectedTerms(results, expectedTerms) {
-  if (!results || results.length === 0) return false;
-  
-  // 将所有结果的 excerpt 和 title 拼接为文本
-  const resultText = results.map(row => {
-    const parts = [];
-    if (row.title) parts.push(row.title);
-    if (row.evidence?.excerpt) parts.push(row.evidence.excerpt);
-    return parts.join(' ');
-  }).join(' ').toLowerCase();
-  
-  // 检查所有期望术语是否都出现
-  return expectedTerms.every(term => resultText.includes(term.toLowerCase()));
-}
-
-// 找到第一个命中的排名（1-based）
-function findFirstHitRank(results, expectedTerms) {
-  if (!results || results.length === 0) return -1;
-  
-  for (let i = 0; i < results.length; i++) {
-    const row = results[i];
-    const text = [
-      row.title || '',
-      row.evidence?.excerpt || ''
-    ].join(' ').toLowerCase();
-    
-    if (expectedTerms.every(term => text.includes(term.toLowerCase()))) {
-      return i + 1; // 1-based rank
+  for(const fact of evalFacts){
+    const goldRefs=buildGoldRefs(fact,allSpans);
+    if(goldRefs.size===0){
+      anomalies.push({id:fact.id,required:fact.required===true,reason:"no span verbatim-contains any evidenceQuote"});
+      continue;
     }
+    const result=await service.explore(resolved.workRef,"search",fact.query,QUERY_LIMIT);
+    const rank=goldRank(result.results,goldRefs,QUERY_LIMIT);
+    perFact.push({id:fact.id,required:fact.required===true,category:fact.category,chapters:chaptersOf(fact),goldSpanCount:goldRefs.size,returnedCount:result.results.length,rank,goldScore:rank>=0?result.results[rank-1].score:null,cutoffScore:result.results.at(-1)?.score??null,quoteExposed:quoteExposed(result.results,fact)});
   }
-  
-  return -1;
-}
-
-// 检查结果是否命中期望章节
-function checkExpectedChapters(results, expectedChapters) {
-  // TODO: 实现章节匹配逻辑
-  // expectedChapters 格式：{volume, chapter} 或 {volume, from, to} 或数组
-  return false;
-}
-
-// 计算 recall@k
-function calculateRecallAtK(queries, k) {
-  const relevant = queries.filter(q => q.hit);
-  return relevant.length / queries.length;
-}
-
-// 计算 MRR (Mean Reciprocal Rank)
-function calculateMRR(queries) {
-  const reciprocalRanks = queries.map(q => q.hit ? 1 / q.firstHitRank : 0);
-  return reciprocalRanks.reduce((a, b) => a + b, 0) / queries.length;
-}
-
-// 主评测函数
-async function evaluate() {
-  console.log('加载标注数据...');
-  const annotation = loadAnnotation();
-  console.log(`共 ${annotation.facts.length} 条事实`);
-
-  // 初始化服务
-  const adapter = new GenericAdapter();
-  const service = new WritingService([adapter]);
-  
-  // 解析作品（使用 TXT 格式）
-  const bookPath = resolve(__dirname, '../../Materials/语料A/book-txt/语料A.txt');
-  console.log(`解析作品: ${bookPath}`);
-  const resolveResult = await service.resolve(bookPath);
-  console.log(`解析状态: ${resolveResult.status}`);
-  if (resolveResult.status !== 'resolved') {
-    throw new Error(`作品解析失败: ${resolveResult.status}`);
+  for(const neg of negatives){
+    const goldRefs=buildGoldRefs(neg,allSpans);
+    const result=await service.explore(resolved.workRef,"search",neg.query,QUERY_LIMIT);
+    const rank=goldRank(result.results,goldRefs,QUERY_LIMIT);
+    negativeFindings.push({id:neg.id,goldSpanCount:goldRefs.size,returnedCount:result.results.length,rank,hit:rank>0});
+    if(goldRefs.size!==0)throw new Error("Instrument self-check failed: negative-control quote found in corpus");
+    if(rank>0)throw new Error("Instrument self-check failed: negative control reported a hit");
+    if(result.results.length===0)throw new Error("Instrument self-check failed: negative-control query returned nothing — search path may be broken");
   }
-  const workRef = resolveResult.workRef;
-  console.log(`workRef: ${workRef}`);
-  
-  // 索引作品
-  console.log('索引作品...');
-  const indexResult = await service.index(workRef, 'rebuild');
-  console.log(`索引完成: ${indexResult.stats.documents} 文档, ${indexResult.stats.spans} spans`);
 
-  // 分离训练集和 holdout 集
-  // holdout: 前 3 章 + 后 2 章
-  // 卷 1: 30 章, 卷 2: 25 章
-  // holdout = 卷 1 的 1-3 章 + 卷 2 的 24-25 章
-  const trainFacts = [];
-  const holdoutFacts = [];
-  
-  for (const fact of annotation.facts) {
-    const chapters = Array.isArray(fact.expectedChapters) 
-      ? fact.expectedChapters 
-      : [fact.expectedChapters];
-    
-    const isHoldout = chapters.some(ch => {
-      const vol = ch.volume;
-      const maxChapter = vol === 1 ? 30 : 25;
-      
-      if (ch.from !== undefined) {
-        // 区间格式
-        return ch.from <= 3 || ch.to >= maxChapter - 1;
-      } else {
-        // 单章格式
-        return ch.chapter <= 3 || ch.chapter >= maxChapter - 1;
-      }
-    });
-    
-    if (isHoldout) {
-      holdoutFacts.push(fact);
-    } else {
-      trainFacts.push(fact);
-    }
-  }
-  
-  console.log(`\n训练集: ${trainFacts.length} 条, Holdout: ${holdoutFacts.length} 条`);
+  const denom=perFact.length;
+  const recallAt=k=>denom?perFact.filter(row=>row.rank>0&&row.rank<=k).length/denom:0;
+  const mrr=denom?perFact.reduce((sum,row)=>sum+(row.rank>0?1/row.rank:0),0)/denom:0;
+  const requiredFacts=perFact.filter(row=>row.required);
+  const requiredRecallAt=k=>requiredFacts.length?requiredFacts.filter(row=>row.rank>0&&row.rank<=k).length/requiredFacts.length:1;
+  const failed=perFact.filter(row=>row.rank<0||row.rank>CUTS[0]).map(row=>row.id);
 
-  // 执行查询并收集结果
-  console.log('\n执行查询...');
-  const queryResults = [];
-  
-  for (let i = 0; i < trainFacts.length; i++) {
-    const fact = trainFacts[i];
-    const query = fact.query;
-    
-    try {
-      const result = await executeQuery(service, workRef, query);
-      
-      // 检查是否命中
-      const hit = checkExpectedTerms(result.results || [], fact.expectedTerms);
-      const firstHitRank = hit ? findFirstHitRank(result.results || [], fact.expectedTerms) : -1;
-      
-      queryResults.push({
-        id: fact.id,
-        query: query,
-        hit: hit,
-        firstHitRank: firstHitRank,
-        expectedTerms: fact.expectedTerms,
-        expectedChapters: fact.expectedChapters
-      });
-      
-      if ((i + 1) % 10 === 0) {
-        console.log(`  已处理 ${i + 1}/${trainFacts.length} 条`);
-      }
-    } catch (err) {
-      console.error(`  查询失败 [${fact.id}]: ${err.message}`);
-      queryResults.push({
-        id: fact.id,
-        query: query,
-        hit: false,
-        firstHitRank: -1,
-        error: err.message
-      });
-    }
-  }
-  
-  // 计算指标
-  const recallAt5 = calculateRecallAtK(queryResults, 5);
-  const recallAt10 = calculateRecallAtK(queryResults, 10);
-  const mrr = calculateMRR(queryResults);
-  
-  console.log('\n=== 评测结果 ===');
-  console.log(`Recall@5: ${(recallAt5 * 100).toFixed(2)}%`);
-  console.log(`Recall@10: ${(recallAt10 * 100).toFixed(2)}%`);
-  console.log(`MRR: ${mrr.toFixed(4)}`);
-  console.log(`命中: ${queryResults.filter(q => q.hit).length}/${queryResults.length}`);
-}
+  const metrics={factsEvaluated:denom,recallAt5:recallAt(5),recallAt10:recallAt(10),recallAt50:recallAt(50),mrr,requiredTotal:requiredFacts.length,requiredRecallAt50:requiredRecallAt(50)};
+  if(!(metrics.recallAt5<=metrics.recallAt10&&metrics.recallAt10<=metrics.recallAt50))throw new Error(`Instrument self-check failed: recall not monotonic (${metrics.recallAt5}/${metrics.recallAt10}/${metrics.recallAt50})`);
 
-evaluate().catch(err => {
-  console.error('评测失败:', err);
-  process.exit(1);
-});
+  const requiredAnomalies=anomalies.filter(a=>a.required);
+  const gateSufficiency=metrics.recallAt50>=.9;
+  const report={schemaVersion:3,instrument:"gold-span hit (gold-hit.mjs), limit=50 true truncation",split:splitArg,splitInfo:{train:train.length,holdout:holdout.length,headChapters:head,tailChapters:tail},corpus:{spans:allSpans.length},metrics,gates:{sufficiencyRecall50:.9,sufficiencyPass:gateSufficiency,requiredRecallMustBe:1,requiredPass:metrics.requiredRecallAt50>=1},selfChecks:{monotonicity:"pass",negativeControl:negativeFindings,note:"violations throw before this report exists"},annotationAnomalies:anomalies,requiredAnomalyWarnings:requiredAnomalies,failedFacts:failed,perFact};
+  console.log(JSON.stringify(report,null,2));
+  if(!gateSufficiency||metrics.requiredRecallAt50<1||requiredAnomalies.length)process.exitCode=1;
+}finally{service.close();}
