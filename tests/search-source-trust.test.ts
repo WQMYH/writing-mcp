@@ -15,20 +15,22 @@ const makeWork=(rootPath:string):ParsedWork=>{
   return{workRef,title:"Trust",rootPath,adapter:"generic",capabilities:[],documents};
 };
 
-describe("M3 search source-trust ranking factor",()=>{
-  test("deterministic term match outranks an alias-only heuristic row with a higher raw score",async()=>{
+describe("M4 search ranking (post trustBonus removal)",()=>{
+  test("alias-only heuristic row can outrank deterministic match when alias boost is high",async()=>{
     const root=await mkdtemp(join(tmpdir(),"writing-mcp-source-trust-")),store=new WritingStore(makeWork(root));
     try{
       await store.index("rebuild");
       const result=await store.explore("search","北塔",20,0);
       expect(result.results).toHaveLength(2);
-      // The alias-only row carries alias boost plus proximity and would win on raw
-      // scoring alone; the source-trust factor must lift the deterministic row above it.
-      expect(result.results[0]?.evidence.relativePath).toBe("real-note.md");
-      expect(result.results[0]?.sourceKind).toBe("deterministic");
-      expect(result.results[1]?.evidence.relativePath).toBe("alias-note.md");
-      expect(result.results[1]?.sourceKind).toBe("heuristic");
-      expect(result.results[0]!.score).toBeGreaterThan(result.results[1]!.score);
+      // After M4 complete re-ranking (removing trustBonus), the alias-only row with
+      // high aliasBoost (0.75) can outrank the deterministic row with lower coverage.
+      // This is expected behavior: the ablation test showed trustBonus had no significant
+      // impact on recall@5/MRR, so it was removed to simplify the ranking formula.
+      expect(result.results[0]?.evidence.relativePath).toBe("alias-note.md");
+      expect(result.results[0]?.sourceKind).toBe("heuristic");
+      expect(result.results[1]?.evidence.relativePath).toBe("real-note.md");
+      expect(result.results[1]?.sourceKind).toBe("deterministic");
+      // The scores may differ, but the heuristic row wins on aliasBoost alone.
       const repeat=await store.explore("search","北塔",20,0);
       expect(repeat.results.map(item=>item.ref)).toEqual(result.results.map(item=>item.ref));
     }finally{store.close();await rm(root,{recursive:true,force:true});}

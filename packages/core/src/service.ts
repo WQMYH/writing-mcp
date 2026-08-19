@@ -36,14 +36,23 @@ export class WritingService {
     // cannot change — reuse the existing store instead of re-reading every
     // source file. Any file change falls through to the full semantic path;
     // incremental/rebuild never use the fast path.
+    // Record fingerprint inside indexUnlocked to eliminate double-computation
+    // race (f3ddd1f review finding F1): compute once, record before return.
     const existing=this.stores.get(workRef);
     if(mode==="status"&&existing){
       const fingerprint=await this.sourceFingerprint(candidate);
-      if(this.fingerprints.get(workRef)===fingerprint)return existing.index(mode);
+      if(this.fingerprints.get(workRef)===fingerprint){
+        // Fast path hit: record the fingerprint we actually used
+        this.fingerprints.set(workRef,fingerprint);
+        return existing.index(mode);
+      }
     }
     const next=new WritingStore(await this.loadConsistent(candidate));
     this.stores.get(workRef)?.close();
     this.stores.set(workRef,next);
+    // Full path: record fingerprint after loading (captures any changes during load)
+    const fingerprint=await this.sourceFingerprint(candidate);
+    this.fingerprints.set(workRef,fingerprint);
     return next.index(mode);
   }
   /**
@@ -92,7 +101,7 @@ export class WritingService {
     if(previous===undefined||previous===fingerprint)return;
     await this.indexUnlocked(workRef,"incremental");
   }
-  async index(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{return this.serial(workRef,async()=>{const result=await this.indexUnlocked(workRef,mode);const candidate=this.works.get(workRef);if(candidate)this.fingerprints.set(workRef,await this.sourceFingerprint(candidate));return result;});}
+  async index(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{return this.serial(workRef,async()=>this.indexUnlocked(workRef,mode));}
   async explore(workRef:string,operation:ExploreOperation,query="",limit=20,maxHops=2,targetChapter?:number):Promise<ExploreResult>{
     const started=performance.now();
     const result=await this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).explore(operation,query,limit,maxHops,targetChapter);});
