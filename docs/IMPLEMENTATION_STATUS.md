@@ -30,7 +30,7 @@ pnpm start
 
 最近验证（2026-08-19）：tsc 0 错、benchmark 30/30、127/127 测试。**完整重排验证作废并已回退至 6 因子基线**（2026-08-19 用户审查 R1-R5）：评测仪表缺陷（`calculateRecallAtK` 忽略 k、hit=期望词共现弱代理而非黄金证据、`checkExpectedChapters` 恒 false、limit=10 未测 recall@50）、holdout 24 条未验证、黄金证据门禁脚本与 baseline.json 快照均未落地。评测脚本待按黄金证据门禁重写后重验。vitest 全量须在用户环境运行（会话沙箱 spawn EPERM 既定边界，`pnpm test`）。
 
-最近验证（2026-08-20，评测仪表重写后，`214bb8f`）：口径用户拍板 gold-span hit（逐字包含 + ref 匹配），唯一宿主 `scripts/gold-hit.mjs`；仪表自检全过（单调性、阴性对照 hit=false、冒烟）。**6 因子真基线**：train（17 条）recall@5=76.47% / @10=82.35% / @50=100%，MRR=0.555，required@50=1.0；holdout（25 条）@5=84% / @10=92% / @50=100%，MRR=0.702，required@50=1.0；acceptance 重构后与历史金标准逐条一致（character-001/event-004 top-20 失败、requiredRecall=93.75%）。127/127 测试 + 30/30 基准绿。待办：逐因子 ablation 落盘（bm25 项 vs FTS 候选合并分开）、门禁脚本 + baseline.json 快照、契约重新 ratify。
+最近验证（2026-08-20，评测仪表重写 + P1 卷感知切分修复后，`214bb8f`/`ab4af79`）：口径用户拍板 gold-span hit（逐字包含 + ref 匹配），唯一宿主 `scripts/gold-hit.mjs`；仪表自检全过（单调性、阴性对照 hit=false、冒烟）。P1 修复：holdout 切分按卷取前3+后2，territories 从语料章题现算（卷1:1-30 head 1-3 tail 29-30；卷2:1-25 head 1-3 tail 24-25），切分恢复计划 §250 的 18/24。**6 因子真基线**：train（18 条）recall@5=77.8% / @10=83.3% / @50=100%，MRR=0.580，required@50=1.0；holdout（24 条）@5=83.3% / @10=91.7% / @50=100%，MRR=0.690，required@50=1.0。**miss 归因**（attribute-misses.mjs）：train 4 条 + character-001 全部 L2 候选可达、非 tie-break——纯排序因子问题，核心是 coverage 缺口（查询词 vs 证据 span 措辞不重叠，如 event-004 查询"受伤/住院"而引文是"病床/点滴瓶"）。待办：逐因子 ablation 落盘（预期：删因子不会动黄金门禁，价值在证明不可删）、门禁脚本 + baseline.json 快照、契约重新 ratify。
 
 ## 已实现闭环
 
@@ -174,6 +174,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
+- `ab4af79` — fix(eval): P1 卷感知 holdout 切分（chaptersOf 带 volume、territories 从语料章题现算、容忍卷内章序异常与双 span heading）+ P3 miss 探针 rankAt100 + attribute-misses.mjs 三层归因工具（L1 词条可达/L2 候选可达/L3 因子分解）；切分恢复 18/24，归因结论：miss 全部纯排序因子问题（coverage 缺口）。
 - `214bb8f` — refactor(eval): 评测仪表按用户拍板的 gold-span 口径重写（scripts/gold-hit.mjs 命中口径唯一宿主 + evaluate-reranking.mjs 真截断 recall@k/自检/异常分桶 + run-private-acceptance.mjs 改用共享模块行为等价；train recall@50=100% 够用门禁过、holdout @50=100%、acceptance 结果与历史金标准一致；127/127 + 30/30 绿）。
 - `69a2b52` — revert(m4): 完整重排验证作废——回退 6 因子排序基线（用户审查 R1-R5 证实 f3ddd1f 验证无效：评测仪表缺陷 recall@k 忽略 k/词共现弱代理/章节 TODO、holdout 未验证、黄金证据门禁与 baseline.json 未落地；store.ts 公式恢复 6 因子、两个排序测试还原、状态与契约降级为作废；127/127 测试 + 30/30 基准全绿；评测脚本保留待重写）。
 - `301dc44` — fix(f1+f2+f3): 消除指纹双算竞态、降级契约断言、补全文档摘要（待审阅；F1 指纹计算移入 indexUnlocked 消除双算竞态窗口，F2 M0_CONTRACT 措辞降级为 best-effort 并补充已知边缘案例，F3 M4 行摘要补录 status 快速路径 + diagnose 摘要；回归测试更新反映 M4 完整重排行为变化：trustBonus/headingMatches 已移除；127/127 测试通过，30/30 基准通过）。
