@@ -90,7 +90,9 @@ Moving a work or document intentionally changes its reference. Editing content w
 - The bonus is added after the existing deterministic score components (coverage, alias boost, proximity, heading matches, normalized BM25). The candidate set, stable tie-break ordering, and diagnostics are unchanged.
 - A full re-ranking remains deferred until after M4 with a representative corpus (AUD-012 remainder); this is the only search ranking change inside M3.
 
-### M4 complete re-ranking amendment (2026-08-19, pending review)
+### M4 complete re-ranking amendment (2026-08-19, REVERTED — validation void, NOT in force)
+
+> **REVERTED 2026-08-19.** User review (R1–R5) invalidated the validation underpinning this amendment: the evaluation instrument was defective (`calculateRecallAtK` ignored `k`; hit was term co-occurrence, not golden-evidence retrieval; `checkExpectedChapters` was an always-false TODO; `limit=10` never tested recall@50), the 24-fact holdout was never run, and no golden-evidence gate script or `baseline.json` snapshot existed. The ranking formula was reverted to the validated 6-factor version (`coverage×4 + aliasBoost + proximity + headingMatches×0.5 + bm25 normalization + trustBonus`), and the two rewritten ranking tests were restored. **This amendment is NOT ratified.** Re-derivation requires a corrected golden-evidence instrument, a true baseline, published per-factor ablation data, and holdout validation. The original text below is retained for traceability only.
 
 - Search ranking simplifies to three factors: `coverage × 4 + aliasBoost + proximity`. Coverage measures term length coverage normalized to 12 characters; aliasBoost caps at 0.75 from alias matches; proximity uses the existing term proximity algorithm.
 - Three factors removed based on ablation testing (threshold: recall@5>2%/MRR>5%): `headingMatches × 0.5` (no significant impact), `bm25` normalization (disabled it improved MRR by 5.79%), and `trustBonus +0.25` (no significant impact).

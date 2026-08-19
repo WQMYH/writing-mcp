@@ -28,7 +28,7 @@ pnpm start
 
 最近验证（2026-08-17，AUD-012 接线后）：tsc 0 错、lint 0 警告、benchmark 30/30（recall 1.0 / evidence 1.0 / Token 降幅 61.24%）、store 级接线脚本 16/16（exclude/pin/锚定/未知 taskType 非驱动/db 句柄存活回归/确定性）；vitest 全量须在用户环境运行（会话沙箱 spawn EPERM 既定边界，`pnpm test`）。
 
-最近验证（2026-08-19，完整重排后）：tsc 0 错、benchmark 30/30（无冲突）、评测集 Recall@5=83.33%/MRR=0.4493（优化后 +5.79%）、holdout 24 条待验证；vitest 全量须在用户环境运行（会话沙箱 spawn EPERM 既定边界，`pnpm test`）。
+最近验证（2026-08-19）：tsc 0 错、benchmark 30/30、127/127 测试。**完整重排验证作废并已回退至 6 因子基线**（2026-08-19 用户审查 R1-R5）：评测仪表缺陷（`calculateRecallAtK` 忽略 k、hit=期望词共现弱代理而非黄金证据、`checkExpectedChapters` 恒 false、limit=10 未测 recall@50）、holdout 24 条未验证、黄金证据门禁脚本与 baseline.json 快照均未落地。评测脚本待按黄金证据门禁重写后重验。vitest 全量须在用户环境运行（会话沙箱 spawn EPERM 既定边界，`pnpm test`）。
 
 ## 已实现闭环
 
@@ -98,7 +98,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - AUD-035 第三阶段（Biome 格式化）已由用户决策延后：store.ts 即将被 M3/M4 修改，现在做巨型函数展开与全量格式化必然返工；正确时机是完整重排落地后（检索侧冻结）的重构窗口，届时再评估格式化是否必要。
 - **M3 语料基准已完成**（2026-08-17）：491 万字《语料B》语料测试，索引 25.7 秒（~19 万字/秒）、Explore P95 673ms、Context P95 382.5ms、Token 降幅 99.92%、内存 54.3MB。建议阈值已获用户接受（索引≤60s/百万字、Explore P95≤1000ms、Context P95≤500ms、Token 降幅≥95%），待正式写入门禁。
 - **重构窗口按触碰面分流（2026-08-18）**：装配侧窗口已开（M4 冻结后）——context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已落地，sources/budget/layer 可与完整重排并行）；检索侧窗口待**完整重排落地后**——（1）store.ts 图构建/检索 SQL 抽离；（2）移除 oxlintrc.json 对 store.ts 的 ignorePatterns 忽略项；（3）评估 Biome 格式化（若执行：quoteStyle single / semicolons asNeeded / lineWidth 120）。
-- M4 剩余：无待实现项——AUD-014 tokenizer profile **已决策延后**（2026-08-18：保持 mixed-cjk-v1 启发式，理由见 IDEAS 文件 AUD-014 决策记录）；status mtime/size 快速路径 + diagnose 摘要已落地（2026-08-18，待审阅）。**完整重排已落地（2026-08-18，待审阅）**：评测集使用《语料A》私有标注数据（42 facts），基线 Recall@5=83.33%、MRR=0.4247；因子 ablation 测试 6 个因子（coverage×4、aliasBoost、proximity、headingMatches×0.5、bm25、trustBonus+0.25），阈值 recall@5>2%/MRR>5%；决策保留 3 因子（coverage×4、aliasBoost、proximity），移除 3 因子（headingMatches、bm25、trustBonus）；优化后 MRR 提升至 0.4493（+5.79%），Recall 不变；30/30 公共基准无冲突；holdout 集（前 3+后 2 章，24 条）已分离待验证。
+- M4 剩余：无待实现项——AUD-014 tokenizer profile **已决策延后**（2026-08-18：保持 mixed-cjk-v1 启发式，理由见 IDEAS 文件 AUD-014 决策记录）；status mtime/size 快速路径 + diagnose 摘要已落地（2026-08-18，待审阅）。**完整重排验证作废并已回退（2026-08-19）**：此前基于《语料A》42 facts 做的 6→3 因子裁剪，其评测仪表被用户审查证实有缺陷（`calculateRecallAtK` 忽略 k、hit=期望词共现弱代理而非黄金证据、`checkExpectedChapters` 恒 false、limit=10 未测 recall@50），且 holdout 24 条未验证、黄金证据门禁脚本与 baseline.json 快照未落地——不满足计划「重排落地＝评测门禁全绿 + baseline.json 快照更新」的完成标准。排序公式已回退 6 因子（coverage×4 + aliasBoost + proximity + headingMatches×0.5 + bm25 归一 + trustBonus），两个被改写的排序测试已还原。后续须先重写评测仪表（黄金证据命中口径 + 真 recall@k + recall@50 够用门禁）并重测真基线，再重审因子。
 - M4 审议：`docs/REVIEW_2026-08-17.md` 已审阅 M4 功能与边界——requiredRefs 直解真实生效、L0-L3 语义化未开始（缺口=来源提供器注册表）、reserved 参数边界诚实。方向已执行：AUD-013（来源语义化+去重，审阅通过含缺陷修复 `d47b2da`）→ AUD-012 残留接线（excludeRefs → targetChapter → entityRefs/documentRefs → taskType 值域开放，`526ee36`）→ 来源目录 stats 可观测（`b83ee6b`）→ AUD-014 决策延后（`c81be41`）→ status 快速路径 + diagnose 摘要（2026-08-18，待审阅）→ 剩余：完整重排（M4 后，语料可复用《语料B》基准）。模块化：context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已随 AUD-013 落地，sources/budget/layer 随重排顺势而为）。
 
 > 更早阶段（Step 3 / AUD-005～035）的逐条落地叙事已于 2026-08-17 移除：事实由「可追溯提交清单」与 commit message 承载，审阅结论由下节表格承载，不在此重复。
@@ -173,7 +173,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
 - `301dc44` — fix(f1+f2+f3): 消除指纹双算竞态、降级契约断言、补全文档摘要（待审阅；F1 指纹计算移入 indexUnlocked 消除双算竞态窗口，F2 M0_CONTRACT 措辞降级为 best-effort 并补充已知边缘案例，F3 M4 行摘要补录 status 快速路径 + diagnose 摘要；回归测试更新反映 M4 完整重排行为变化：trustBonus/headingMatches 已移除；127/127 测试通过，30/30 基准通过）。
-- `f3ddd1f` — feat(m4): 完整重排落地——因子 ablation 优化排序公式（待审阅；评测集《语料A》42 facts，基线 Recall@5=83.33%/MRR=0.4247；ablation 测试 6 因子，决策保留 3 因子 coverage×4/aliasBoost/proximity，移除 3 因子 headingMatches/bm25/trustBonus；优化后 MRR=0.4493（+5.79%），Recall 不变；30/30 基准无冲突；新增 evaluate-reranking.mjs + ablation-test.mjs；契约补 M4 complete re-ranking amendment；.gitignore 保护私有数据）。
+- `f3ddd1f` — feat(m4): 完整重排落地——因子 ablation 优化排序公式（**【验证作废·已回退，见 2026-08-19 回退提交】** 评测集《语料A》42 facts，基线 Recall@5=83.33%/MRR=0.4247；ablation 测试 6 因子，决策保留 3 因子 coverage×4/aliasBoost/proximity，移除 3 因子 headingMatches/bm25/trustBonus；优化后 MRR=0.4493（+5.79%），Recall 不变；30/30 基准无冲突；新增 evaluate-reranking.mjs + ablation-test.mjs；契约补 M4 complete re-ranking amendment；.gitignore 保护私有数据。作废原因：评测仪表缺陷 + holdout 未验证 + 门禁未落地）。
 - `c81be41` — docs: AUD-014 tokenizer 决策延后（保持 mixed-cjk-v1 启发式，理由见 IDEAS 文件 AUD-014 Tokenizer 决策记录）。
 - `c559f07` — docs: AUD-012 审阅修复二归档（契约 review clarification + Open TODO 更新 + 已知限制补充 + 提交清单补 1b4cd78/ca8d29a）。
 - `ca8d29a` — fix(m4): AUD-012 审阅修复二（C4 contextSourceCounts ORDER BY kind 显式确定 / C5 byFill pinned 提升优先于锚定近距 / C6 pinned 边界文档化；新增 C5 回归测试；tsc 0 + lint 0 + node 验证脚本 6/6；vitest 与 benchmark 待用户环境）。

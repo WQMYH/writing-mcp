@@ -13,11 +13,9 @@ const makeWork = (rootPath: string): ParsedWork => {
       doc("linqiu.md", "林秋", "# 林秋\n林秋是守着北塔的記錄者。", "character"),
       doc("ch1.md", "第一篇", "# 第一篇\n林秋在北塔下等待。", "chapter", 1),
       doc("ch2.md", "第二篇", "# 第二篇\n林秋沿着旧城墙行走。", "chapter", 2),
-      // ch3's heading also carries the query term. After M4 complete re-ranking
-      // removed the heading-match bonus, this no longer affects ordering (query
-      // 林秋 is a 2-char term: no FTS/BM25 component, coverage/proximity all
-      // equal); the unanchored order now falls to the documentRef/relativePath
-      // tiebreaker.
+      // ch3's heading carries the query term, so its deterministic +0.5
+      // heading-match bonus breaks the three-way score tie (query 林秋 is a
+      // 2-char term: no FTS/BM25 component, coverage/proximity all equal).
       doc("ch3.md", "第三篇 林秋", "# 第三篇 林秋\n林秋在码头眺望海面。", "chapter", 3),
     ],
   };
@@ -83,13 +81,11 @@ describe("AUD-012 constraint interface wiring (store level)", () => {
       expect(pos(ch2DocRef)).toBeLessThan(pos(ch1DocRef));
       expect(pos(ch1DocRef)).toBeLessThan(pos(ch3DocRef));
       // without targetChapter the anchor does not apply: pure deterministic
-      // score order. After M4 complete re-ranking (removing headingMatches),
-      // all three chapters have equal coverage (林秋 once each), so tie-breaking
-      // uses documentRef/relativePath ordering instead of heading-match bonus.
-      // The test asserts the anchor is inert, not a specific ordering.
+      // score order (ch3 mentions 林秋 twice and scores highest), which can
+      // never start with the anchor chapter — asserts the anchor is inert.
       const unanchored = await store.context("林秋", 1_000_000);
       const unanchoredOrder = unanchored.blocks.filter(block => block.layer === "L2").map(block => block.evidence.documentRef);
-      expect(unanchoredOrder[0], "some chapter leads without an anchor").toBeDefined();
+      expect(unanchoredOrder[0], "highest-scoring chapter leads without an anchor").toBe(ch3DocRef);
       expect(unanchoredOrder[0]).not.toBe(l2Order[0]);
     } finally { store.close(); await rm(root, { recursive: true, force: true }); }
   });
