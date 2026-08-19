@@ -42,6 +42,15 @@
 | `span-hard-split.test.ts` | AUD-030 span 硬上限与边界规则：超长单行硬切为共享同一源行的有界 chunk、locator 不含被裁空行、相邻 span 连续平铺无重叠无遗漏且内容可重组、硬切后后续 span 行号连续、heading 边界 locator 精确 |
 | `lifecycle.test.ts` | AUD-032 进程生命周期：SIGTERM/SIGINT 在时限内终止进程（POSIX 优雅 exit 0 / Windows 信号终止）、stdin EOF 优雅退出 exit 0、完整会话 stdout 只输出 JSON-RPC 且干净退出、进程内 shutdown 链先关 server 再关 service 幂等且零 stdout 写入 |
 
+## 评测脚本（非 CI，本地评测用）
+
+| 文件 | 用途 |
+|---|---|
+| `scripts/evaluate-reranking.mjs` | 完整重排评测：读取私有标注数据（《语料A》42 facts），执行 search 查询，计算 Recall@5/Recall@10/MRR/命中数；分离训练集（18 条）与 holdout 集（前 3+后 2 章，24 条） |
+| `scripts/ablation-test.mjs` | 因子 ablation：逐个禁用排序因子（coverage×4、aliasBoost、proximity、headingMatches×0.5、bm25、trustBonus+0.25），测量 recall@5/MRR 变化，阈值 recall@5>2%/MRR>5% 触发调整 |
+| `scripts/load-corpus.mjs` | 语料加载：扫描目录、统计文件数量/大小/字符数、检测编码格式 |
+| `scripts/run-corpus-benchmark.mjs` | 语料基准：索引计时、Explore 查询延迟、Context 装配、内存监控、P95 延迟计算 |
+
 ## 覆盖清单（按能力域）
 
 ### 通用文本链路

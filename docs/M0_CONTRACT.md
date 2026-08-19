@@ -90,6 +90,15 @@ Moving a work or document intentionally changes its reference. Editing content w
 - The bonus is added after the existing deterministic score components (coverage, alias boost, proximity, heading matches, normalized BM25). The candidate set, stable tie-break ordering, and diagnostics are unchanged.
 - A full re-ranking remains deferred until after M4 with a representative corpus (AUD-012 remainder); this is the only search ranking change inside M3.
 
+### M4 complete re-ranking amendment (2026-08-19, pending review)
+
+- Search ranking simplifies to three factors: `coverage × 4 + aliasBoost + proximity`. Coverage measures term length coverage normalized to 12 characters; aliasBoost caps at 0.75 from alias matches; proximity uses the existing term proximity algorithm.
+- Three factors removed based on ablation testing (threshold: recall@5>2%/MRR>5%): `headingMatches × 0.5` (no significant impact), `bm25` normalization (disabled it improved MRR by 5.79%), and `trustBonus +0.25` (no significant impact).
+- Ablation validation: baseline Recall@5=83.33%, MRR=0.4247 on 18 training facts (42-fact private annotation set, holdout 24 facts); optimized MRR=0.4493 (+5.79%), Recall unchanged; 30/30 public benchmark unchanged.
+- The candidate set, stable tie-break ordering, and diagnostics remain unchanged.
+- This supersedes the M3 search source-trust ranking amendment's +0.25 bonus.
+- Holdout validation (first 3 + last 2 chapters, 24 facts) pending final verification before v1 release.
+
 ## SQLite schema v1
 
 Required tables: `metadata`, `revisions`, `documents`, `spans`, `spans_fts`, `entities`, `aliases`, `mentions`, `edges`, `unresolved_mentions`.

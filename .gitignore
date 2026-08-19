@@ -8,3 +8,11 @@ reports/
 docs/REVIEW*.md
 docs/PRIVATE*.md
 .commit*.txt
+
+# Private annotation data and book content (copyright protection)
+# 标注数据含证据引文（原文摘录），书籍文件为完整作品内容，绝不提交
+**/标注数据*.json
+**/book-txt/
+**/book-epub/
+**/*.epub
+**/语料A/
