@@ -30,6 +30,8 @@ pnpm start
 
 最近验证（2026-08-19）：tsc 0 错、benchmark 30/30、127/127 测试。**完整重排验证作废并已回退至 6 因子基线**（2026-08-19 用户审查 R1-R5）：评测仪表缺陷（`calculateRecallAtK` 忽略 k、hit=期望词共现弱代理而非黄金证据、`checkExpectedChapters` 恒 false、limit=10 未测 recall@50）、holdout 24 条未验证、黄金证据门禁脚本与 baseline.json 快照均未落地。评测脚本待按黄金证据门禁重写后重验。vitest 全量须在用户环境运行（会话沙箱 spawn EPERM 既定边界，`pnpm test`）。
 
+最近验证（2026-08-20，评测仪表重写后，`214bb8f`）：口径用户拍板 gold-span hit（逐字包含 + ref 匹配），唯一宿主 `scripts/gold-hit.mjs`；仪表自检全过（单调性、阴性对照 hit=false、冒烟）。**6 因子真基线**：train（17 条）recall@5=76.47% / @10=82.35% / @50=100%，MRR=0.555，required@50=1.0；holdout（25 条）@5=84% / @10=92% / @50=100%，MRR=0.702，required@50=1.0；acceptance 重构后与历史金标准逐条一致（character-001/event-004 top-20 失败、requiredRecall=93.75%）。127/127 测试 + 30/30 基准绿。待办：逐因子 ablation 落盘（bm25 项 vs FTS 候选合并分开）、门禁脚本 + baseline.json 快照、契约重新 ratify。
+
 ## 已实现闭环
 
 - TypeScript monorepo：`core`、`adapter-inkos`、`adapter-generic`、`mcp-server`。
@@ -172,6 +174,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
+- `214bb8f` — refactor(eval): 评测仪表按用户拍板的 gold-span 口径重写（scripts/gold-hit.mjs 命中口径唯一宿主 + evaluate-reranking.mjs 真截断 recall@k/自检/异常分桶 + run-private-acceptance.mjs 改用共享模块行为等价；train recall@50=100% 够用门禁过、holdout @50=100%、acceptance 结果与历史金标准一致；127/127 + 30/30 绿）。
 - `69a2b52` — revert(m4): 完整重排验证作废——回退 6 因子排序基线（用户审查 R1-R5 证实 f3ddd1f 验证无效：评测仪表缺陷 recall@k 忽略 k/词共现弱代理/章节 TODO、holdout 未验证、黄金证据门禁与 baseline.json 未落地；store.ts 公式恢复 6 因子、两个排序测试还原、状态与契约降级为作废；127/127 测试 + 30/30 基准全绿；评测脚本保留待重写）。
 - `301dc44` — fix(f1+f2+f3): 消除指纹双算竞态、降级契约断言、补全文档摘要（待审阅；F1 指纹计算移入 indexUnlocked 消除双算竞态窗口，F2 M0_CONTRACT 措辞降级为 best-effort 并补充已知边缘案例，F3 M4 行摘要补录 status 快速路径 + diagnose 摘要；回归测试更新反映 M4 完整重排行为变化：trustBonus/headingMatches 已移除；127/127 测试通过，30/30 基准通过）。
 - `f3ddd1f` — feat(m4): 完整重排落地——因子 ablation 优化排序公式（**【验证作废·已回退，见 2026-08-19 回退提交】** 评测集《语料A》42 facts，基线 Recall@5=83.33%/MRR=0.4247；ablation 测试 6 因子，决策保留 3 因子 coverage×4/aliasBoost/proximity，移除 3 因子 headingMatches/bm25/trustBonus；优化后 MRR=0.4493（+5.79%），Recall 不变；30/30 基准无冲突；新增 evaluate-reranking.mjs + ablation-test.mjs；契约补 M4 complete re-ranking amendment；.gitignore 保护私有数据。作废原因：评测仪表缺陷 + holdout 未验证 + 门禁未落地）。
