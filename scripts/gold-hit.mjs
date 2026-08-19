@@ -37,24 +37,64 @@ export function chapterRefsOf(fact){
   return Array.isArray(fact.expectedChapters)?fact.expectedChapters:[fact.expectedChapters];
 }
 
-// Chapters a fact touches; used for the holdout split and chapter-level
-// diagnostics only — never for hit. Range refs ({from,to}) expand fully.
+// (volume, chapter) pairs a fact touches; used for the holdout split and
+// chapter-level diagnostics only — never for hit. Volume is part of the
+// identity: chapter numbers restart per volume, so bare numbers collide
+// across volumes (P1 fix, 2026-08-20). Range refs ({from,to}) expand fully.
 export function chaptersOf(fact){
   const out=[];
   for(const ref of chapterRefsOf(fact)){
-    if(Number.isInteger(ref?.chapter))out.push(ref.chapter);
-    else if(Number.isInteger(ref?.from)&&Number.isInteger(ref?.to))for(let c=ref.from;c<=ref.to;c++)out.push(c);
+    if(Number.isInteger(ref?.chapter))out.push({volume:ref.volume,chapter:ref.chapter});
+    else if(Number.isInteger(ref?.from)&&Number.isInteger(ref?.to))for(let c=ref.from;c<=ref.to;c++)out.push({volume:ref.volume,chapter:c});
   }
   return out;
 }
 
-// Holdout = facts touching the first 3 or last 2 distinct chapter numbers
-// (plan §250). Deterministic from the annotation set alone.
-export function splitFacts(facts){
-  const all=[...new Set(facts.flatMap(chaptersOf))].sort((a,b)=>a-b);
-  if(all.length<6)return{train:facts,holdout:[],head:[],tail:[]};
-  const head=all.slice(0,3),tail=all.slice(-2);
-  const holdout=facts.filter(fact=>chaptersOf(fact).some(c=>head.includes(c)||tail.includes(c)));
+// Holdout territories (plan §250 "前3+后2" applied per volume): the first 3
+// and last 2 chapter numbers of each volume's TRUE chapter range. The range
+// comes from the corpus (via territoriesFromParsedSpans), not annotation
+// coverage — annotations only cover part of the book, so deriving the range
+// from facts alone is wrong (P1, 2026-08-20).
+export function splitFacts(facts,territories){
+  const zones=territories.map(t=>{const all=[...t.chapters].sort((a,b)=>a-b);return all.length<6?{volume:t.volume,head:all,tail:[]}:{volume:t.volume,head:all.slice(0,3),tail:all.slice(-2)};});
+  const inTerritory=({volume,chapter})=>zones.some(t=>t.volume===volume&&(t.head.includes(chapter)||t.tail.includes(chapter)));
+  const holdout=facts.filter(fact=>chaptersOf(fact).some(inTerritory));
   const holdoutIds=new Set(holdout.map(fact=>fact.id));
-  return{train:facts.filter(fact=>!holdoutIds.has(fact.id)),holdout,head,tail};
+  return{train:facts.filter(fact=>!holdoutIds.has(fact.id)),holdout,territories:zones};
+}
+
+// Derive per-volume chapter ranges from the corpus's OWN chapter headings in
+// source order (single source of truth for chapter parsing). A new volume
+// starts only when chapter 1 follows a higher chapter number (chapter 1 also
+// opens spans of the SAME chapter — repeated numbers never split). Mid-volume
+// ordering anomalies in the corpus (e.g. …18,20,19,20…) must NOT split
+// volumes; per-volume sets are deduped and sorted. Returns [{volume,chapters}].
+export function territoriesFromParsedSpans(allSpans){
+  const volumes=[];
+  let lastNumber=0;
+  for(const span of allSpans){
+    const match=String(span.heading??"").trim().match(/^第(.+)章$/);
+    if(!match)continue;
+    const number=cnToInt(match[1]);
+    if(number==null||number===lastNumber)continue;
+    if(number===1&&lastNumber>1)volumes.push([]);
+    if(!volumes.length)volumes.push([]);
+    volumes.at(-1).push(number);
+    lastNumber=number;
+  }
+  return volumes.map((chapters,index)=>({volume:index+1,chapters:[...new Set(chapters)].sort((a,b)=>a-b)}));
+}
+
+export function cnToInt(text){
+  if(/^\d+$/.test(text))return Number(text);
+  const digits={零:0,一:1,二:2,两:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9};
+  let total=0,current=0;
+  for(const char of text){
+    if(char in digits)current=digits[char];
+    else if(char==="十")total+=(current||1)*10,current=0;
+    else if(char==="百")total+=(current||1)*100,current=0;
+    else if(char==="千")total+=(current||1)*1000,current=0;
+    else return null;
+  }
+  return total+current;
 }

@@ -22,7 +22,7 @@ import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { GenericAdapter } from "../packages/adapter-generic/dist/index.js";
 import { WritingService } from "../packages/core/dist/index.js";
-import { splitAllSpans, buildGoldRefs, goldRank, quoteExposed, chaptersOf, splitFacts } from "./gold-hit.mjs";
+import { splitAllSpans, buildGoldRefs, goldRank, quoteExposed, chaptersOf, splitFacts, territoriesFromParsedSpans } from "./gold-hit.mjs";
 
 const CUTS=[5,10,50],QUERY_LIMIT=50;
 const annotationPath=process.env.WRITING_MCP_PRIVATE_ACCEPTANCE;
@@ -32,9 +32,6 @@ if(!["train","holdout","all"].includes(splitArg))throw new Error(`Unknown split 
 const annotations=JSON.parse(await readFile(annotationPath,"utf8"));
 if(annotations?.schemaVersion!==2||annotations?.work?.private!==true||!Array.isArray(annotations?.facts))throw new Error("Private annotation data must use schemaVersion 2, private=true, and a facts array");
 
-const{train,holdout,head,tail}=splitFacts(annotations.facts);
-const evalFacts=splitArg==="train"?train:splitArg==="holdout"?holdout:annotations.facts;
-
 const adapter=new GenericAdapter(),service=new WritingService([adapter],[dirname(annotations.work.sourcePath)]);
 try{
   const resolved=await service.resolve(annotations.work.sourcePath,"generic");
@@ -42,6 +39,14 @@ try{
   const parsed=await adapter.load(resolved.candidates[0]);
   const allSpans=splitAllSpans(parsed);
   await service.index(resolved.workRef,"rebuild");
+
+  // Holdout territories come from the corpus's own chapter headings in
+  // source order (volume boundary = reset to chapter 1), not annotation
+  // coverage (P1).
+  const territories=territoriesFromParsedSpans(allSpans);
+  if(!territories.length)throw new Error("Instrument self-check failed: no chapter headings found in parsed spans; holdout split impossible");
+  const{train,holdout}=splitFacts(annotations.facts,territories);
+  const evalFacts=splitArg==="train"?train:splitArg==="holdout"?holdout:annotations.facts;
 
   const negatives=[{id:"__negative_control__",query:"zzqqxx 不存在的事实 校验探针",evidenceQuotes:["ZZQQXX_仪表阴性对照_此引文必然不存在于任何 span"],required:false}];
   const perFact=[],anomalies=[],negativeFindings=[];
@@ -54,7 +59,12 @@ try{
     }
     const result=await service.explore(resolved.workRef,"search",fact.query,QUERY_LIMIT);
     const rank=goldRank(result.results,goldRefs,QUERY_LIMIT);
-    perFact.push({id:fact.id,required:fact.required===true,category:fact.category,chapters:chaptersOf(fact),goldSpanCount:goldRefs.size,returnedCount:result.results.length,rank,goldScore:rank>=0?result.results[rank-1].score:null,cutoffScore:result.results.at(-1)?.score??null,quoteExposed:quoteExposed(result.results,fact)});
+    let rankAt100=null,goldScoreAt100=null;
+    if(rank<0){
+      const probe=await service.explore(resolved.workRef,"search",fact.query,100);
+      rankAt100=goldRank(probe.results,goldRefs,100);if(rankAt100>0)goldScoreAt100=probe.results[rankAt100-1].score;
+    }
+    perFact.push({id:fact.id,required:fact.required===true,category:fact.category,chapters:chaptersOf(fact),goldSpanCount:goldRefs.size,returnedCount:result.results.length,rank,rankAt100,goldScore:rank>=0?result.results[rank-1].score:null,goldScoreAt100,cutoffScore:result.results.at(-1)?.score??null,quoteExposed:quoteExposed(result.results,fact)});
   }
   for(const neg of negatives){
     const goldRefs=buildGoldRefs(neg,allSpans);
@@ -78,7 +88,7 @@ try{
 
   const requiredAnomalies=anomalies.filter(a=>a.required);
   const gateSufficiency=metrics.recallAt50>=.9;
-  const report={schemaVersion:3,instrument:"gold-span hit (gold-hit.mjs), limit=50 true truncation",split:splitArg,splitInfo:{train:train.length,holdout:holdout.length,headChapters:head,tailChapters:tail},corpus:{spans:allSpans.length},metrics,gates:{sufficiencyRecall50:.9,sufficiencyPass:gateSufficiency,requiredRecallMustBe:1,requiredPass:metrics.requiredRecallAt50>=1},selfChecks:{monotonicity:"pass",negativeControl:negativeFindings,note:"violations throw before this report exists"},annotationAnomalies:anomalies,requiredAnomalyWarnings:requiredAnomalies,failedFacts:failed,perFact};
+  const report={schemaVersion:3,instrument:"gold-span hit (gold-hit.mjs), limit=50 true truncation, miss probe limit=100",split:splitArg,splitInfo:{train:train.length,holdout:holdout.length,territories},corpus:{spans:allSpans.length},metrics,gates:{sufficiencyRecall50:.9,sufficiencyPass:gateSufficiency,requiredRecallMustBe:1,requiredPass:metrics.requiredRecallAt50>=1},selfChecks:{monotonicity:"pass",negativeControl:negativeFindings,note:"violations throw before this report exists"},annotationAnomalies:anomalies,requiredAnomalyWarnings:requiredAnomalies,failedFacts:failed,perFact};
   console.log(JSON.stringify(report,null,2));
   if(!gateSufficiency||metrics.requiredRecallAt50<1||requiredAnomalies.length)process.exitCode=1;
 }finally{service.close();}
