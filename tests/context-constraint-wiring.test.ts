@@ -13,9 +13,11 @@ const makeWork = (rootPath: string): ParsedWork => {
       doc("linqiu.md", "林秋", "# 林秋\n林秋是守着北塔的記錄者。", "character"),
       doc("ch1.md", "第一篇", "# 第一篇\n林秋在北塔下等待。", "chapter", 1),
       doc("ch2.md", "第二篇", "# 第二篇\n林秋沿着旧城墙行走。", "chapter", 2),
-      // ch3's heading carries the query term, so its deterministic +0.5
-      // heading-match bonus breaks the three-way score tie (query 林秋 is a
-      // 2-char term: no FTS/BM25 component, coverage/proximity all equal).
+      // ch3's heading also carries the query term. After M4 complete re-ranking
+      // removed the heading-match bonus, this no longer affects ordering (query
+      // 林秋 is a 2-char term: no FTS/BM25 component, coverage/proximity all
+      // equal); the unanchored order now falls to the documentRef/relativePath
+      // tiebreaker.
       doc("ch3.md", "第三篇 林秋", "# 第三篇 林秋\n林秋在码头眺望海面。", "chapter", 3),
     ],
   };

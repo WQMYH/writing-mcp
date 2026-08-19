@@ -19,7 +19,7 @@ export class WritingService {
     for(const c of candidates)this.works.set(c.workRef,c);
     return{status:candidates.length===1?"resolved":candidates.length>1?"ambiguous":"unsupported",workRef:candidates.length===1?candidates[0]!.workRef:undefined,candidates,diagnostics:candidates.length?[]:[{code:"UNSUPPORTED_SOURCE",message:"No supported writing work found",path:sourcePath}]};
   }
-  private async store(workRef:string){let store=this.stores.get(workRef);if(store)return store;const candidate=this.works.get(workRef);if(!candidate)throw Object.assign(new Error("Unknown workRef; call writing_resolve first"),{code:"WORK_REF_NOT_FOUND"});store=new WritingStore(await this.loadConsistent(candidate));this.stores.set(workRef,store);return store;}
+  private async store(workRef:string){let store=this.stores.get(workRef);if(store)return store;const candidate=this.works.get(workRef);if(!candidate)throw Object.assign(new Error("Unknown workRef; call writing_resolve first"),{code:"WORK_REF_NOT_FOUND"});store=new WritingStore((await this.loadConsistent(candidate)).work);this.stores.set(workRef,store);return store;}
   private async serial<T>(workRef:string,action:()=>Promise<T>):Promise<T>{
     const previous=this.queues.get(workRef)??Promise.resolve();
     const current=previous.catch(()=>undefined).then(action);
@@ -37,21 +37,24 @@ export class WritingService {
     // source file. Any file change falls through to the full semantic path;
     // incremental/rebuild never use the fast path.
     // Record fingerprint inside indexUnlocked to eliminate double-computation
-    // race (f3ddd1f review finding F1): compute once, record before return.
+    // race (f3ddd1f review finding F1): the fingerprint is computed once and the
+    // verified value is recorded before return, never recomputed by index().
     const existing=this.stores.get(workRef);
     if(mode==="status"&&existing){
       const fingerprint=await this.sourceFingerprint(candidate);
       if(this.fingerprints.get(workRef)===fingerprint){
-        // Fast path hit: record the fingerprint we actually used
-        this.fingerprints.set(workRef,fingerprint);
+        // Fast path hit: the recorded fingerprint already matches the one just
+        // computed, so there is nothing to record; reuse the store.
         return existing.index(mode);
       }
     }
-    const next=new WritingStore(await this.loadConsistent(candidate));
+    // loadConsistent verifies the fingerprint before/after the read and returns
+    // the verified value, so recording it here (rather than re-stating) closes
+    // the load-vs-record race window entirely.
+    const{work:loaded,fingerprint}=await this.loadConsistent(candidate);
+    const next=new WritingStore(loaded);
     this.stores.get(workRef)?.close();
     this.stores.set(workRef,next);
-    // Full path: record fingerprint after loading (captures any changes during load)
-    const fingerprint=await this.sourceFingerprint(candidate);
     this.fingerprints.set(workRef,fingerprint);
     return next.index(mode);
   }
@@ -79,13 +82,13 @@ export class WritingService {
    * read; a mid-read change would otherwise mix states from different times
    * into one snapshot. Retry once so a transient write can settle, then fail
    * with a stable code instead of indexing mixed state. */
-  private async loadConsistent(candidate:WorkCandidate):Promise<ParsedWork>{
+  private async loadConsistent(candidate:WorkCandidate):Promise<{work:ParsedWork,fingerprint:string}>{
     const adapter=this.adapters.find(a=>a.kind===candidate.adapter)!;
     for(let attempt=0;attempt<2;attempt++){
       const before=await this.sourceFingerprint(candidate);
       const work=await adapter.load(candidate);
       const after=await this.sourceFingerprint(candidate);
-      if(after===before)return work;
+      if(after===before)return{work,fingerprint:after};
     }
     throw Object.assign(new Error("Source files changed while the work was being read; retry the operation"),{code:"SOURCE_CHANGED_DURING_READ"});
   }

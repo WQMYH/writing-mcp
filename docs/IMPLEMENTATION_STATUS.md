@@ -86,7 +86,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - EPUB 仍采用确定性轻量解析，尚未覆盖 DRM/加密、复杂命名空间、导航目录语义、脚注回链、图片内容和全部 EPUB 2/3 变体；内部章节切分目前依赖独占行的中英文编号标题。
 - `workRef` 只在当前 server 进程中注册；重启后客户端需重新调用 `writing_resolve`。
 - schema v4 writer lock 是 Writing MCP 进程间的合作式协议，不能强制无关程序释放 SQLite 句柄；此类占用稳定返回 `INDEX_BUSY`。
-- status 的 mtime/size 快速路径已实现（2026-08-18，待审阅）：指纹（文件名+mtime+size）未变时复用既有 store，不重读来源。前提与 AUD-021 相同：不改变 mtime/size 的文件内容变化（如恢复同 mtime 备份）在指纹变化前不会被 status/explore/context 察觉；进程重启或任一文件 mtime/size 变化即回退全量语义路径。F1 修复（f3ddd1f review）：指纹计算移入 indexUnlocked 内部，消除双算竞态窗口。
+- status 的 mtime/size 快速路径已实现（2026-08-18，待审阅）：指纹（文件名+mtime+size）未变时复用既有 store，不重读来源。前提与 AUD-021 相同：不改变 mtime/size 的文件内容变化（如恢复同 mtime 备份）在指纹变化前不会被 status/explore/context 察觉；进程重启或任一文件 mtime/size 变化即回退全量语义路径。F1 修复（f3ddd1f review）：指纹计算移入 indexUnlocked 内部，消除双算竞态窗口；后续自审进一步让全量路径记录 loadConsistent 已校验的指纹（不再 load 后重算），竞态类别完全闭环。
 - 私有长篇仍有 1 条 optional 事实未进入前 20，900 字抽取摘要的逐字证据暴露率为 88.10%；这些指标与 span 召回、来源覆盖分别报告。
 - 中文问句分析当前是有界规则与 n-gram，不是通用分词器；问题短语表会继续通过真实调用链回归校准。
 - `stats` 的 content 受 900 字符 excerpt 截断（既有模式，`item()` 切片）；`contextSources` 增大了 stats JSON，现实 kind 数下安全，但 stats 内容截断属潜在坑。
