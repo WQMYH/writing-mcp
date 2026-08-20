@@ -40,7 +40,7 @@ Moving a work or document intentionally changes its reference. Editing content w
 
 - Search and context queries are limited to 2048 characters; deterministic analysis emits at most 48 unique terms.
 - `requiredRefs` is limited to 128 values of at most 256 characters; `budgetTokens` is limited to 1 through 1,000,000.
-- Serialized `writing_explore` payloads are capped at 200,000 bytes by default (injectable per store). A response that would exceed the cap is deterministically trimmed to fit, sets `truncated: true`, and reports `RESPONSE_TRUNCATED`; it never returns an over-limit payload.
+- Core `writing_explore` keeps a defensive 200,000 UTF-8-byte pre-trim (injectable per store). It is not the wire-contract enforcer and does not treat its partial `{results, ambiguous}` JSON as the complete MCP result; the server-boundary limits and tool reducers are frozen by the response-size amendment below.
 - Unsegmented Chinese questions use deterministic normalization and transparent question-phrase removal before bounded CJK n-gram analysis. This does not invoke a model or infer user intent.
 - Search returns `QUERY_ANALYZED`, `NO_MATCHING_TERMS`, `NO_RESULTS`, and `FTS_DEGRADED` diagnostics instead of silently turning analysis or FTS failures into ordinary empty success.
 - Entity lookup uses persisted aliases. Duplicate canonical identities, alternative source definitions, and unresolved bracket references are returned through `ambiguous`; `AMBIGUOUS_ENTITY` prevents neighborhood expansion from choosing a candidate automatically.
@@ -172,6 +172,14 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Expected failures return `isError: true`; their error contains `code`, `message`, `traceId`, and optional `recovery`.
 - Stack traces and paths outside the requested source are not returned.
 - `budget_unsatisfiable` remains a successful business result, not an MCP execution error.
+
+### M0 response-size amendment (2026-08-21)
+
+- The compact JSON serialization of `structuredContent.result` is at most 200,000 UTF-8 bytes. This limit does not describe the whole JSON-RPC frame. The returned `PostCallDiagnostic` is independently limited to 8,192 UTF-8 bytes, and Markdown fallback text is independently limited to 16,384 UTF-8 bytes.
+- The server validates business data, reserves a schema-valid full 8,192-byte synthetic diagnostic, then deterministically reduces business data before persistence. The recorder receives only the final reduced success data, or the final bounded error detail on failure. The synthetic reserve is never returned or persisted. The real diagnostic drops optional fields first, then bounded execution details/free text, while preserving required identity/outcome/persistence fields.
+- `writing_explore` drops `ambiguous` tail entries before result tails, sets `truncated`, recomputes `returnedCount`, adds only newly dropped entries to `omittedEstimate`, and exposes one `RESPONSE_TRUNCATED` diagnostic. `writing_context` never drops required blocks; it removes optional L3→L2→L1→L0 tails, records one `response_limit` omission per removed ref, and recomputes `usedTokens`. Required-only context that cannot fit fails with `RESPONSE_TOO_LARGE` rather than disguising the response cap as a token-budget result.
+- `writing_resolve` removes stable candidate tails without removing the selected candidate or changing `resolved`/`ambiguous`/`unsupported` truthfulness. `writing_diagnose` may remove `recentEvents` tails and mark truncation, but never rewrites capture artifacts. `writing_index` has no semantic reducer. Any tool unable to preserve a schema-valid result within the limit returns stable `RESPONSE_TOO_LARGE` with recovery guidance.
+- Markdown fallback is a concise summary from the same reduced data and bounded diagnostic; it is not a pretty-printed copy of the structured payload. Every UTF-8 truncation ends on a complete code point. Core search/evaluator pre-trim uses `Buffer.byteLength(..., "utf8")` only as a protective optimization; the MCP server is the final contract boundary.
 
 ### M0.1 diagnostic amendment (2026-08-14)
 

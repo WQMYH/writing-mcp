@@ -22,6 +22,7 @@
 | `mvp.test.ts` | 通用链路：resolve→rebuild→中文搜索→context→无变化索引→entity/neighborhood→单章增量；适配器优先级；并发串行 |
 | `path-security.test.ts` | 授权 roots 缺失/越界、symlink/junction 越界、service 层强制 roots |
 | `resolve-matrix.test.ts` | 作品识别矩阵：空目录、不支持扩展名、多书歧义、同目录直接文件隔离、InkOS 新旧结构 |
+| `response-limits.test.ts` | Task 4 server 最终响应门禁：中文 UTF-8 byte accounting、8,192-byte 诊断预留、explore/context/resolve/diagnose/index 确定性 reducer、required 保护与 `RESPONSE_TOO_LARGE`、recorder 只见最终 data/error、Markdown 16,384-byte 上限及输出 schema 保真 |
 | `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限、响应字节上限（RESPONSE_TRUNCATED） |
 | `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见、超大 query 拒绝 |
 | `source-directory-observable.test.ts` | AUD-012 来源目录可观测：explore stats 的 contextSources（byLayer L1/L2/L3 + byKind）复用 AUD-013 注册表 |
@@ -70,6 +71,7 @@
 - AUD-023：开发捕获事件保存有界 `outputHits`（命中 ref/kind/sourceKind/score + locator 哈希、omitted 原因、候选 workRef，各列上限 100），正文/标题/路径不入捕获；通用 JSONL 与逐调用报告仍只保存数量。
 - AUD-024：general JSONL 的轮转检查与追加在同一按目录串行队列内执行，注入小容量上限验证轮转保留最新半数、并发 20 条记录不丢不乱且保持提交顺序、写失败降级为 persistence=failed 不替换业务结果。
 - AUD-025：输出 data schema 是注册信封与 wrapper 自校验的单一真相源；wrapper 记录前自校验失配抛出 `OUTPUT_SCHEMA_MISMATCH`（记 failure + isError 一致信封 + 专用 recovery）；正常 in-process 调用无协议错误；SDK 输入拒绝返回裸 isError 文本、不产生诊断记录且不写 stderr；协议层未知消息类型经注入的 onerror 上报。
+- Task 4：server 先按 schema 验证业务 data，以完整 8,192-byte 合成诊断预留测量 `structuredContent.result`，按工具保真裁剪后才写 recorder；成功/失败最终结构 ≤200,000 UTF-8 bytes、返回诊断 ≤8,192 bytes、摘要式 Markdown ≤16,384 bytes，无法容纳 required/不可裁字段时稳定返回 `RESPONSE_TOO_LARGE`。
 - AUD-032：SIGINT/SIGTERM/stdin EOF 统一走同一优雅关闭链（先关 MCP server 再关 service）并确定性退出（exit 0，5 秒 grace guard 兜底强制终止，同步 SQLite 长操作不可取消也不能挂住进程）；stdout 专属 JSON-RPC——会话全程与关闭过程每一行 stdout 均可解析为 JSON-RPC 消息，生命周期诊断只走 stderr；`createStdioRuntime` 暴露的 shutdown 幂等且在进程内测试中零 stdout 写入。
 
 ### 检索正确性（M3）
