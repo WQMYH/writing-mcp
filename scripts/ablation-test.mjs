@@ -1,8 +1,8 @@
 // Factor ablation on the gold-span criterion (rewritten 2026-08-20).
 // The old version mutated store.ts source with regex and parsed a dead
-// console format — both voided with the old instrument. This version drives
-// the WRITING_MCP_ABLATE runtime switch in searchRows: no source mutation,
-// one index build, hit judgement imported from gold-hit.mjs only.
+// console format — both voided with the old instrument. This version injects
+// evaluator-only call-scoped options: no source mutation, no process-state
+// switch, one index build, hit judgement imported from gold-hit.mjs only.
 //
 // Variants: baseline + one per factor. bm25 is split into TWO operations
 // (ratified 2026-08-20): no_bm25_term (drop the score term, FTS candidates
@@ -23,14 +23,14 @@ import { splitAllSpans, buildGoldRefs, goldRank, splitFacts, territoriesFromPars
 
 const QUERY_LIMIT=50;
 const VARIANTS=[
-  {name:"baseline",flag:""},
-  {name:"coverage(×4)",flag:"no_coverage"},
-  {name:"aliasBoost(+aliases)",flag:"no_alias"},
-  {name:"proximity",flag:"no_proximity"},
-  {name:"headingMatches(×0.5)",flag:"no_heading"},
-  {name:"bm25 term only",flag:"no_bm25_term"},
-  {name:"FTS candidate merge",flag:"no_fts_merge"},
-  {name:"trustBonus(+0.25)",flag:"no_trust"}
+  {name:"baseline",disabledFactors:[]},
+  {name:"coverage(×4)",disabledFactors:["coverage"]},
+  {name:"aliasBoost(+aliases)",disabledFactors:["alias"]},
+  {name:"proximity",disabledFactors:["proximity"]},
+  {name:"headingMatches(×0.5)",disabledFactors:["heading"]},
+  {name:"bm25 term only",disabledFactors:["bm25Term"]},
+  {name:"FTS candidate merge",disabledFactors:["ftsMerge"]},
+  {name:"trustBonus(+0.25)",disabledFactors:["trust"]}
 ];
 
 const annotationPath=process.env.WRITING_MCP_PRIVATE_ACCEPTANCE;
@@ -48,12 +48,12 @@ try{
   const territories=territoriesFromParsedSpans(allSpans);
   const{train}=splitFacts(annotations.facts,territories);
 
-  const measure=async()=>{
+  const measure=async(disabledFactors)=>{
     const ranks=[];
     for(const fact of train){
       const goldRefs=buildGoldRefs(fact,allSpans);
       if(!goldRefs.size)continue;
-      const result=await service.explore(resolved.workRef,"search",fact.query,QUERY_LIMIT);
+      const result=await service.evaluateSearch(resolved.workRef,fact.query,QUERY_LIMIT,{disabledFactors});
       ranks.push(goldRank(result.results,goldRefs,QUERY_LIMIT));
     }
     const denom=ranks.length;
@@ -65,23 +65,20 @@ try{
 
   const rows=[];
   for(const variant of VARIANTS){
-    if(variant.flag)process.env.WRITING_MCP_ABLATE=variant.flag;else delete process.env.WRITING_MCP_ABLATE;
-    const metrics=await measure();
-    rows.push({variant:variant.name,flag:variant.flag||null,...metrics});
+    const metrics=await measure(variant.disabledFactors);
+    rows.push({variant:variant.name,disabledFactors:variant.disabledFactors,...metrics});
     console.error(`[ablation] ${variant.name}: recall@5=${(metrics.recallAt5*100).toFixed(2)}% @10=${(metrics.recallAt10*100).toFixed(2)}% @50=${(metrics.recallAt50*100).toFixed(2)}% MRR=${metrics.mrr.toFixed(4)}`);
   }
-  delete process.env.WRITING_MCP_ABLATE;
-
   const base=rows[0];
   const table=rows.map(row=>{
     const deltaRecall5=(row.recallAt5-base.recallAt5)*100;
     const deltaMrrRelative=base.mrr?(row.mrr-base.mrr)/base.mrr*100:0;
     const verdict=row===base?"baseline":deltaRecall5<-2||deltaMrrRelative<-5?"KEEP":"REMOVABLE";
-    return{variant:row.variant,flag:row.flag,recallAt5:+row.recallAt5.toFixed(4),recallAt10:+row.recallAt10.toFixed(4),recallAt50:+row.recallAt50.toFixed(4),mrr:+row.mrr.toFixed(4),deltaRecall5pp:+deltaRecall5.toFixed(2),deltaMrrPct:+deltaMrrRelative.toFixed(2),verdict};
+    return{variant:row.variant,disabledFactors:row.disabledFactors,recallAt5:+row.recallAt5.toFixed(4),recallAt10:+row.recallAt10.toFixed(4),recallAt50:+row.recallAt50.toFixed(4),mrr:+row.mrr.toFixed(4),deltaRecall5pp:+deltaRecall5.toFixed(2),deltaMrrPct:+deltaMrrRelative.toFixed(2),verdict};
   });
-  const report={schemaVersion:1,instrument:"gold-span hit (gold-hit.mjs), limit=50 true truncation, train split only",criterion:"recall@5 drop >2pp or MRR drop >5% relative => KEEP (plan §251)",splitInfo:{train:train.length,territories},baseline:base,table,note:"WRITING_MCP_ABLATE runtime switch; no source mutation; bm25 term and FTS candidate merge are separate operations"};
+  const report={schemaVersion:1,instrument:"gold-span hit (gold-hit.mjs), limit=50 true truncation, train split only",criterion:"recall@5 drop >2pp or MRR drop >5% relative => KEEP (plan §251)",splitInfo:{train:train.length,territories},baseline:base,table,note:"Evaluator-only call-scoped injection; no source mutation or environment switch; bm25 term and FTS candidate merge are separate operations"};
   const outPath=new URL("../reports/ablation-gold-span.json",import.meta.url);
   await writeFile(outPath,JSON.stringify(report,null,2),"utf8");
   console.error(`[ablation] report written to ${outPath.pathname}`);
   console.log(JSON.stringify(report,null,2));
-}finally{delete process.env.WRITING_MCP_ABLATE;service.close();}
+}finally{service.close();}

@@ -39,6 +39,10 @@ export interface WorkAdapter {
 export interface IndexStats { added: number; updated: number; deleted: number; skipped: number; documents: number; spans: number; entities: number; edges: number }
 export interface IndexResult { workRef: string; revision: number; schemaVersion: number; freshness: "fresh" | "stale" | "missing" | "incompatible"; stats: IndexStats; contextSources?: { byLayer: Record<string, number>; byKind: Record<string, number> }; diagnostics: Diagnostic[]; elapsedMs: number }
 export type ExploreOperation = "search" | "entity" | "neighborhood" | "timeline" | "document" | "stats";
+/** Evaluator-only, call-scoped perturbations. These options are never read
+ * from process state and are not part of the MCP-facing search contract. */
+export type SearchExperimentFactor = "coverage" | "alias" | "proximity" | "heading" | "bm25Term" | "ftsMerge" | "trust";
+export interface SearchExperimentOptions { disabledFactors?: SearchExperimentFactor[] }
 export interface EvidenceLocator { relativePath: string; startLine: number; endLine: number }
 export interface Evidence { documentRef: string; relativePath: string; startLine: number; endLine: number; excerpt: string; evidenceHash: string; revision: number; locators?: EvidenceLocator[] }
 export interface PathEvidence { edgeRef: string; edgeKind: string; direction: "outgoing" | "incoming"; sourceRef: string; targetRef: string; sourceKind: SourceKind; confidence: number; evidence: Evidence }

@@ -1,4 +1,4 @@
-import type { AdapterKind, ContextOptions, ContextPacket, ExploreOperation, ExploreResult, IndexResult, ParsedWork, ResolveResult, SourceSnapshot, WorkAdapter, WorkCandidate } from "./types.js";
+import type { AdapterKind, ContextOptions, ContextPacket, ExploreOperation, ExploreResult, IndexResult, ParsedWork, ResolveResult, SearchExperimentOptions, SourceSnapshot, WorkAdapter, WorkCandidate } from "./types.js";
 import { WritingStore } from "./store.js";
 import { join } from "node:path";
 
@@ -53,6 +53,8 @@ export class WritingService {
     if(elapsedMs>EXPLORE_TIME_LIMIT_MS)throw Object.assign(new Error(`Explore exceeded the ${EXPLORE_TIME_LIMIT_MS}ms deterministic time limit (took ${Math.trunc(elapsedMs)}ms)`),{code:"EXPLORE_TIME_LIMIT_EXCEEDED"});
     return result;
   }
+  /** Evaluator-only: options are scoped to this call and never stored. */
+  async evaluateSearch(workRef:string,query:string,limit:number,options:SearchExperimentOptions):Promise<ExploreResult>{return this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).evaluateSearch(query,limit,options);});}
   async context(workRef:string,query:string,budgetTokens:number,requiredRefs:string[]=[],options:ContextOptions={}):Promise<ContextPacket>{return this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).context(query,budgetTokens,requiredRefs,options);});}
   diagnosticDirectory(workRef?:string):string|undefined{const candidate=workRef?this.works.get(workRef):undefined;const root=candidate?.rootPath??this.authorizedRoots?.[0];if(!root)return undefined;const scope=candidate?workRef!.replaceAll(":","-"):"_server";return join(root,".writing-index",scope,"diagnostics");}
   close():void{for(const state of this.active.values())state.store.close();this.active.clear();this.queues.clear();}
