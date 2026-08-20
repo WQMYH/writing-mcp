@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -89,9 +90,16 @@ describe("AUD-022 frozen deterministic graph vocabulary",()=>{
         sourceSpanRef=edge.span_ref;
         expect(edge).toMatchObject({source_ref:chapter.documentRef,target_ref:entityRef,kind:"mentions",revision:indexed.revision});
         expect(verified.prepare("SELECT COUNT(*) count FROM unresolved_mentions WHERE text='林夜'").get()).toEqual({count:0});
-        expect(verified.prepare("SELECT ee.span_ref,ee.revision,s.document_ref FROM edge_evidence ee JOIN spans s ON s.span_ref=ee.span_ref WHERE ee.edge_ref=?").get(edge.edge_ref)).toEqual({span_ref:sourceSpanRef,revision:indexed.revision,document_ref:chapter.documentRef});
+        const expectedStart=chapter.content.indexOf("林夜"),expectedEnd=expectedStart+"林夜".length,expectedHash=createHash("sha256").update("林夜").digest("hex");
+        expect(verified.prepare("SELECT start_offset,end_offset,evidence_hash FROM mentions WHERE entity_ref=? AND span_ref=? AND source_kind='native'").get(entityRef,sourceSpanRef)).toEqual({start_offset:expectedStart,end_offset:expectedEnd,evidence_hash:expectedHash});
+        expect(verified.prepare("SELECT ee.span_ref,ee.start_offset,ee.end_offset,ee.evidence_hash,ee.revision,s.document_ref FROM edge_evidence ee JOIN spans s ON s.span_ref=ee.span_ref WHERE ee.edge_ref=?").get(edge.edge_ref)).toEqual({span_ref:sourceSpanRef,start_offset:expectedStart,end_offset:expectedEnd,evidence_hash:expectedHash,revision:indexed.revision,document_ref:chapter.documentRef});
       }finally{verified.close();}
 
+      // Break caught: accepting a document seed for neighborhood must not
+      // silently broaden the entity operation into a document lookup.
+      const entityLookup=await store.explore("entity",chapter.documentRef,20,0);
+      expect(entityLookup.results).toEqual([]);
+      expect(entityLookup.diagnostics.some(entry=>entry.code==="NO_RESULTS")).toBe(true);
       const fromDocument=await store.explore("neighborhood",chapter.documentRef,20,1);
       const fromEntity=await store.explore("neighborhood",entityRef,20,1);
       const documentPath=fromDocument.results.find(item=>item.ref===entityRef)?.pathEvidence?.find(edge=>edge.edgeKind==="mentions");
@@ -99,6 +107,33 @@ describe("AUD-022 frozen deterministic graph vocabulary",()=>{
       expect(documentPath).toMatchObject({direction:"outgoing",sourceRef:chapter.documentRef,targetRef:entityRef,evidence:{documentRef:chapter.documentRef,revision:indexed.revision}});
       expect(entityPath).toMatchObject({direction:"incoming",sourceRef:chapter.documentRef,targetRef:entityRef,evidence:{documentRef:chapter.documentRef,revision:indexed.revision}});
       expect(entityPath?.edgeRef).toBe(documentPath?.edgeRef);
+    }finally{store.close();await rm(root,{recursive:true,force:true});}
+  });
+
+  test("keeps a multi-owner persisted alias unresolved instead of selecting a deterministic-looking mention",async()=>{
+    // Break caught: a shared alias must not silently resolve to the first row
+    // in a sorted SQLite query and become a false graph fact.
+    const root=await mkdtemp(join(tmpdir(),"writing-mcp-ambiguous-alias-")),workRef=stableId("work","ambiguous-alias",root);
+    const doc=(name:string,title:string,kind:SourceDocument["kind"],content:string,chapterNumber?:number):SourceDocument=>({documentRef:stableId("doc",workRef,name),relativePath:name,absolutePath:name,title,kind,content,chapterNumber,sourceMtimeMs:1,sourceSize:Buffer.byteLength(content)});
+    const first=doc("first.md","语笙","character","# 语笙\n角色定义。"),second=doc("second.md","清璃","character","# 清璃\n角色定义。"),chapter=doc("chapter.md","第一章","chapter","# 第一章\n尚未出现引用。",1);
+    const work:ParsedWork={workRef,title:"Ambiguous alias",rootPath:root,adapter:"generic",capabilities:[],documents:[first,second,chapter]};
+    const store=new WritingStore(work);
+    try{
+      await store.index("rebuild");
+      const dbPath=join(root,".writing-index",work.workRef.replace(":","-"),"index.sqlite"),db=new DatabaseSync(dbPath);
+      try{
+        const refs=(db.prepare("SELECT entity_ref FROM entities WHERE name IN ('语笙','清璃') ORDER BY name").all() as Array<{entity_ref:string}>).map(row=>row.entity_ref);
+        expect(refs).toHaveLength(2);
+        for(const ref of refs)db.prepare("INSERT INTO aliases(entity_ref,alias,normalized_alias) VALUES(?,?,?)").run(ref,"林夜","林夜");
+      }finally{db.close();}
+      chapter.content="# 第一章\n[[林夜]]走进北塔。";
+      chapter.sourceSize=Buffer.byteLength(chapter.content);
+      await store.index("incremental");
+      const verified=new DatabaseSync(dbPath,{readOnly:true});
+      try{
+        expect(verified.prepare("SELECT COUNT(*) count FROM edges WHERE kind='mentions' AND source_ref=?").get(chapter.documentRef)).toEqual({count:0});
+        expect(verified.prepare("SELECT text,reason FROM unresolved_mentions WHERE text='林夜'").get()).toEqual({text:"林夜",reason:"AMBIGUOUS_ALIAS"});
+      }finally{verified.close();}
     }finally{store.close();await rm(root,{recursive:true,force:true});}
   });
 });

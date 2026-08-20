@@ -402,12 +402,13 @@ export class WritingStore {
   private refreshReferencesForRows(db:DatabaseSync,rows:Array<Record<string,unknown>>,revision:number){
     const entities=db.prepare("SELECT entity_ref,name,normalized_name,valid_from_chapter,valid_to_chapter FROM entities").all() as Array<Record<string,unknown>>;
     // Native [[...]] references resolve through the persisted alias table as
-    // well as the canonical name. The stable order keeps a malformed duplicate
-    // alias from making the deterministic parser depend on SQLite row order.
-    const byName=new Map<string,Record<string,unknown>>();
+    // well as canonical names. Multi-owner aliases stay unresolved rather than
+    // becoming a deterministic-looking false fact.
+    const aliasesByName=new Map<string,Array<Record<string,unknown>>>();
     for(const entity of db.prepare("SELECT a.normalized_alias,e.entity_ref,e.name,e.normalized_name,e.valid_from_chapter,e.valid_to_chapter FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref ORDER BY a.normalized_alias,e.entity_ref").all() as Array<Record<string,unknown>>){
       const alias=String(entity.normalized_alias);
-      if(!byName.has(alias))byName.set(alias,entity);
+      const owners=aliasesByName.get(alias);
+      if(owners)owners.push(entity);else aliasesByName.set(alias,[entity]);
     }
     for(const row of rows){
       const spanRef=String(row.span_ref),documentRef=String(row.document_ref),content=String(row.content);
@@ -427,13 +428,13 @@ export class WritingStore {
         }
       }
       for(const match of content.matchAll(/\[\[([^[\]\n]{1,100})\]\]/g)){
-        const text=match[1]!.trim(),entity=byName.get(text.toLowerCase());
-        if(!entity){db.prepare("INSERT OR IGNORE INTO unresolved_mentions VALUES(?,?,?,?,?)").run(stableId("unresolved",spanRef,text,String(match.index)),text,spanRef,"NO_MATCHING_ENTITY",revision);continue;}
-        const entityRef=String(entity.entity_ref),offset=match.index??0,from=entity.valid_from_chapter==null?null:String(entity.valid_from_chapter),to=entity.valid_to_chapter==null?null:String(entity.valid_to_chapter);
-        const end=offset+text.length,evidenceHash=hash(content.slice(offset,end)),edgeRef=stableId("edge",documentRef,entityRef,"mentions"),identityHash=hash(`${documentRef}\0${entityRef}\0mentions`);
-        db.prepare("INSERT OR IGNORE INTO mentions VALUES(?,?,?,?,?,?,?,?,?)").run(stableId("mention",spanRef,entityRef,String(offset),"native"),entityRef,spanRef,offset,end,"native",1,evidenceHash,revision);
+        const captured=match[1]!,text=captured.trim(),owners=aliasesByName.get(text.toLowerCase())??[];
+        if(owners.length!==1){const reason=owners.length?"AMBIGUOUS_ALIAS":"NO_MATCHING_ENTITY";db.prepare("INSERT OR IGNORE INTO unresolved_mentions VALUES(?,?,?,?,?)").run(stableId("unresolved",spanRef,text,String(match.index)),text,spanRef,reason,revision);continue;}
+        const entity=owners[0]!,entityRef=String(entity.entity_ref),tokenStart=(match.index??0)+2+(captured.length-captured.trimStart().length),from=entity.valid_from_chapter==null?null:String(entity.valid_from_chapter),to=entity.valid_to_chapter==null?null:String(entity.valid_to_chapter);
+        const tokenEnd=tokenStart+text.length,evidenceHash=hash(content.slice(tokenStart,tokenEnd)),edgeRef=stableId("edge",documentRef,entityRef,"mentions"),identityHash=hash(`${documentRef}\0${entityRef}\0mentions`);
+        db.prepare("INSERT OR IGNORE INTO mentions VALUES(?,?,?,?,?,?,?,?,?)").run(stableId("mention",spanRef,entityRef,String(tokenStart),"native"),entityRef,spanRef,tokenStart,tokenEnd,"native",1,evidenceHash,revision);
         db.prepare("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(edgeRef,documentRef,entityRef,"mentions","native",1,spanRef,identityHash,evidenceHash,from,to,null,"{}",revision);
-        db.prepare("INSERT OR REPLACE INTO edge_evidence VALUES(?,?,?,?,?,?,?,?,?)").run(stableId("edge-evidence",edgeRef,spanRef,String(offset),"native"),edgeRef,spanRef,offset,end,evidenceHash,"native",1,revision);
+        db.prepare("INSERT OR REPLACE INTO edge_evidence VALUES(?,?,?,?,?,?,?,?,?)").run(stableId("edge-evidence",edgeRef,spanRef,String(tokenStart),"native"),edgeRef,spanRef,tokenStart,tokenEnd,evidenceHash,"native",1,revision);
       }
     }
     db.prepare("DELETE FROM edges WHERE kind!='contains' AND kind!='precedes' AND edge_ref NOT IN (SELECT DISTINCT edge_ref FROM edge_evidence)").run();
@@ -466,7 +467,7 @@ export class WritingStore {
 
   async explore(operation:ExploreOperation,query="",limit=20,maxHops=2,targetChapter?:number):Promise<ExploreResult>{if(query.length>2048)throw codedError("QUERY_TOO_LARGE","Query exceeds the 2048-character deterministic limit");const started=performance.now(),db=await this.open();const revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);limit=Math.max(1,Math.min(100,Math.trunc(limit)));maxHops=Math.max(0,Math.min(3,maxHops));let rows:Array<Record<string,unknown>>=[],ambiguousRows:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
     if(operation==="stats"){const c={...this.counts(db),contextSources:this.contextSourceCounts(db)};rows=[{span_ref:"stats",heading:"Index statistics",content:json(c),relative_path:".writing-index",start_line:1,end_line:1,score:1,kind:"stats"}];}
-    else if(operation==="entity"||operation==="neighborhood"){const lookup=this.entityRows(db,query,limit);rows=lookup.rows;ambiguousRows=lookup.ambiguous;diagnostics=lookup.diagnostics;}
+    else if(operation==="entity"||operation==="neighborhood"){const lookup=this.entityRows(db,query,limit,operation==="neighborhood");rows=lookup.rows;ambiguousRows=lookup.ambiguous;diagnostics=lookup.diagnostics;}
     else if(operation==="document"){rows=db.prepare("SELECT s.span_ref,s.heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,1 score,d.kind FROM spans s JOIN documents d ON d.document_ref=s.document_ref WHERE d.relative_path LIKE ? OR d.title LIKE ? ORDER BY d.source_ordinal,s.ordinal,s.span_ref LIMIT ?").all(`%${query}%`,`%${query}%`,limit) as Array<Record<string,unknown>>;}
     else if(operation==="timeline"){const timeline=this.timelineRows(db,query,limit,targetChapter);rows=timeline.rows;diagnostics=timeline.diagnostics;}
     else {const searched=this.searchRows(db,query,limit);rows=searched.rows;diagnostics=searched.diagnostics;}
@@ -518,13 +519,13 @@ export class WritingStore {
     return{rows:merged.slice(0,limit),diagnostics};
   }
 
-  private entityRows(db:DatabaseSync,query:string,limit:number):{rows:Array<Record<string,unknown>>;ambiguous:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}{
-    const directEntity=db.prepare("SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.entity_ref=?").get(query) as Record<string,unknown>|undefined;
+  private entityRows(db:DatabaseSync,query:string,limit:number,allowStableNeighborhoodSeed=false):{rows:Array<Record<string,unknown>>;ambiguous:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}{
+    const directEntity=allowStableNeighborhoodSeed?db.prepare("SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.entity_ref=?").get(query) as Record<string,unknown>|undefined:undefined;
     if(directEntity)return{rows:[directEntity],ambiguous:[],diagnostics:[]};
     // Graph documents are valid neighborhood seeds too. They are not named
     // entities, so resolve the stable documentRef directly rather than asking
     // callers to infer a surrogate Chapter entity.
-    const directDocument=db.prepare("SELECT d.document_ref ref,s.span_ref,d.kind,d.title heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,'native' source_kind,1 confidence,(SELECT revision FROM index_revisions WHERE status='valid' ORDER BY revision DESC LIMIT 1) revision FROM documents d JOIN spans s ON s.document_ref=d.document_ref WHERE d.document_ref=? ORDER BY s.ordinal LIMIT 1").get(query) as Record<string,unknown>|undefined;
+    const directDocument=allowStableNeighborhoodSeed?db.prepare("SELECT d.document_ref ref,s.span_ref,d.kind,d.title heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,'native' source_kind,1 confidence,(SELECT revision FROM index_revisions WHERE status='valid' ORDER BY revision DESC LIMIT 1) revision FROM documents d JOIN spans s ON s.document_ref=d.document_ref WHERE d.document_ref=? ORDER BY s.ordinal LIMIT 1").get(query) as Record<string,unknown>|undefined:undefined;
     if(directDocument)return{rows:[directDocument],ambiguous:[],diagnostics:[]};
     const normalized=query.normalize("NFKC").trim().toLowerCase(),pattern=`%${normalized.replaceAll("%","\\%").replaceAll("_","\\_")}%`;
     if(!normalized)return{rows:[],ambiguous:[],diagnostics:[{code:"NO_MATCHING_TERMS",message:"The entity query contains no searchable name"}]};

@@ -3,7 +3,7 @@
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
 > 检查点时间：2026-08-21（Task 3 图与上下文契约硬化）
-> 当前状态：A1=SourceSnapshot/fingerprint 一致性与恢复；A2=评测实验隔离与只读门禁；Task 3=`mentions` 冻结词汇与 `ContextPacket.accountingScope` 已完成。当前验证为 146 项测试、lint 0 警告、公共基准 30/30、coverage lines 93.01%；私有 top-20 历史基线为 40/42、required 15/16，gold @50 候选门禁与 PRF 验收严格区分。response-size、EPUB UTF-8 byte accounting、lifecycle 与 PRF 仍已重开，M4 不得宣称完成。
+> 当前状态：A1=SourceSnapshot/fingerprint 一致性与恢复；A2=评测实验隔离与只读门禁；Task 3=`mentions` 冻结词汇与 `ContextPacket.accountingScope` 已完成。当前验证为 147 项测试、lint 0 警告、公共基准 30/30、coverage lines 93.01%；私有 top-20 历史基线为 40/42、required 15/16，gold @50 候选门禁与 PRF 验收严格区分。response-size、EPUB UTF-8 byte accounting、lifecycle 与 PRF 仍已重开，M4 不得宣称完成。
 
 ## 恢复入口
 
@@ -79,14 +79,14 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
-- 38 个测试文件 / 144 项测试，覆盖：通用链路、MCP 协议与诊断、检索正确性、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
+- 38 个测试文件 / 147 项测试，覆盖：通用链路、MCP 协议与诊断、检索正确性、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
 - 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制
 
 - `timeline` 已实现为携带时态属性实体与 precedes 时序边的确定性投影，支持 targetChapter 章节时态过滤（AUD-012 M3 范围）。
 - context 的 `targetChapter`/`entityRefs`/`documentRefs`/`excludeRefs` 已接线（AUD-012，`526ee36`）：targetChapter 锚定层内排序、entityRefs/documentRefs 直解入 blocks、excludeRefs 过滤；`taskType` 仍为保留 hint——值域开放（未知值接受并记录）、**永不影响装配**（2026-08-17 方向：无 taskType 策略引擎）。
-- 角色实体提取只覆盖角色类文档 heading；查询期仅提供透明的中文称呼形态扩展，尚无持久化别名解析。
+- 角色实体提取只覆盖角色类文档 heading；原生 `[[alias]]` 会查询持久化 aliases，唯一 owner 才形成 `mentions`，多 owner 保持 `AMBIGUOUS_ALIAS` 未解析；查询期另提供透明的中文称呼形态扩展。
 - EPUB 仍采用确定性轻量解析，尚未覆盖 DRM/加密、复杂命名空间、导航目录语义、脚注回链、图片内容和全部 EPUB 2/3 变体；内部章节切分目前依赖独占行的中英文编号标题。
 - `workRef` 只在当前 server 进程中注册；重启后客户端需重新调用 `writing_resolve`。
 - schema v4 writer lock 是 Writing MCP 进程间的合作式协议，不能强制无关程序释放 SQLite 句柄；此类占用稳定返回 `INDEX_BUSY`。

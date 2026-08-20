@@ -79,8 +79,9 @@ Moving a work or document intentionally changes its reference. Editing content w
 ### M3 `mentions` vocabulary alignment amendment (2026-08-21)
 
 - `mentions` is added to the frozen public `EdgeKind` and `EDGE_KINDS` vocabulary. It already existed in schema-v4 derived data; this additive amendment aligns the public vocabulary with that persisted relationship rather than introducing a schema migration.
-- A native `[[alias]]` reference resolves through the persisted alias table to its canonical entity and creates a `Document → Entity` `mentions` edge. Its edge evidence retains the source span, document locator, source kind, confidence, and index revision. This direction is distinct from the deterministic `Entity → Document` `appears_in` edge.
-- Bounded neighborhood traversal may seed either a stable entity reference or a stable document reference, and exposes the same `mentions` edge as incoming or outgoing path evidence from the corresponding endpoint.
+- A native `[[alias]]` reference resolves through the persisted alias table only when that normalized alias has exactly one canonical owner, then creates a `Document → Entity` `mentions` edge. A multi-owner alias writes `unresolved_mentions` with stable reason `AMBIGUOUS_ALIAS`; it never silently selects an owner or creates a deterministic-looking fact. Its edge evidence retains the source span, document locator, source kind, confidence, and index revision. This direction is distinct from the deterministic `Entity → Document` `appears_in` edge.
+- Native alias evidence covers the trimmed alias capture only, not the surrounding `[[` / `]]` delimiters: offsets and evidence hash are computed from that exact captured substring and match between `mentions` and `edge_evidence`.
+- Bounded `neighborhood` traversal (but not `entity`) may seed either a stable entity reference or a stable document reference, and exposes the same `mentions` edge as incoming or outgoing path evidence from the corresponding endpoint.
 - The native grammar remains double-bracket `[[alias]]` only. This amendment adds no single-bracket grammar, source-file write path, Agent judgment, or inference beyond deterministic alias resolution.
 
 ### M3 timeline target-chapter and reserved context inputs amendment (2026-08-16)

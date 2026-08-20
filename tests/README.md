@@ -30,7 +30,7 @@
 | `context-source-registry.test.ts` | AUD-013 来源提供器注册表：ENTITY_KINDS 全覆盖的语义分层映射、小写文档类型归一（character/state/foreshadow→L1，chapter/outline→L2，document/未知→L3）、required 晋升 L0、evidenceHash 折叠去重（required 前置保护、duplicate_evidence 进 omitted）、预算压力下自 L3 向低层裁剪、真实路径 L1 归属与不得整体落 L3 护栏 |
 | `bfs-batching.test.ts` | AUD-020 批量化护栏：宽图每节点 fan-out 确定性截断与重复运行一致、宽图 BFS 在确定性耗时预算内完成 |
 | `timeline.test.ts` | AUD-015 timeline 独立投影：章节+precedes 时序按章节位置排序、名称过滤、未知章节锚点稳定殿后、无时态数据 NO_RESULTS |
-| `graph-vocabulary.test.ts` | AUD-022 词汇表冻结：索引实体 kind 含 OutlineNode 且不超出 ENTITY_KINDS、边 kind（含原生 `mentions`）不超出 EDGE_KINDS、持久化别名 `[[alias]]` 生成 Document→Entity 边并从双端 BFS 保留证据、InkOS/generic 能力声明不超出 WORK_CAPABILITIES |
+| `graph-vocabulary.test.ts` | AUD-022 词汇表冻结：索引实体 kind 含 OutlineNode 且不超出 ENTITY_KINDS、边 kind（含原生 `mentions`）不超出 EDGE_KINDS、唯一持久化别名 `[[alias]]` 生成 Document→Entity 边并从双端 BFS 保留精确 alias-capture 证据，多 owner alias 保持 `AMBIGUOUS_ALIAS` 未解析、InkOS/generic 能力声明不超出 WORK_CAPABILITIES |
 | `timeline-tense-filter.test.ts` | AUD-012 章节时态过滤：targetChapter 锚点只保留当时态有效的实体/边（无界 from/to 视为书首/书尾）、锚点外章节排除、与名称过滤组合、重复运行确定性 |
 | `context-reserved-params.test.ts` | AUD-012/Task 3 约束接口 MCP 契约（stdio）：explore schema 暴露 targetChapter 且锚定 timeline 排除锚点外章节实体；context schema 暴露四约束参数、taskType 值域开放（无 enum）且保留非驱动；输出 schema/描述冻结 excerpt-only accountingScope 与外部 Token 复核语义；描述声明 requiredRefs 胜出 excludeRefs 的优先级；exclude/pin 经 MCP 生效；未知 taskType 被接受且输出不变 |
 | `context-constraint-wiring.test.ts` | AUD-012 约束接口接线（store 级）：excludeRefs 过滤与 excluded 报告、requiredRefs 胜出 excludeRefs、entityRefs/documentRefs 直解入 blocks 及层归属、targetChapter 锚定层内排序（同章→前距→后距）且无锚点时不生效、taskType 值域开放且任意值输出恒等、共享数据库句柄不被 context 误关、四份 ref 列表均受 CONTEXT_REFS_TOO_LARGE 校验、budget_unsatisfiable 保留各类真实 omitted 原因（excluded/not_found 不冒充预算原因） |
