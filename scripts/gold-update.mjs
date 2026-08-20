@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { rename, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { measureGoldEvidence, goldSnapshot } from "./gold-measurement.mjs";
 const measurement = await measureGoldEvidence(process.env.WRITING_MCP_PRIVATE_ACCEPTANCE);
 if (measurement.verdict !== "PASS") throw new Error("Candidate gold gates failed; baseline was not updated");
-const target = new URL("../reports/gold-evidence-baseline.json", import.meta.url), temporary = new URL(`../reports/.gold-evidence-${process.pid}.tmp`, import.meta.url);
+const target = process.env.WRITING_MCP_GOLD_BASELINE_PATH ? resolve(process.env.WRITING_MCP_GOLD_BASELINE_PATH) : new URL("../reports/gold-evidence-baseline.json", import.meta.url);
+const temporary = typeof target === "string" ? `${target}.${process.pid}.tmp` : new URL(`../reports/.gold-evidence-${process.pid}.tmp`, import.meta.url);
 const gitCommit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 await writeFile(temporary, JSON.stringify(goldSnapshot(measurement, gitCommit), null, 2) + "\n", "utf8");
 await rename(temporary, target);
-console.error(`[gold:update] wrote ${target.pathname} for ${gitCommit}`);
+console.error(`[gold:update] wrote ${typeof target === "string" ? target : target.pathname} for ${gitCommit}`);
