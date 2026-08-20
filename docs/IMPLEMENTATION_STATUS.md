@@ -3,7 +3,7 @@
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
 > 检查点时间：2026-08-21（Task 4 响应字节上限）
-> 当前状态：A1=SourceSnapshot/fingerprint 一致性与恢复；A2=评测实验隔离与只读门禁；Task 3=`mentions`/`ContextPacket.accountingScope` 与 Task 4=server response-size 契约已完成。当前验证为 39 个测试文件、155 项测试、lint 0 警告、公共基准 30/30、coverage lines 94.70%；私有 top-20 历史基线为 40/42、required 15/16，gold @50 候选门禁与 PRF 验收严格区分。EPUB UTF-8 byte accounting、诊断留存、lifecycle 与 PRF 仍已重开，M4 不得宣称完成。
+> 当前状态：A1=SourceSnapshot/fingerprint 一致性与恢复；A2=评测实验隔离与只读门禁；Task 3=`mentions`/`ContextPacket.accountingScope` 与 Task 4=server response-size 契约已完成。当前验证为 39 个测试文件、161 项测试、lint 0 警告、公共基准 30/30、coverage lines 94.72%；私有 top-20 历史基线为 40/42、required 15/16，gold @50 候选门禁与 PRF 验收严格区分。EPUB UTF-8 byte accounting、诊断留存、lifecycle 与 PRF 仍已重开，M4 不得宣称完成。
 
 ## 恢复入口
 
@@ -80,7 +80,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
-- 39 个测试文件 / 155 项测试，覆盖：通用链路、MCP 协议与诊断、server 响应字节上限与 recorder ordering、检索正确性、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
+- 39 个测试文件 / 161 项测试，覆盖：通用链路、MCP 协议与诊断、server/core 响应字节上限与 recorder ordering、检索正确性、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
 - 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制
