@@ -1,8 +1,12 @@
 import { describe, expect, test } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { stableId, WritingStore, type SourceDocument } from "@writing-mcp/core";
 import { createServer, TOOL_CONTEXT_DATA_SCHEMA, TOOL_DIAGNOSE_DATA_SCHEMA, TOOL_EXPLORE_DATA_SCHEMA, TOOL_RESOLVE_DATA_SCHEMA } from "../packages/mcp-server/src/server.js";
-import { compactJsonBytes, createDiagnosticReserve } from "../packages/mcp-server/src/response-limits.js";
+import { compactJsonBytes, createDiagnosticReserve, fitBusinessData, renderMarkdown } from "../packages/mcp-server/src/response-limits.js";
 
 const evidenceItem = (ref: string, excerpt = "长".repeat(3_000)) => ({
   ref,
@@ -181,6 +185,46 @@ describe("MCP response byte limits", () => {
     expect(recorder.records[0]).not.toHaveProperty("output");
   });
 
+  test("context reducer exhausts L3, L2, and L1 before removing optional L0", () => {
+    const block = (ref: string, layer: "L0" | "L1" | "L2" | "L3", required: boolean, excerpt: string) => ({
+      ...evidenceItem(ref, excerpt), layer, required, tokens: 10,
+    });
+    const data = {
+      status: "complete", workRef: "work:test", revision: 1, budgetTokens: 1_000, usedTokens: 50,
+      estimated: true, estimator: "mixed-cjk-v1", accountingScope: "evidence_excerpts_only",
+      blocks: [
+        block("required", "L0", true, "必要".repeat(100)),
+        block("optional-l0", "L0", false, "甲".repeat(1_800)),
+        block("optional-l1", "L1", false, "乙".repeat(1_800)),
+        block("optional-l2", "L2", false, "丙".repeat(1_800)),
+        block("optional-l3", "L3", false, "丁".repeat(1_800)),
+      ],
+      omitted: [], diagnostics: [],
+    };
+    const reduced = fitBusinessData("writing_context", data, 16_500) as typeof data;
+    expect(reduced.blocks.map(item => item.ref)).toEqual(["required", "optional-l0"]);
+    expect(reduced.omitted.map(item => item.ref)).toEqual(["optional-l3", "optional-l2", "optional-l1"]);
+    expect(reduced.omitted).not.toContainEqual(expect.objectContaining({ ref: "optional-l0" }));
+    expect(reduced.usedTokens).toBe(20);
+  });
+
+  test("oversized budget-unsatisfiable evidence remains truthful and fails rather than changing status", async () => {
+    const data = {
+      status: "budget_unsatisfiable" as const, workRef: "work:test", revision: 1, budgetTokens: 1, usedTokens: 0,
+      estimated: true, estimator: "mixed-cjk-v1", accountingScope: "evidence_excerpts_only" as const, blocks: [],
+      omitted: [{ ref: `required:${"必".repeat(75_000)}`, reason: "required_minimum_exceeds_budget", tokens: 100 }], diagnostics: [],
+    };
+    const original = structuredClone(data);
+    const recorder = recorderSpy();
+    const call = await invoke(serviceWith({ context: async () => data }), recorder, "writing_context", { workRef: "work:test", query: "q", budgetTokens: 1 });
+    const result = (call.structuredContent as { result: { ok: false; error: { code: string } } }).result;
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe("RESPONSE_TOO_LARGE");
+    expect(recorder.records[0]).toHaveProperty("error.code", "RESPONSE_TOO_LARGE");
+    expect(recorder.records[0]).not.toHaveProperty("output");
+    expect(data).toEqual(original);
+  });
+
   test("keeps the selected resolved candidate while trimming stable candidate tails", async () => {
     const candidate = (workRef: string, fill: number) => ({ workRef, title: workRef, rootPath: "路".repeat(fill), adapter: "generic" as const, capabilities: ["documents"] });
     const data = { status: "resolved" as const, workRef: "work:selected", candidates: [candidate("work:selected", 40_000), candidate("work:tail", 40_000)], diagnostics: [] };
@@ -243,5 +287,59 @@ describe("MCP response byte limits", () => {
     expect(compactJsonBytes(result)).toBeLessThanOrEqual(200_000);
     expect(recorder.records[0]?.error).toEqual(result.error);
     expect(Buffer.byteLength(String((call.content as Array<{ text?: string }>)[0]?.text), "utf8")).toBeLessThanOrEqual(16_384);
+  });
+
+  test("normalizes and escapes dynamic Markdown fields without allowing forged lines", () => {
+    const diagnostic = {
+      schemaVersion: 1, traceId: "trace\r\n- forged trace", tool: "writing_explore\n# forged heading", outcome: "success" as const,
+      recordedAt: "2026-08-21T00:00:00.000Z", elapsedMs: 1, persistence: "persisted" as const,
+      artifactRef: "artifact-[label](target)\n> forged quote",
+      executionSummary: { action: "writing_explore", outcome: "success" as const, message: "done", details: {} },
+    };
+    const successMarkdown = renderMarkdown({ ok: true, data: { workRef: "work:test\n# forged work", revision: 1, status: "complete\r\n- forged status", results: [], metrics: { omittedEstimate: 0 } }, diagnostic });
+    expect(successMarkdown).not.toMatch(/\n(?:# forged|- forged|> forged)/);
+    expect(successMarkdown).toContain("\\# forged heading");
+    expect(successMarkdown).toContain("artifact\\-\\[label\\]\\(target\\)");
+    expect(successMarkdown).toContain("\\# forged work");
+    expect(Buffer.byteLength(successMarkdown, "utf8")).toBeLessThanOrEqual(16_384);
+
+    const failureMarkdown = renderMarkdown({
+      ok: false,
+      error: { code: "BAD`CODE\n# forged error", message: "message\r\n*forged bold*", traceId: diagnostic.traceId, recovery: "retry\n> forged recovery" },
+      diagnostic: { ...diagnostic, outcome: "failure", executionSummary: { ...diagnostic.executionSummary, outcome: "failure" } },
+    });
+    expect(failureMarkdown).not.toMatch(/\n(?:# forged|\*forged|> forged)/);
+    expect(failureMarkdown).toContain("BAD\\`CODE \\# forged error");
+    expect(failureMarkdown).toContain("\\*forged bold\\*");
+    expect(failureMarkdown).toContain("\\> forged recovery");
+    expect(Buffer.byteLength(failureMarkdown, "utf8")).toBeLessThanOrEqual(16_384);
+  });
+
+  test("preserves exact omission accounting across real WritingStore and server reductions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-store-server-limit-"));
+    const workRef = stableId("work", "store-server-limit", root);
+    const documents: SourceDocument[] = Array.from({ length: 100 }, (_, index) => ({
+      documentRef: stableId("doc", workRef, `chapter-${index}.md`), relativePath: `chapter-${index}.md`, absolutePath: `chapter-${index}.md`,
+      title: `章节 ${index}`, kind: "chapter", content: `# 章节 ${index}\n共同线索 ${"长".repeat(1_000)}`, sourceMtimeMs: 1, sourceSize: 1_020,
+    }));
+    const store = new WritingStore({ workRef, title: "StoreServerLimit", rootPath: root, adapter: "generic", capabilities: [], documents });
+    try {
+      await store.index("rebuild");
+      const recorder = recorderSpy();
+      const service = serviceWith({ explore: async (...args: unknown[]) => store.explore(args[1] as never, String(args[2] ?? ""), Number(args[3] ?? 20), Number(args[4] ?? 2)) });
+      const call = await invoke(service, recorder, "writing_explore", { workRef, operation: "search", query: "共同线索", limit: 100, maxHops: 0 });
+      const result = (call.structuredContent as { result: { ok: true; data: { results: unknown[]; ambiguous: unknown[]; metrics: { candidateCount: number; returnedCount: number; omittedEstimate: number } } } }).result;
+      expect(result.ok).toBe(true);
+      expect(result.data.metrics.candidateCount).toBe(100);
+      expect(result.data.results.length).toBeLessThan(100);
+      expect(result.data.ambiguous).toEqual([]);
+      expect(result.data.metrics.returnedCount).toBe(result.data.results.length);
+      expect(result.data.metrics.returnedCount + result.data.metrics.omittedEstimate).toBe(result.data.metrics.candidateCount);
+      expect(recorder.records).toHaveLength(1);
+      expect((recorder.records[0]!.output as { metrics: unknown }).metrics).toEqual(result.data.metrics);
+    } finally {
+      store.close();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

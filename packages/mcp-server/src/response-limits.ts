@@ -220,15 +220,15 @@ export function assembleResult(result: StructuredResult): { content: Array<{ typ
 export function renderMarkdown(result: StructuredResult): string {
   const diagnostic = result.diagnostic;
   const lines = [
-    `# ${diagnostic.tool}`,
+    `# ${markdownScalar(diagnostic.tool)}`,
     "",
     `- Outcome: ${result.ok ? "success" : "failure"}`,
-    `- Trace: ${diagnostic.traceId}`,
+    `- Trace: ${markdownScalar(diagnostic.traceId)}`,
   ];
-  if (diagnostic.artifactRef) lines.push(`- Diagnostic artifact: ${diagnostic.artifactRef}`);
+  if (diagnostic.artifactRef) lines.push(`- Diagnostic artifact: ${markdownScalar(diagnostic.artifactRef)}`);
   if (result.ok) {
     const data = result.data;
-    for (const key of ["workRef", "revision", "status"] as const) if (data[key] !== undefined) lines.push(`- ${key}: ${String(data[key])}`);
+    for (const key of ["workRef", "revision", "status"] as const) if (data[key] !== undefined) lines.push(`- ${key}: ${markdownScalar(data[key])}`);
     const kept = firstArrayLength(data, ["results", "blocks", "candidates", "recentEvents"]);
     const metrics = asRecord(data.metrics);
     const omitted = Array.isArray(data.omitted) ? data.omitted.length : typeof metrics?.omittedEstimate === "number" ? metrics.omittedEstimate : Array.isArray(data.ambiguous) ? data.ambiguous.length : undefined;
@@ -236,11 +236,15 @@ export function renderMarkdown(result: StructuredResult): string {
     if (omitted !== undefined) lines.push(`- Omitted: ${omitted}`);
     if (data.truncated === true) lines.push("- Truncated: true (RESPONSE_TRUNCATED)");
   } else {
-    lines.push(`- Error: ${result.error.code}`);
-    lines.push(`- Message: ${result.error.message}`);
-    if (result.error.recovery) lines.push(`- Recovery: ${result.error.recovery}`);
+    lines.push(`- Error: ${markdownScalar(result.error.code)}`);
+    lines.push(`- Message: ${markdownScalar(result.error.message)}`);
+    if (result.error.recovery) lines.push(`- Recovery: ${markdownScalar(result.error.recovery)}`);
   }
   return truncateUtf8(`${lines.join("\n")}\n`, MARKDOWN_MAX_BYTES);
+}
+
+function markdownScalar(value: unknown): string {
+  return String(value).replace(/[\r\n\u2028\u2029]+/g, " ").replace(/([\\`*_{}\u005b\u005d()<>#+\-.!|>~])/g, "\\$1");
 }
 
 export function truncateUtf8(value: string, maxBytes: number): string {

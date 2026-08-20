@@ -12,6 +12,13 @@ const SOFTWARE_VERSION = "0.1.0";
 const MAX_RESPONSE_BYTES = 200_000;
 const json = (value: unknown) => JSON.stringify(value);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+function pretrimExploreCollections(results:ExploreItem[],ambiguous:ExploreItem[],cap:number):{results:ExploreItem[];ambiguous:ExploreItem[];dropped:number}{
+  let keptResults=[...results],keptAmbiguous=[...ambiguous],dropped=0;
+  const exceeds=()=>Buffer.byteLength(JSON.stringify({results:keptResults,ambiguous:keptAmbiguous}),"utf8")>cap;
+  while(exceeds()&&keptAmbiguous.length){keptAmbiguous=keptAmbiguous.slice(0,-1);dropped++;}
+  while(exceeds()&&keptResults.length){keptResults=keptResults.slice(0,-1);dropped++;}
+  return{results:keptResults,ambiguous:keptAmbiguous,dropped};
+}
 const asNumber = (value: unknown) => typeof value === "bigint" ? Number(value) : Number(value ?? 0);
 const compareText = (left:string,right:string) => left < right ? -1 : left > right ? 1 : 0;
 
@@ -478,15 +485,14 @@ export class WritingStore {
     const ambiguous=ambiguousRows.slice(0,limit).map(row=>this.item({...row,locators:this.locatorMap(db,[String(row.span_ref)]).get(String(row.span_ref))}));
     const cap=this.maxResponseBytes;
     if(Buffer.byteLength(JSON.stringify({results:returned,ambiguous}),"utf8")>cap){
-      const trimmed:ExploreItem[]=[];
-      for(const item of returned){const candidate=[...trimmed,item];if(Buffer.byteLength(JSON.stringify({results:candidate,ambiguous:[]}),"utf8")<=cap)trimmed.push(item);}
-      const responseDiagnostics=[...diagnostics,{code:"RESPONSE_TRUNCATED",message:`Serialized response exceeded the ${cap}-byte deterministic limit; ${returned.length-trimmed.length} result(s) were dropped`}];
-      return {workRef:this.work.workRef,revision,freshness:"fresh",operation,results:trimmed,ambiguous:[],truncated:true,metrics:{candidateCount,returnedCount:trimmed.length,visitedNodes,maxActualHops,omittedEstimate,elapsedMs:performance.now()-started},diagnostics:responseDiagnostics};
+      const trimmed=pretrimExploreCollections(returned,ambiguous,cap);
+      const responseDiagnostics=[...diagnostics,{code:"RESPONSE_TRUNCATED",message:`Serialized response exceeded the ${cap}-byte deterministic limit; ${trimmed.dropped} item(s) were dropped`}];
+      return {workRef:this.work.workRef,revision,freshness:"fresh",operation,results:trimmed.results,ambiguous:trimmed.ambiguous,truncated:true,metrics:{candidateCount,returnedCount:trimmed.results.length,visitedNodes,maxActualHops,omittedEstimate:omittedEstimate+trimmed.dropped,elapsedMs:performance.now()-started},diagnostics:responseDiagnostics};
     }
     return {workRef:this.work.workRef,revision,freshness:"fresh",operation,results:returned,ambiguous,truncated,metrics:{candidateCount,returnedCount:returned.length,visitedNodes,maxActualHops,omittedEstimate,elapsedMs:performance.now()-started},diagnostics};}
   /** Evaluator-only entry point. Production explore never accepts experiment options. */
   async evaluateSearch(query:string,limit:number,options:SearchExperimentOptions):Promise<ExploreResult>{if(query.length>2048)throw codedError("QUERY_TOO_LARGE","Query exceeds the 2048-character deterministic limit");const started=performance.now(),db=await this.open(),revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);limit=Math.max(1,Math.min(100,Math.trunc(limit)));const searched=this.searchRows(db,query,limit,options),locatorsBySpan=this.locatorMap(db,searched.rows.map(row=>String(row.span_ref))),results=searched.rows.map(row=>this.item({...row,revision,locators:locatorsBySpan.get(String(row.span_ref))})),cap=this.maxResponseBytes;
-    if(Buffer.byteLength(JSON.stringify({results,ambiguous:[]}),"utf8")>cap){const trimmed:ExploreItem[]=[];for(const item of results){const candidate=[...trimmed,item];if(Buffer.byteLength(JSON.stringify({results:candidate,ambiguous:[]}),"utf8")<=cap)trimmed.push(item);}return{workRef:this.work.workRef,revision,freshness:"fresh",operation:"search",results:trimmed,ambiguous:[],truncated:true,metrics:{candidateCount:results.length,returnedCount:trimmed.length,visitedNodes:results.length,maxActualHops:0,omittedEstimate:results.length-trimmed.length,elapsedMs:performance.now()-started},diagnostics:[...searched.diagnostics,{code:"RESPONSE_TRUNCATED",message:`Serialized response exceeded the ${cap}-byte deterministic limit; ${results.length-trimmed.length} result(s) were dropped`} ]};}
+    if(Buffer.byteLength(JSON.stringify({results,ambiguous:[]}),"utf8")>cap){const trimmed=pretrimExploreCollections(results,[],cap);return{workRef:this.work.workRef,revision,freshness:"fresh",operation:"search",results:trimmed.results,ambiguous:trimmed.ambiguous,truncated:true,metrics:{candidateCount:results.length,returnedCount:trimmed.results.length,visitedNodes:results.length,maxActualHops:0,omittedEstimate:trimmed.dropped,elapsedMs:performance.now()-started},diagnostics:[...searched.diagnostics,{code:"RESPONSE_TRUNCATED",message:`Serialized response exceeded the ${cap}-byte deterministic limit; ${trimmed.dropped} item(s) were dropped`} ]};}
     return{workRef:this.work.workRef,revision,freshness:"fresh",operation:"search",results,ambiguous:[],truncated:false,metrics:{candidateCount:results.length,returnedCount:results.length,visitedNodes:results.length,maxActualHops:0,omittedEstimate:0,elapsedMs:performance.now()-started},diagnostics:searched.diagnostics};}
   private item(r:Record<string,unknown>):ExploreItem{const sourceKind=String(r.source_kind??"deterministic"),excerpt=String(r.content).slice(0,900),locators=Array.isArray(r.locators)?r.locators as ExploreItem["evidence"]["locators"]:undefined;return {ref:String(r.ref??r.span_ref),kind:String(r.kind??"span"),title:String(r.heading),score:Number(r.score??0),sourceKind:sourceKind==="native"||sourceKind==="heuristic"?sourceKind:"deterministic",confidence:Number(r.confidence??1),evidence:{documentRef:String(r.document_ref??r.span_ref),relativePath:String(r.relative_path),startLine:asNumber(r.start_line),endLine:asNumber(r.end_line),excerpt,evidenceHash:hash(excerpt),revision:asNumber(r.revision),...(locators?.length?{locators}:{})}};}
 

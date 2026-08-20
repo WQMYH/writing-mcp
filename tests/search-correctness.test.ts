@@ -79,4 +79,35 @@ describe("M3 deterministic query analysis",()=>{
       // cap, so the protective pre-trim may truthfully return zero items.
     }finally{store.close();await rm(root,{recursive:true,force:true});}
   });
+
+  test("core pre-trim removes ambiguous tails before results and accounts for every new omission",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"writing-mcp-core-ambiguous-limit-")),workRef=stableId("work","ambiguous-limit",root);
+    const documents:SourceDocument[]=Array.from({length:5},(_,index)=>({documentRef:stableId("doc",workRef,`role-${index}.md`),relativePath:`role-${index}.md`,absolutePath:`role-${index}.md`,title:"同名角色",kind:"character",content:`# 同名角色\n定义 ${index} ${"长".repeat(900)}`,sourceMtimeMs:1,sourceSize:910}));
+    const work:ParsedWork={workRef,title:"AmbiguousLimit",rootPath:root,adapter:"generic",capabilities:[],documents};
+    const baselineStore=new WritingStore(work);let baseline:Awaited<ReturnType<WritingStore["explore"]>>;
+    try{await baselineStore.index("rebuild");baseline=await baselineStore.explore("entity","同名角色",100,0);}finally{baselineStore.close();}
+    const limitedStore=new WritingStore(work,undefined,false,8_500);
+    try{
+      const limited=await limitedStore.explore("entity","同名角色",100,0);
+      expect(baseline.ambiguous.length).toBeGreaterThan(1);
+      expect(limited.results.map(item=>item.ref)).toEqual(baseline.results.map(item=>item.ref));
+      expect(limited.ambiguous.length).toBeGreaterThan(0);
+      expect(limited.ambiguous.length).toBeLessThan(baseline.ambiguous.length);
+      const newlyOmitted=baseline.results.length+baseline.ambiguous.length-limited.results.length-limited.ambiguous.length;
+      expect(limited.metrics.omittedEstimate).toBe(baseline.metrics.omittedEstimate+newlyOmitted);
+    }finally{limitedStore.close();await rm(root,{recursive:true,force:true});}
+  });
+
+  test("evaluator pre-trim reports every result removed by its byte cap",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"writing-mcp-evaluator-limit-")),workRef=stableId("work","evaluator-limit",root);
+    const documents:SourceDocument[]=Array.from({length:20},(_,index)=>({documentRef:stableId("doc",workRef,`doc-${index}.md`),relativePath:`doc-${index}.md`,absolutePath:`doc-${index}.md`,title:`文档 ${index}`,kind:"chapter",content:`# 文档 ${index}\n共同线索 ${"长".repeat(1_000)}`,sourceMtimeMs:1,sourceSize:1_020}));
+    const store=new WritingStore({workRef,title:"EvaluatorLimit",rootPath:root,adapter:"generic",capabilities:[],documents},undefined,false,10_000);
+    try{
+      await store.index("rebuild");
+      const result=await store.evaluateSearch("共同线索",100,{});
+      expect(result.results.length).toBeLessThan(result.metrics.candidateCount);
+      expect(result.metrics.omittedEstimate).toBe(result.metrics.candidateCount-result.results.length);
+      expect(result.metrics.returnedCount+result.metrics.omittedEstimate).toBe(result.metrics.candidateCount);
+    }finally{store.close();await rm(root,{recursive:true,force:true});}
+  });
 });
