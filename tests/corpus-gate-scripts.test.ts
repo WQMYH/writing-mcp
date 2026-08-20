@@ -9,7 +9,7 @@ const run = (args: string[], env: NodeJS.ProcessEnv = process.env) => spawnSync(
 describe("corpus performance gate scripts", () => {
   test("writes deterministic token evaluation material only under an explicit local report directory", async () => {
     const root = await mkdtemp(join(tmpdir(), "writing-mcp-corpus-gate-"));
-    const corpus = join(root, "corpus"), reports = join(root, "reports"), tasks = join(root, "tasks.json");
+    const corpus = join(root, "corpus"), reports = join(root, "reports"), reportsAgain = join(root, "reports-again"), tasks = join(root, "tasks.json");
     try {
       await cp(new URL("../fixtures/generic-novel", import.meta.url), corpus, { recursive: true });
       await writeFile(tasks, JSON.stringify({ explore: [{ operation: "search", query: "铜钥匙", limit: 10 }], context: [{ query: "铜钥匙", budgetTokens: 200 }] }));
@@ -24,7 +24,9 @@ describe("corpus performance gate scripts", () => {
       expect(first.contexts[0].packet.usedTokens).toBeGreaterThan(0);
       expect(first.contexts[0].accountedSerialization.text).toContain("铜钥匙");
       expect(first.contexts[0].packet.refs.length).toBeGreaterThan(0);
-      const second = JSON.parse(await readFile(materialPath, "utf8"));
+      const secondRun = run(["scripts/run-corpus-benchmark.mjs", corpus, tasks, reportsAgain], { ...process.env, WRITING_MCP_CORPUS_MAX_INDEX_PER_MILLION_MS: "1000000000" });
+      expect(secondRun.status, secondRun.stderr).toBe(0);
+      const second = JSON.parse(await readFile(join(reportsAgain, "token-evaluation-materials.json"), "utf8"));
       expect(second).toEqual(first);
       expect(result.stdout).not.toContain(root);
     } finally { await rm(root, { recursive: true, force: true }); }
