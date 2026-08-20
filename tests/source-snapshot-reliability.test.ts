@@ -29,6 +29,22 @@ class IncrementalFailureAdapter extends GenericAdapter {
   }
 }
 
+class SnapshotRaceAdapter extends GenericAdapter {
+  remainingSnapshotFailures = 0;
+  override async snapshot(candidate: WorkCandidate): Promise<Snapshot> {
+    if (this.remainingSnapshotFailures-- > 0) throw Object.assign(new Error("source changed while enumerating"), { code: "ENOENT" });
+    return super.snapshot(candidate);
+  }
+}
+
+class StatusFailureAdapter extends GenericAdapter {
+  failStatus = false;
+  override async load(candidate: WorkCandidate, snapshot?: Snapshot): Promise<ParsedWork> {
+    const work = await super.load(candidate, snapshot);
+    return this.failStatus ? { ...work, rootPath: work.documents[0]!.absolutePath } : work;
+  }
+}
+
 describe("Task 1 SourceSnapshot reliability", () => {
   test("enumerates nested files by their complete relative paths without a depth limit", async () => {
     const dir = await mkdtemp(join(tmpdir(), "writing-mcp-source-snapshot-depth-"));
@@ -152,6 +168,52 @@ describe("Task 1 SourceSnapshot reliability", () => {
       adapter.failIncremental = true;
       await expect(service.index(workRef, "incremental")).rejects.toThrow();
       adapter.failIncremental = false;
+      const found = await service.explore(workRef, "search", marker);
+      expect(found.results.some(result => result.evidence.excerpt.includes(marker))).toBe(true);
+    } finally { service.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+
+  test("retries a transient initial snapshot enumeration failure", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "writing-mcp-source-snapshot-retry-"));
+    const source = join(dir, "novel");
+    const adapter = new SnapshotRaceAdapter();
+    const service = new WritingService([adapter]);
+    try {
+      await cp(new URL("../fixtures/generic-novel", import.meta.url), source, { recursive: true });
+      const workRef = (await service.resolve(source, "generic")).workRef!;
+      adapter.remainingSnapshotFailures = 1;
+      await expect(service.index(workRef, "rebuild")).resolves.toMatchObject({ freshness: "fresh" });
+    } finally { service.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+
+  test("reports SOURCE_CHANGED_DURING_READ after snapshot enumeration retry exhaustion", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "writing-mcp-source-snapshot-exhaust-"));
+    const source = join(dir, "novel");
+    const adapter = new SnapshotRaceAdapter();
+    const service = new WritingService([adapter]);
+    try {
+      await cp(new URL("../fixtures/generic-novel", import.meta.url), source, { recursive: true });
+      const workRef = (await service.resolve(source, "generic")).workRef!;
+      adapter.remainingSnapshotFailures = 2;
+      await expect(service.index(workRef, "rebuild")).rejects.toMatchObject({ code: "SOURCE_CHANGED_DURING_READ" });
+    } finally { service.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+
+  test("a failing status preserves the prior index until a later incremental refresh", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "writing-mcp-source-snapshot-status-rollback-"));
+    const source = join(dir, "novel");
+    const adapter = new StatusFailureAdapter();
+    const service = new WritingService([adapter]);
+    try {
+      await cp(new URL("../fixtures/generic-novel", import.meta.url), source, { recursive: true });
+      const workRef = (await service.resolve(source, "generic")).workRef!;
+      await service.index(workRef, "rebuild");
+      const marker = `status-recovery-${Date.now()}`;
+      await writeFile(join(source, "chapter-01.md"), `# 第一章\n${marker}`);
+      adapter.failStatus = true;
+      await expect(service.index(workRef, "status")).rejects.toThrow();
+      adapter.failStatus = false;
+      expect((await service.index(workRef, "status")).freshness).toBe("stale");
       const found = await service.explore(workRef, "search", marker);
       expect(found.results.some(result => result.evidence.excerpt.includes(marker))).toBe(true);
     } finally { service.close(); await rm(dir, { recursive: true, force: true }); }

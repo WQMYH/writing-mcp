@@ -26,22 +26,24 @@ export class WritingService {
     this.queues.set(workRef,marker);
     try{return await current;}finally{if(this.queues.get(workRef)===marker)this.queues.delete(workRef);}
   }
-  private async indexUnlocked(workRef:string,mode:"status"|"incremental"|"rebuild",providedSnapshot?:SourceSnapshot):Promise<IndexResult>{
-    const candidate=this.candidate(workRef),adapter=this.adapter(candidate),snapshot=providedSnapshot??await adapter.snapshot(candidate),previous=this.active.get(workRef);
-    if(mode==="status"&&previous&&previous.loadedFingerprint===snapshot.fingerprint&&previous.indexedFingerprint===snapshot.fingerprint)return previous.store.index(mode);
-    const loaded=await this.loadConsistent(candidate,snapshot),next=new WritingStore(loaded.work);
+  private async indexUnlocked(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{
+    const candidate=this.candidate(workRef),previous=this.active.get(workRef);
+    if(mode==="status"&&previous){const snapshot=await this.snapshotConsistent(candidate);if(previous.loadedFingerprint===snapshot.fingerprint&&previous.indexedFingerprint===snapshot.fingerprint)return previous.store.index(mode);}
+    const loaded=await this.loadConsistent(candidate),next=new WritingStore(loaded.work);
     try{const result=await next.index(mode),indexedFingerprint=mode==="status"&&result.freshness!=="fresh"?previous?.indexedFingerprint:loaded.fingerprint;this.active.set(workRef,{store:next,loadedFingerprint:loaded.fingerprint,indexedFingerprint});previous?.store.close();return result;}catch(error){next.close();throw error;}
   }
-  private async loadConsistent(candidate:WorkCandidate,firstSnapshot?:SourceSnapshot):Promise<{work:ParsedWork;fingerprint:string}>{
-    const adapter=this.adapter(candidate);for(let attempt=0;attempt<2;attempt++){try{const snapshot=attempt===0&&firstSnapshot?firstSnapshot:await adapter.snapshot(candidate),work=await adapter.load(candidate,snapshot),after=await adapter.snapshot(candidate);if(after.fingerprint===snapshot.fingerprint)return{work,fingerprint:after.fingerprint};}catch(error){const code=typeof error==="object"&&error&&"code" in error?String(error.code):undefined;if(code!=="SOURCE_SNAPSHOT_CHANGED"&&code!=="ENOENT"&&code!=="ENOTDIR")throw error;}}
+  private sourceChanged(error:unknown):boolean{const code=typeof error==="object"&&error&&"code" in error?String(error.code):undefined;return code==="SOURCE_SNAPSHOT_CHANGED"||code==="ENOENT"||code==="ENOTDIR";}
+  private async snapshotConsistent(candidate:WorkCandidate):Promise<SourceSnapshot>{const adapter=this.adapter(candidate);for(let attempt=0;attempt<2;attempt++){try{return await adapter.snapshot(candidate);}catch(error){if(!this.sourceChanged(error))throw error;}}throw Object.assign(new Error("Source files changed while the work was being read; retry the operation"),{code:"SOURCE_CHANGED_DURING_READ"});}
+  private async loadConsistent(candidate:WorkCandidate):Promise<{work:ParsedWork;fingerprint:string}>{
+    const adapter=this.adapter(candidate);for(let attempt=0;attempt<2;attempt++){try{const snapshot=await adapter.snapshot(candidate),work=await adapter.load(candidate,snapshot),after=await adapter.snapshot(candidate);if(after.fingerprint===snapshot.fingerprint)return{work,fingerprint:after.fingerprint};}catch(error){if(!this.sourceChanged(error))throw error;}}
     throw Object.assign(new Error("Source files changed while the work was being read; retry the operation"),{code:"SOURCE_CHANGED_DURING_READ"});
   }
   /** Reuse the existing store when the source fingerprint is unchanged; reload
    * only when files changed (AUD-021). The first query builds the store once. */
   private async ensureFresh(workRef:string):Promise<void>{
-    const candidate=this.candidate(workRef),snapshot=await this.adapter(candidate).snapshot(candidate),active=this.active.get(workRef);
+    const candidate=this.candidate(workRef),snapshot=await this.snapshotConsistent(candidate),active=this.active.get(workRef);
     if(active?.indexedFingerprint===snapshot.fingerprint)return;
-    await this.indexUnlocked(workRef,"incremental",snapshot);
+    await this.indexUnlocked(workRef,"incremental");
   }
   async index(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{return this.serial(workRef,async()=>this.indexUnlocked(workRef,mode));}
   async explore(workRef:string,operation:ExploreOperation,query="",limit=20,maxHops=2,targetChapter?:number):Promise<ExploreResult>{
