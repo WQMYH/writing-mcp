@@ -22,7 +22,8 @@ describe("corpus performance gate scripts", () => {
       expect(first.externalTokenResult).toBe("not_evaluated");
       expect(first.fullInput.text).toContain("铜钥匙");
       expect(first.contexts[0].packet.usedTokens).toBeGreaterThan(0);
-      expect(first.contexts[0].accountedSerialization.text).toContain("铜钥匙");
+      expect(first.contexts[0].accountedInputs.every((input: { ref: string; text: string; estimatedTokens: number }) => input.ref && input.text && Number.isFinite(input.estimatedTokens))).toBe(true);
+      expect(first.contexts[0].accountedInputs.reduce((sum: number, input: { estimatedTokens: number }) => sum + input.estimatedTokens, 0)).toBe(first.contexts[0].packet.usedTokens);
       expect(first.contexts[0].packet.refs.length).toBeGreaterThan(0);
       const secondRun = run(["scripts/run-corpus-benchmark.mjs", corpus, tasks, reportsAgain], { ...process.env, WRITING_MCP_CORPUS_MAX_INDEX_PER_MILLION_MS: "1000000000" });
       expect(secondRun.status, secondRun.stderr).toBe(0);

@@ -24,7 +24,7 @@ pnpm start
 
 实现中断后，依次运行 `pnpm build`、`pnpm lint`、`pnpm benchmark` 和 `pnpm test`。四者都通过后，才可继续增加功能；`pnpm coverage` 提供覆盖率棘轮门禁（阈值见 `vitest.config.ts`）。
 
-最近验证：2026-08-16（审计修订），构建与 65 项测试通过；30/30 公共基准、10/10 固定事实召回和 100% locator 字段存在率通过；fixture excerpt 估算 Token 降幅 61.24%。本地转换型 EPUB 以 schema v4 重建为 57 documents、56 Chapter entities、55 `precedes` edges，首次索引约 0.31 秒；自然语言查询对不存在的“语笙”返回 `NO_RESULTS`，对真实存在的“秦晴”“岳枫”前 5 条均含目标姓名。本地私有标注指标仍仅作历史参考。
+历史验证（2026-08-16）：65 项测试的计数已过期，仅保留其早期 fixture 结果作追溯；当前测试计数见文首与「当前测试覆盖」。
 
 最近验证（2026-08-17，AUD-012 接线后）：tsc 0 错、lint 0 警告、benchmark 30/30（recall 1.0 / evidence 1.0 / Token 降幅 61.24%）、store 级接线脚本 16/16（exclude/pin/锚定/未知 taskType 非驱动/db 句柄存活回归/确定性）；vitest 全量须在用户环境运行（会话沙箱 spawn EPERM 既定边界，`pnpm test`）。
 
@@ -69,7 +69,7 @@ pnpm start
 | M0.1 | ✅ 完成 | 全工具诊断 wrapper、显式 capture、脱敏与报告哈希、开发捕获有界命中 ref（AUD-023 主体）、general JSONL 串行轮转与并发/写失败护栏（AUD-024 主体）、协议层错误边界（AUD-025 主体） | — |
 | M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB、跨 spine 分段 locator、通用作品边界与 capabilities 实际化（AUD-026 主体）、章节编号语法明确化（AUD-027 主体）、EPUB 资源上限（AUD-028 主体）、snapshot 一致性与文本内存上限（AUD-029 主体）、span 硬上限与 locator 精确规则（AUD-030 主体）、进程生命周期与优雅关闭（AUD-032 主体）、工程硬化门禁与适配器模块抽离（AUD-035 第一/二阶段主体） | AUD-035 格式化阶段（用户决策延后至 M3/M4 语义冻结后的重构窗口再评估） |
 | M2 | ✅ 基础门禁完成 | SQLite/FTS5、schema v4、语义 snapshot、truthful status、revision/事务、原子替换、作品级串行/写锁、恢复、work/document 作用域身份、规范定义晋升、多 mention/关系证据、源顺序图 | 后续只随 M3/M4 查询语义做受控增强 |
-| M3 | 进行中 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限（query 2048 字符）、explore 执行时间上限（30s）、源指纹复用 store（未变化不重载）、0～3 跳 BFS 与逐边证据、BFS 逐层批量边查询与 locator 批量加载（AUD-020 主体）、timeline 独立确定性投影（AUD-015 主体）、图/能力词汇表冻结（AUD-022 主体）、timeline 章节时态过滤与 context reserved 参数标注、search source-trust 排序因子（AUD-012 M3 范围）、**百万字语料 P95 门禁**（491 万字实测：索引 25.7s、Explore P95 673ms、Context P95 382.5ms、Token 降幅 99.92%） | 完整重排（待 M4 + 语料）；阈值待正式写入门禁脚本 |
+| M3 | 进行中 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限、0～3 跳 BFS、timeline、词汇表、source-trust 与 A1 freshness；corpus 阈值门禁代码已落地 | 完整重排与真实长语料重测；本轮无新的长语料性能主张 |
 | M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、requiredRefs 脱离 top-50 直接解析（AUD-005）、**AUD-013 来源提供器注册表 + evidenceHash 去重（审阅通过，`d47b2da`）**：分层改为来源类型映射（Character/Fact/Foreshadow→L1，Chapter/Event/OutlineNode→L2，Location/Item 与未知→L3，required→L0）、文档类型大小写归一（DOCUMENT_KIND_ALIASES）、同 evidenceHash 折叠（duplicate_evidence 进 omitted）、预算填充 L0→L3（自 L3 向低层裁剪）、纯模块 context-assembly.ts；**AUD-012 约束接口接线完成（`526ee36`）**：excludeRefs 过滤（excluded 进 omitted、requiredRefs 优先）、entityRefs/documentRefs 直解入 blocks（层内排搜索命中前）、targetChapter 锚定层内排序（同章→前章近距→后章近距→无章节号）、taskType 值域开放且非驱动（无策略引擎）；**AUD-012 残留「来源目录」可观测能力完成**：`writing_explore` 的 `stats` 操作新增 `contextSources` 字段（`byLayer` L1/L2/L3 文档计数 + `byKind` 按文档种类计数），复用 AUD-013 注册表与归一逻辑，让 Agent 在调用 `writing_context` 前可见作品可用上下文来源清单；**status 快速路径 + diagnose 摘要（待审阅，`fcb5500`）**：status mtime/size 快速路径（指纹未变时复用 store，不重读来源）、diagnose inspect 摘要新增 contextSources | 完整重排（M4 后，《语料B》语料，校准 search 排序因子）；装配侧 sources/budget/layer 模块抽离（M4 冻结后窗口已开，可与重排并行）；检索侧重构窗口待完整重排后（store.ts SQL 抽离 + oxlint ignore 移除 + Biome 评估） |
 | M5 | 待开始（已有纵向切片） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归 | 真实 InkOS、更多 EPUB 2/3 变体、客户端安装与故障文档 |
 
@@ -79,7 +79,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
-- 31 个测试文件，覆盖：通用链路、MCP 协议与诊断（含 AUD-025 协议错误边界）、检索正确性（含 AUD-021 源复用）、上下文装配（AUD-005 requiredRefs 直接解析、AUD-013 来源注册表与去重、AUD-012 约束接口接线：exclude/pin/锚定/taskType 非驱动）、BFS 批量化护栏（AUD-020）、timeline 独立投影（AUD-015）、图/能力词汇表冻结（AUD-022）、章节时态过滤（AUD-012 M3 范围）、基准与基线、私有语料（不入库）、TXT/EPUB/InkOS 适配器（含 AUD-026 作品边界）、路径安全、作品识别、索引生命周期与事实性（schema v4）、边界与原则。
+- 38 个测试文件 / 144 项测试，覆盖：通用链路、MCP 协议与诊断、检索正确性、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
 - 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制
@@ -90,8 +90,8 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - EPUB 仍采用确定性轻量解析，尚未覆盖 DRM/加密、复杂命名空间、导航目录语义、脚注回链、图片内容和全部 EPUB 2/3 变体；内部章节切分目前依赖独占行的中英文编号标题。
 - `workRef` 只在当前 server 进程中注册；重启后客户端需重新调用 `writing_resolve`。
 - schema v4 writer lock 是 Writing MCP 进程间的合作式协议，不能强制无关程序释放 SQLite 句柄；此类占用稳定返回 `INDEX_BUSY`。
-- status 的 mtime/size 快速路径已实现（2026-08-18，待审阅）：指纹（文件名+mtime+size）未变时复用既有 store，不重读来源。前提与 AUD-021 相同：不改变 mtime/size 的文件内容变化（如恢复同 mtime 备份）在指纹变化前不会被 status/explore/context 察觉；进程重启或任一文件 mtime/size 变化即回退全量语义路径。F1 修复（f3ddd1f review）：指纹计算移入 indexUnlocked 内部，消除双算竞态窗口；后续自审进一步让全量路径记录 loadConsistent 已校验的指纹（不再 load 后重算），竞态类别完全闭环。
-- 私有长篇仍有 1 条 optional 事实未进入前 20，900 字抽取摘要的逐字证据暴露率为 88.10%；这些指标与 span 召回、来源覆盖分别报告。
+- A1 SourceSnapshot/fingerprint 已完成并回归覆盖：未变化时复用 store，来源变化即通过 adapter snapshot 触发一致性重读/索引；保留同 mtime/size 原地替换的明确边界，不再标记为待审阅或待落地。
+- 私有 top-20 当前为 40/42，required 15/16；该 PRF 前基线与 gold @50 门禁分开报告，不能弱化为 optional-only miss。
 - 中文问句分析当前是有界规则与 n-gram，不是通用分词器；问题短语表会继续通过真实调用链回归校准。
 - `stats` 的 content 受 900 字符 excerpt 截断（既有模式，`item()` 切片）；`contextSources` 增大了 stats JSON，现实 kind 数下安全，但 stats 内容截断属潜在坑。
 - `entityRefs`/`documentRefs` 的 pinned 块不参与 evidenceHash 去重（显式请求豁免，与 requiredRefs 一致）；已是搜索命中的 pinned ref 保持搜索命中排名，不再获得 pinned 提升。
@@ -100,7 +100,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 - 批次 C（AUD-026～032 + AUD-035 第一/二阶段）已全部完成并审阅归档。
 - AUD-035 第三阶段（Biome 格式化）已由用户决策延后：store.ts 即将被 M3/M4 修改，现在做巨型函数展开与全量格式化必然返工；正确时机是完整重排落地后（检索侧冻结）的重构窗口，届时再评估格式化是否必要。
-- **M3 语料基准已完成**（2026-08-17）：491 万字《语料B》语料测试，索引 25.7 秒（~19 万字/秒）、Explore P95 673ms、Context P95 382.5ms、Token 降幅 99.92%、内存 54.3MB。建议阈值已获用户接受（索引≤60s/百万字、Explore P95≤1000ms、Context P95≤500ms、Token 降幅≥95%），待正式写入门禁。
+- Corpus 阈值门禁代码已落地（索引≤60s/百万正文字符、Explore P95≤1000ms、Context P95≤500ms）；本轮只用受控 fixture 验证脚本行为，未重新运行真实长语料，历史长语料数字不得作为当前验收。
 - **重构窗口按触碰面分流（2026-08-18）**：装配侧窗口已开（M4 冻结后）——context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已落地，sources/budget/layer 可与完整重排并行）；检索侧窗口待**完整重排落地后**——（1）store.ts 图构建/检索 SQL 抽离；（2）移除 oxlintrc.json 对 store.ts 的 ignorePatterns 忽略项；（3）评估 Biome 格式化（若执行：quoteStyle single / semicolons asNeeded / lineWidth 120）。
 - M4 剩余：response-size 上限、EPUB UTF-8 byte accounting、生命周期、公开 `accountingScope` 字段与 PRF 都是重开工作；tokenizer profile 延后不构成 M4 完成。排序改动仍须以 gold 门禁与私有 PRF 验收重新裁决。
 - M4 审议：`docs/REVIEW_2026-08-17.md` 已审阅 M4 功能与边界——requiredRefs 直解真实生效、L0-L3 语义化未开始（缺口=来源提供器注册表）、reserved 参数边界诚实。方向已执行：AUD-013（来源语义化+去重，审阅通过含缺陷修复 `d47b2da`）→ AUD-012 残留接线（excludeRefs → targetChapter → entityRefs/documentRefs → taskType 值域开放，`526ee36`）→ 来源目录 stats 可观测（`b83ee6b`）→ AUD-014 决策延后（`c81be41`）→ status 快速路径 + diagnose 摘要（2026-08-18，待审阅）→ 剩余：完整重排（M4 后，语料可复用《语料B》基准）。模块化：context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已随 AUD-013 落地，sources/budget/layer 随重排顺势而为）。

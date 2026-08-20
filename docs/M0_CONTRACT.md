@@ -67,7 +67,7 @@ Moving a work or document intentionally changes its reference. Editing content w
 - Omitted reasons always reflect the true omission cause. In `budget_unsatisfiable` only required candidates (pool hits and direct-resolved `requiredRefs`) carry `required_minimum_exceeds_budget`; excluded, folded, pinned, and unresolved entries keep their own reasons `excluded`, `duplicate_evidence`, `budget_limit`, and `not_found`.
 - The `writing_context` tool description states the real precedence rule: `requiredRefs` win over `excludeRefs`, and `excludeRefs` win over `entityRefs`/`documentRefs` pins.
 - No packet shape, status vocabulary, or estimator changes.
-- Open TODO (AUD-012 remainder, M4 scope): the "来源目录" (source catalog) observability is complete — stats exposure implemented (2026-08-18, `b83ee6b`; see the M4 source directory observable amendment) and the diagnose-report summary implemented (see the M4 status fast path and diagnose summary amendment); AUD-014 packet billing boundary and tokenizer profile remain deferred to post-v1 (2026-08-18 decision).
+- Open TODO (M4/C3 scope): source-catalog observability is complete; packet billing and the public `ContextPacket.accountingScope` field remain pending the C3 contract amendment. `mixed-cjk-v1` remains an estimate until then; this is not an indefinite post-v1 deferral.
 
 ### M3 graph vocabulary freeze amendment (2026-08-16)
 
@@ -247,7 +247,7 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Context candidates come from search rows whose `kind` is the lowercase document kind, so document kinds normalize to their entity counterparts before lookup (character→Character, state→Fact, foreshadow→Foreshadow, chapter→Chapter, outline→OutlineNode); `document` and unrecognized kinds stay L3. Without this normalization every block would silently fall back to L3.
 - Candidates sharing an evidence excerpt hash are folded: the first occurrence survives under required-first, deterministic score order, and the folded refs appear in `omitted` with reason `duplicate_evidence`.
 - Budget filling proceeds L0→L3 (layer rank, then score descending, then registry priority, then ref), implementing trim-from-L3 toward L0. Existing omitted reasons (`budget_limit`, `not_found`, `required_minimum_exceeds_budget`) and the `ContextPacket` shape are unchanged.
-- Registry fields `minTokens`/`preferredTokens`/`maxTokens` remain reserved and are deliberately undeclared; token accounting stays `mixed-cjk-v1` with `estimated: true` indefinitely (AUD-014 deferred to post-v1 per 2026-08-18 decision; see IDEAS file AUD-014 Tokenizer 决策记录).
+- Registry fields `minTokens`/`preferredTokens`/`maxTokens` remain reserved and are deliberately undeclared. Token accounting remains `mixed-cjk-v1` with `estimated: true` until the pending M4/C3 public `accountingScope` amendment; it is not a permanent post-v1 deferral.
 
 ### M4 source directory observable amendment (2026-08-18)
 
