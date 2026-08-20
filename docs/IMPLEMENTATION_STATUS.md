@@ -3,7 +3,7 @@
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
 > 检查点时间：2026-08-21（Task 2 门禁治理）
-> 当前状态：A1 评测实验隔离完成；Task 2 的公开/私有门禁拆分完成。143 项测试通过、lint 0 警告、公共基准 30/30。私有 top-20 历史基线仍为 40/42，required 15/16；gold @50 候选门禁与该 top-20 PRF 验收严格区分。M4 仍有 response-size、EPUB UTF-8 byte accounting、lifecycle、accountingScope 与 PRF 工作，未完成。
+> 当前状态：A1=SourceSnapshot/fingerprint 一致性与恢复；A2=评测实验隔离与只读门禁。当前测试数、lint 与基准结果以本次验证记录为准；私有 top-20 历史基线为 40/42、required 15/16，gold @50 候选门禁与 PRF 验收严格区分。response-size、EPUB UTF-8 byte accounting、lifecycle、accountingScope 与 PRF 均已重开，M4 不得宣称完成。
 
 ## 恢复入口
 
@@ -28,11 +28,11 @@ pnpm start
 
 最近验证（2026-08-17，AUD-012 接线后）：tsc 0 错、lint 0 警告、benchmark 30/30（recall 1.0 / evidence 1.0 / Token 降幅 61.24%）、store 级接线脚本 16/16（exclude/pin/锚定/未知 taskType 非驱动/db 句柄存活回归/确定性）；vitest 全量须在用户环境运行（会话沙箱 spawn EPERM 既定边界，`pnpm test`）。
 
-最近验证（2026-08-19）：tsc 0 错、benchmark 30/30、127/127 测试。**完整重排验证作废并已回退至 6 因子基线**（2026-08-19 用户审查 R1-R5）：评测仪表缺陷（`calculateRecallAtK` 忽略 k、hit=期望词共现弱代理而非黄金证据、`checkExpectedChapters` 恒 false、limit=10 未测 recall@50）、holdout 24 条未验证、黄金证据门禁脚本与 baseline.json 快照均未落地。评测脚本待按黄金证据门禁重写后重验。vitest 全量须在用户环境运行（会话沙箱 spawn EPERM 既定边界，`pnpm test`）。
+历史记录（2026-08-19）：此前重排验证已作废并回退至 6 因子基线；其中的测试数量和“门禁未落地”描述仅供追溯，不能作为当前状态。
 
 最近验证（2026-08-20，评测仪表重写 + P1 卷感知切分修复后，`214bb8f`/`ab4af79`）：口径用户拍板 gold-span hit（逐字包含 + ref 匹配），唯一宿主 `scripts/gold-hit.mjs`；仪表自检全过（单调性、阴性对照 hit=false、冒烟）。P1 修复：holdout 切分按卷取前3+后2，territories 从语料章题现算（卷1:1-30 head 1-3 tail 29-30；卷2:1-25 head 1-3 tail 24-25），切分恢复计划 §250 的 18/24。**6 因子真基线**：train（18 条）recall@5=77.8% / @10=83.3% / @50=100%，MRR=0.580，required@50=1.0；holdout（24 条）@5=83.3% / @10=91.7% / @50=100%，MRR=0.690，required@50=1.0。**miss 归因**（attribute-misses.mjs）：train 4 条 + character-001 全部 L2 候选可达、非 tie-break——纯排序因子问题，核心是 coverage 缺口（查询词 vs 证据 span 措辞不重叠，如 event-004 查询"受伤/住院"而引文是"病床/点滴瓶"）。待办：逐因子 ablation 落盘（预期：删因子不会动黄金门禁，价值在证明不可删）、门禁脚本 + baseline.json 快照、契约重新 ratify。
 
-最近验证（2026-08-20，路线 A 完成后，`42849f4`）：**§266 形式达标**。（1）store.ts 加 `WRITING_MCP_ABLATE` 运行时开关（默认空=行为不变，7 变体；bm25 项与 FTS 候选合并按拍板分为两个独立操作）；（2）ablation-test.mjs 重写（弃旧版源码 regex 变异，改 env 开关 + gold-span 口径 + train-only），数据表落盘 `reports/ablation-gold-span.json`；（3）gate-gold-evidence.mjs 门禁脚本 4/4 PASS（train/holdout recall@50≥0.9 + required@50=1.0），快照 `reports/gold-evidence-baseline.json` 已提交（.gitignore 白名单豁免，纯数字无私有内容）。**ablation 裁决表（train，§251 阈值 recall@5 降>2pp 或 MRR 相对降>5% 则 KEEP）**：coverage KEEP（删后 @5 77.8→27.8）、alias KEEP（@50 100→94.4、MRR -16.4%）、proximity/heading/trust REMOVABLE（门禁指标零变化）、bm25 项与 FTS 合并均为负因子（删后 MRR 0.580→0.607↑）。结论与用户 P5 预判一致：**公式层不是杠杆**；"无一可删"预期未成立，按实证归档。公式暂冻结不动（删因子属公式变更，与 B 的候选层改进正交，待 B 落地后统一重审）。127/127 测试 + 30/30 基准绿。下一步（路线 B，已拍板）：PRF 式伪相关反馈查询扩展（候选层，数据源=语料共现统计，禁读 expectedTerms），契约 amendment + 新测试，用 baseline.json 度量 @5 是否动。
+历史记录（2026-08-20）：`WRITING_MCP_ABLATE` 运行时开关与会写基线的 legacy gate 已被 A2 替换为 `evaluateSearch` 显式注入与只读门禁；本段旧测试计数不代表当前状态。
 
 ## 已实现闭环
 
@@ -102,7 +102,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - AUD-035 第三阶段（Biome 格式化）已由用户决策延后：store.ts 即将被 M3/M4 修改，现在做巨型函数展开与全量格式化必然返工；正确时机是完整重排落地后（检索侧冻结）的重构窗口，届时再评估格式化是否必要。
 - **M3 语料基准已完成**（2026-08-17）：491 万字《语料B》语料测试，索引 25.7 秒（~19 万字/秒）、Explore P95 673ms、Context P95 382.5ms、Token 降幅 99.92%、内存 54.3MB。建议阈值已获用户接受（索引≤60s/百万字、Explore P95≤1000ms、Context P95≤500ms、Token 降幅≥95%），待正式写入门禁。
 - **重构窗口按触碰面分流（2026-08-18）**：装配侧窗口已开（M4 冻结后）——context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已落地，sources/budget/layer 可与完整重排并行）；检索侧窗口待**完整重排落地后**——（1）store.ts 图构建/检索 SQL 抽离；（2）移除 oxlintrc.json 对 store.ts 的 ignorePatterns 忽略项；（3）评估 Biome 格式化（若执行：quoteStyle single / semicolons asNeeded / lineWidth 120）。
-- M4 剩余：无待实现项——AUD-014 tokenizer profile **已决策延后**（2026-08-18：保持 mixed-cjk-v1 启发式，理由见 IDEAS 文件 AUD-014 决策记录）；status mtime/size 快速路径 + diagnose 摘要已落地（2026-08-18，待审阅）。**完整重排验证作废并已回退（2026-08-19）**：此前基于《语料A》42 facts 做的 6→3 因子裁剪，其评测仪表被用户审查证实有缺陷（`calculateRecallAtK` 忽略 k、hit=期望词共现弱代理而非黄金证据、`checkExpectedChapters` 恒 false、limit=10 未测 recall@50），且 holdout 24 条未验证、黄金证据门禁脚本与 baseline.json 快照未落地——不满足计划「重排落地＝评测门禁全绿 + baseline.json 快照更新」的完成标准。排序公式已回退 6 因子（coverage×4 + aliasBoost + proximity + headingMatches×0.5 + bm25 归一 + trustBonus），两个被改写的排序测试已还原。后续须先重写评测仪表（黄金证据命中口径 + 真 recall@k + recall@50 够用门禁）并重测真基线，再重审因子。
+- M4 剩余：response-size 上限、EPUB UTF-8 byte accounting、生命周期、公开 `accountingScope` 字段与 PRF 都是重开工作；tokenizer profile 延后不构成 M4 完成。排序改动仍须以 gold 门禁与私有 PRF 验收重新裁决。
 - M4 审议：`docs/REVIEW_2026-08-17.md` 已审阅 M4 功能与边界——requiredRefs 直解真实生效、L0-L3 语义化未开始（缺口=来源提供器注册表）、reserved 参数边界诚实。方向已执行：AUD-013（来源语义化+去重，审阅通过含缺陷修复 `d47b2da`）→ AUD-012 残留接线（excludeRefs → targetChapter → entityRefs/documentRefs → taskType 值域开放，`526ee36`）→ 来源目录 stats 可观测（`b83ee6b`）→ AUD-014 决策延后（`c81be41`）→ status 快速路径 + diagnose 摘要（2026-08-18，待审阅）→ 剩余：完整重排（M4 后，语料可复用《语料B》基准）。模块化：context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已随 AUD-013 落地，sources/budget/layer 随重排顺势而为）。
 
 > 更早阶段（Step 3 / AUD-005～035）的逐条落地叙事已于 2026-08-17 移除：事实由「可追溯提交清单」与 commit message 承载，审阅结论由下节表格承载，不在此重复。

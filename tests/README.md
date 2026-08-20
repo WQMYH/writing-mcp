@@ -50,7 +50,7 @@
 | `scripts/gold-hit.mjs` | 黄金 span 命中口径唯一宿主（2026-08-20 拍板）：fact 命中 ⟺ 前 k 个返回 span 中 ref ∈ goldRefs(fact)（goldRefs = 解析期全量 span 中逐字包含任一 evidenceQuote 者）；含 holdout 切分（前3+后2章）与章节诊断，所有评测面共用，禁止第二套判定 |
 | `scripts/evaluate-reranking.mjs` | 完整重排评测（gold-span 口径）：读取私有标注数据（《语料A》42 facts），一次查询 limit=50 后按 k=5/10/50 真截断计 recall + MRR；仪表自检（单调性 + 阴性对照 + 冒烟）；goldSpanCount=0 归 annotation_anomalies 桶不进分母，required 落入该桶告警；支持 train/holdout/all 切分 |
 | `scripts/run-private-acceptance.mjs` | 私有验收（gold-span 口径，命中判定经 gold-hit.mjs）：top-20 命中 + probe-100 rank + quoteExposure 诊断 + 性能门禁 |
-| `scripts/ablation-test.mjs` | 因子 ablation（2026-08-20 重写，gold-span 口径）：经 `WRITING_MCP_ABLATE` 运行时开关逐变体禁用（coverage/alias/proximity/heading/bm25 项/FTS 候选合并/trust，bm25 两操作分离），train-only 测 recall@5/10/50 + MRR，§251 阈值裁决 KEEP/REMOVABLE；报告落盘 `reports/ablation-gold-span.json`（gitignored） |
+| `scripts/ablation-test.mjs` | 因子 ablation（gold-span 口径）：通过 `WritingService.evaluateSearch` 的显式、调用级 `disabledFactors` 注入逐变体评测（coverage/alias/proximity/heading/bm25/FTS/trust），单次索引复用；train-only 测 recall@5/10/50 + MRR，报告落盘 `reports/ablation-gold-span.json`（gitignored） |
 | `scripts/gold-measurement.mjs`、`gold-gate.mjs`、`gold-check.mjs`、`gold-update.mjs` | 共享确定性 gold-span 测量；gate/check 只读，update 原子更新已提交快照并记录代码 hash |
 | `scripts/attribute-misses.mjs` | miss 三层归因（数据层→机制层）：L1 查询词条可达性 / L2 候选可达性（LIKE 匹配数 vs candidateLimit）/ L3 公式因子分解；镜像 store 私有逻辑，需与 store.ts 手工同步 |
 | `scripts/load-corpus.mjs` | 语料加载：扫描目录、统计文件数量/大小/字符数、检测编码格式 |
