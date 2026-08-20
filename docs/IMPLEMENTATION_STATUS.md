@@ -70,7 +70,7 @@ pnpm start
 | M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB、跨 spine 分段 locator、通用作品边界与 capabilities 实际化（AUD-026 主体）、章节编号语法明确化（AUD-027 主体）、EPUB 资源上限（AUD-028 主体）、snapshot 一致性与文本内存上限（AUD-029 主体）、span 硬上限与 locator 精确规则（AUD-030 主体）、进程生命周期与优雅关闭（AUD-032 主体）、工程硬化门禁与适配器模块抽离（AUD-035 第一/二阶段主体） | AUD-035 格式化阶段（用户决策延后至 M3/M4 语义冻结后的重构窗口再评估） |
 | M2 | ✅ 基础门禁完成 | SQLite/FTS5、schema v4、语义 snapshot、truthful status、revision/事务、原子替换、作品级串行/写锁、恢复、work/document 作用域身份、规范定义晋升、多 mention/关系证据、源顺序图 | 后续只随 M3/M4 查询语义做受控增强 |
 | M3 | 进行中 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限、0～3 跳 BFS、timeline、词汇表、source-trust 与 A1 freshness；corpus 阈值门禁代码已落地 | 完整重排与真实长语料重测；本轮无新的长语料性能主张 |
-| M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、requiredRefs 脱离 top-50 直接解析（AUD-005）、**AUD-013 来源提供器注册表 + evidenceHash 去重（审阅通过，`d47b2da`）**：分层改为来源类型映射（Character/Fact/Foreshadow→L1，Chapter/Event/OutlineNode→L2，Location/Item 与未知→L3，required→L0）、文档类型大小写归一（DOCUMENT_KIND_ALIASES）、同 evidenceHash 折叠（duplicate_evidence 进 omitted）、预算填充 L0→L3（自 L3 向低层裁剪）、纯模块 context-assembly.ts；**AUD-012 约束接口接线完成（`526ee36`）**：excludeRefs 过滤（excluded 进 omitted、requiredRefs 优先）、entityRefs/documentRefs 直解入 blocks（层内排搜索命中前）、targetChapter 锚定层内排序（同章→前章近距→后章近距→无章节号）、taskType 值域开放且非驱动（无策略引擎）；**AUD-012 残留「来源目录」可观测能力完成**：`writing_explore` 的 `stats` 操作新增 `contextSources` 字段（`byLayer` L1/L2/L3 文档计数 + `byKind` 按文档种类计数），复用 AUD-013 注册表与归一逻辑，让 Agent 在调用 `writing_context` 前可见作品可用上下文来源清单；**status 快速路径 + diagnose 摘要（待审阅，`fcb5500`）**：status mtime/size 快速路径（指纹未变时复用 store，不重读来源）、diagnose inspect 摘要新增 contextSources | 完整重排（M4 后，《语料B》语料，校准 search 排序因子）；装配侧 sources/budget/layer 模块抽离（M4 冻结后窗口已开，可与重排并行）；检索侧重构窗口待完整重排后（store.ts SQL 抽离 + oxlint ignore 移除 + Biome 评估） |
+| M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、AUD-005/AUD-012/AUD-013 的约束与来源装配；A1 已完成：adapter-owned `SourceSnapshot` 以精确枚举及前后快照保证一致读取，active state 分离 `loadedFingerprint` 与 `indexedFingerprint`，source 变化时 explore/context 重建有效索引；stats/diagnose 提供 contextSources | response-size、EPUB UTF-8 byte accounting、lifecycle、公开 accountingScope 与 PRF 均重开；完整重排与真实语料重测待后续 |
 | M5 | 待开始（已有纵向切片） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归 | 真实 InkOS、更多 EPUB 2/3 变体、客户端安装与故障文档 |
 
 Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、007～010 的当前门禁；Step 3 已完成中文问句、别名/歧义、稳定排序、输入上限、FTS 降级与检索诊断（提交 `4030085`），并完成 AUD-018 时间上限（提交 `c376df7`）；AUD-021 源指纹复用修复（`service.index()` 增加指纹记录，修复 `ensureFresh` 在 `previous === undefined` 时跳过增量更新的逻辑缺陷，55/55 测试全部通过）。AUD-005（REVIEW_2026-08-16 P0，提前于 Step 3 剩余项处理）：`requiredRefs` 脱离 search top-50 候选池按 entity/span/document 三级直接解析，池外必选 ref 进 blocks 并计入预算最小值，不存在 ref 以 `not_found` 进 omitted，预算不足触发 `budget_unsatisfiable`；`ContextPacket` 形状与状态词汇未变（M0_CONTRACT 新增 M4 requiredRefs amendment）。M0.1、M1 其余问题和 M3～M5 尚未完成，现有成果不能据此宣称 Writing MCP v1 已完成。
@@ -103,7 +103,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - Corpus 阈值门禁代码已落地（索引≤60s/百万正文字符、Explore P95≤1000ms、Context P95≤500ms）；本轮只用受控 fixture 验证脚本行为，未重新运行真实长语料，历史长语料数字不得作为当前验收。
 - **重构窗口按触碰面分流（2026-08-18）**：装配侧窗口已开（M4 冻结后）——context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已落地，sources/budget/layer 可与完整重排并行）；检索侧窗口待**完整重排落地后**——（1）store.ts 图构建/检索 SQL 抽离；（2）移除 oxlintrc.json 对 store.ts 的 ignorePatterns 忽略项；（3）评估 Biome 格式化（若执行：quoteStyle single / semicolons asNeeded / lineWidth 120）。
 - M4 剩余：response-size 上限、EPUB UTF-8 byte accounting、生命周期、公开 `accountingScope` 字段与 PRF 都是重开工作；tokenizer profile 延后不构成 M4 完成。排序改动仍须以 gold 门禁与私有 PRF 验收重新裁决。
-- M4 审议：`docs/REVIEW_2026-08-17.md` 已审阅 M4 功能与边界——requiredRefs 直解真实生效、L0-L3 语义化未开始（缺口=来源提供器注册表）、reserved 参数边界诚实。方向已执行：AUD-013（来源语义化+去重，审阅通过含缺陷修复 `d47b2da`）→ AUD-012 残留接线（excludeRefs → targetChapter → entityRefs/documentRefs → taskType 值域开放，`526ee36`）→ 来源目录 stats 可观测（`b83ee6b`）→ AUD-014 决策延后（`c81be41`）→ status 快速路径 + diagnose 摘要（2026-08-18，待审阅）→ 剩余：完整重排（M4 后，语料可复用《语料B》基准）。模块化：context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已随 AUD-013 落地，sources/budget/layer 随重排顺势而为）。
+- M4 审议：已完成的来源/约束装配保留；A1 使用 adapter-owned `SourceSnapshot`、一致读取重试、及 `loadedFingerprint`/`indexedFingerprint` 双指纹状态语义。M4 当前剩余为 response-size、EPUB UTF-8 byte accounting、lifecycle、公开 accountingScope 与 PRF；真实长语料仅待重测，不把历史数字当作本轮验收。
 
 > 更早阶段（Step 3 / AUD-005～035）的逐条落地叙事已于 2026-08-17 移除：事实由「可追溯提交清单」与 commit message 承载，审阅结论由下节表格承载，不在此重复。
 
@@ -155,7 +155,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
   - C2/C3：契约 Open TODO 更新（来源目录 stats 已实现、diagnose 摘要可选未实现）；计划 §8 Step 6 措辞 stats/diagnose → stats（diagnose 可选）。
 - **验证**：tsc 0 错、lint 0 警告；node 验证脚本 6/6（C5 pinned 优先锚定生效、无 pin 锚定顺序不变、C4 byKind 有序、stats 确定、db 句柄存活）；新增 C5 回归测试（`context-constraint-wiring.test.ts`，vitest 待用户环境）；benchmark 未重跑（行为仅排序键序变化，30/30 风险极低，建议用户环境一并跑）。
 
-### M4 status 快速路径 + diagnose 摘要（2026-08-18，待审阅）
+### A1 SourceSnapshot/fingerprint 一致性（已完成，历史归档）
 
 - **背景**：M4 最后两个待办——status 的 mtime/size 快速路径（不牺牲语义 snapshot）与来源目录的 diagnose 摘要（AUD-012 残留可选部分）。
 - **实现**：
