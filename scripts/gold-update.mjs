@@ -1,0 +1,10 @@
+import { execFileSync } from "node:child_process";
+import { rename, writeFile } from "node:fs/promises";
+import { measureGoldEvidence, goldSnapshot } from "./gold-measurement.mjs";
+const measurement = await measureGoldEvidence(process.env.WRITING_MCP_PRIVATE_ACCEPTANCE);
+if (measurement.verdict !== "PASS") throw new Error("Candidate gold gates failed; baseline was not updated");
+const target = new URL("../reports/gold-evidence-baseline.json", import.meta.url), temporary = new URL(`../reports/.gold-evidence-${process.pid}.tmp`, import.meta.url);
+const gitCommit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+await writeFile(temporary, JSON.stringify(goldSnapshot(measurement, gitCommit), null, 2) + "\n", "utf8");
+await rename(temporary, target);
+console.error(`[gold:update] wrote ${target.pathname} for ${gitCommit}`);

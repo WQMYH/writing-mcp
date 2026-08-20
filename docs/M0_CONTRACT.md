@@ -265,6 +265,13 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 
 ## Benchmark gate
 
+### Reliability gate amendment (Task 2, 2026-08-21)
+
+- `verify` is public/CI-safe and is read-only with respect to tracked files. `gold:gate` measures candidate gold-span gates and `gold:check` rejects only metric regressions against the committed snapshot; both are read-only.
+- `gold:update` is the sole baseline writer. It writes the snapshot atomically and records the measured committed code hash; it is never included in a verify chain.
+- Private commands require `WRITING_MCP_PRIVATE_ACCEPTANCE`. `private:measure` reports threshold misses without failing them; `verify:private` is the hard top-20/required-recall acceptance chain.
+- Corpus performance and external token evidence require explicit local inputs and local report locations. Until the public field is added, benchmark token accounting is explicitly `evidence_excerpts_only`; external token status is `not_evaluated` and no 95% external-token claim is made.
+
 - Dataset: `benchmarks/m0.json`, exactly 30 machine-readable tasks.
 - Fact/token baseline: `benchmarks/baseline.json`; runner: `scripts/run-benchmark.mjs`.
 - M0 gate: 100% pass on the deterministic fixture.

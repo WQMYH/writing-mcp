@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-08-16（审计修订）
-> 当前状态：M0 主体完成；索引事实性 Step 1 与图身份/证据 Step 2 已闭环，M0.1、M1 其余补强及 M3 继续进行；整体仍是可演示 MVP，尚未达到 `Writing_MCP_Server_v2.md` 的 v1 完整验收标准。
+> 检查点时间：2026-08-21（Task 2 门禁治理）
+> 当前状态：A1 评测实验隔离完成；Task 2 的公开/私有门禁拆分进行中。139 项测试通过、lint 0 警告、公共基准 30/30。私有 top-20 历史基线仍为 40/42，required 15/16；gold @50 候选门禁与该 top-20 PRF 验收严格区分。M4 仍有 response-size、EPUB UTF-8 byte accounting、lifecycle、accountingScope 与 PRF 工作，未完成。
 
 ## 恢复入口
 
