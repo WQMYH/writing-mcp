@@ -54,7 +54,7 @@
 | `scripts/gold-measurement.mjs`、`gold-gate.mjs`、`gold-check.mjs`、`gold-update.mjs` | 共享确定性 gold-span 测量；gate/check 只读，update 原子更新已提交快照并记录代码 hash |
 | `scripts/attribute-misses.mjs` | miss 三层归因（数据层→机制层）：L1 查询词条可达性 / L2 候选可达性（LIKE 匹配数 vs candidateLimit）/ L3 公式因子分解；镜像 store 私有逻辑，需与 store.ts 手工同步 |
 | `scripts/load-corpus.mjs` | 语料加载：扫描目录、统计文件数量/大小/字符数、检测编码格式 |
-| `scripts/run-corpus-benchmark.mjs` | 语料基准：索引计时、Explore 查询延迟、Context 装配、内存监控、P95 延迟计算 |
+| `scripts/run-corpus-benchmark.mjs` | 显式 corpus/tasks/report-dir 的私有语料门禁：每百万字符索引、Explore/Context P95，以及本地 token-evaluation-materials.json（仅 evidence excerpts，外部 tokenizer 未评估） |
 
 ## 覆盖清单（按能力域）
 
