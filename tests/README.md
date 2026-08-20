@@ -39,6 +39,7 @@
 | `generic-work-boundary.test.ts` | AUD-026 通用作品边界：双 EPUB 目录产生两个候选并返回 ambiguous、EPUB 候选与直接解析文件同 workRef/rootPath、capabilities 由实际输入决定（纯文本目录不含 epub）、纯文本目录仍为单一作品 |
 | `txt-numbering.test.ts` | AUD-027 章节编号语法：罗马数字章节不再被 Number("iv") 丢弃、中文数字支持到九百九十九（百位合成）、罗马数字重置推断新卷、非法罗马数字确定性跳过并入上一章、Markdown 中文数字章名识别为 chapter |
 | `snapshot-consistency.test.ts` | AUD-029 snapshot 一致性：读取期间源持续变化拒绝 `SOURCE_CHANGED_DURING_READ`（有界重试后仍不一致）、一次性写入稳定后有界重试成功、单文件超限 `SOURCE_FILE_TOO_LARGE`、作品总量超限 `SOURCE_TOTAL_TOO_LARGE`、默认上限正常加载 |
+| `source-snapshot-reliability.test.ts` | Task 1 SourceSnapshot：完整相对路径避免重名碰撞、超过 12 层的精确枚举、单文件与增删指纹变化、越界 symlink 拒绝、status stale 后 explore 先增量索引、未变化快路径，以及失败增量不推进 freshness 并可恢复查询 |
 | `span-hard-split.test.ts` | AUD-030 span 硬上限与边界规则：超长单行硬切为共享同一源行的有界 chunk、locator 不含被裁空行、相邻 span 连续平铺无重叠无遗漏且内容可重组、硬切后后续 span 行号连续、heading 边界 locator 精确 |
 | `lifecycle.test.ts` | AUD-032 进程生命周期：SIGTERM/SIGINT 在时限内终止进程（POSIX 优雅 exit 0 / Windows 信号终止）、stdin EOF 优雅退出 exit 0、完整会话 stdout 只输出 JSON-RPC 且干净退出、进程内 shutdown 链先关 server 再关 service 幂等且零 stdout 写入 |
 

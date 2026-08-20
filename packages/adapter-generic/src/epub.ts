@@ -73,12 +73,12 @@ export function splitEpubChunks(path:string,root:string,workRef:string,chunks:Ep
   return documents;
 }
 
-export async function epubDocuments(path:string,root:string,workRef:string,bookTitle:string,limits:EpubLimits):Promise<SourceDocument[]>{
-  const data=await readFile(path);let zip:JSZip;try{zip=await JSZip.loadAsync(data);}catch(error){throw codedError("EPUB_INVALID_ZIP","EPUB is not a readable ZIP container",error);}
+export async function epubDocuments(path:string,root:string,workRef:string,bookTitle:string,limits:EpubLimits,data?:Uint8Array,mtimeMs?:number):Promise<SourceDocument[]>{
+  const buffer=data??await readFile(path);let zip:JSZip;try{zip=await JSZip.loadAsync(buffer);}catch(error){throw codedError("EPUB_INVALID_ZIP","EPUB is not a readable ZIP container",error);}
   // AUD-028: deterministic resource limits guard against ZIP bombs and
   // unbounded packages; every breach is a stable error code, never a hang.
   const entryCount=Object.keys(zip.files).length;if(entryCount>limits.maxEntries)throw codedError("EPUB_TOO_MANY_ENTRIES",`EPUB contains ${entryCount} ZIP entries, above the limit of ${limits.maxEntries}`);
-  const pkg=await epubPackage(zip,limits),opfDir=posix.dirname(pkg.opfPath),info=await stat(path),chunks:EpubChunk[]=[];let totalDecoded=0;
+  const pkg=await epubPackage(zip,limits),opfDir=posix.dirname(pkg.opfPath),sourceMtimeMs=mtimeMs??(await stat(path)).mtimeMs,chunks:EpubChunk[]=[];let totalDecoded=0;
   for(const spineItem of pkg.spine){if(spineItem.linear?.toLowerCase()==="no")continue;const item=pkg.manifest.get(spineItem.idref);if(!item)continue;let decodedHref:string;try{decodedHref=decodeURIComponent(item.href.split("#")[0]!);}catch(error){throw codedError("EPUB_HREF_INVALID",`EPUB manifest contains an invalid href: ${item.href}`,error);}const entryPath=posix.normalize(posix.join(opfDir==="."?"":opfDir,decodedHref)).replace(/^\/+/g,"");if(entryPath.startsWith("../"))throw codedError("EPUB_HREF_INVALID",`EPUB manifest href escapes the package root: ${item.href}`);const html=await zip.file(entryPath)?.async("string");if(!html)continue;if(html.length>limits.maxDocumentBytes)throw codedError("EPUB_DOCUMENT_TOO_LARGE",`EPUB spine document ${entryPath} exceeds the per-document size limit`);totalDecoded+=html.length;if(totalDecoded>limits.maxTotalBytes)throw codedError("EPUB_TOTAL_TOO_LARGE","EPUB total decoded spine exceeds the package size limit");const parsed=htmlText(html);if(!parsed.content||coverLike(entryPath,item,parsed.content,parsed.fallbackTitle))continue;chunks.push({entryPath,content:parsed.content,fallbackTitle:parsed.fallbackTitle??parsed.content.split("\n").find(Boolean)?.slice(0,100)??`Chapter ${chunks.length+1}`});}
-  if(!chunks.length)throw codedError("EPUB_NO_READABLE_SPINE","EPUB contains no readable spine chapters");const documents=splitEpubChunks(path,root,workRef,chunks,info.mtimeMs,pkg.title??bookTitle);if(!documents.length)throw codedError("EPUB_NO_READABLE_SPINE","EPUB contains no readable spine chapters");return documents;
+  if(!chunks.length)throw codedError("EPUB_NO_READABLE_SPINE","EPUB contains no readable spine chapters");const documents=splitEpubChunks(path,root,workRef,chunks,sourceMtimeMs,pkg.title??bookTitle);if(!documents.length)throw codedError("EPUB_NO_READABLE_SPINE","EPUB contains no readable spine chapters");return documents;
 }

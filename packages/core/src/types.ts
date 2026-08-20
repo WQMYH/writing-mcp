@@ -28,10 +28,13 @@ export interface SourceDocument {
 }
 export interface SourceSegment { relativePath: string; startLine: number; endLine: number; documentStartLine: number; documentEndLine: number }
 export interface ParsedWork extends WorkCandidate { documents: SourceDocument[] }
+export interface SourceSnapshotEntry { relativePath: string; absolutePath: string; size: number; mtimeNs: string }
+export interface SourceSnapshot { rootPath: string; entries: readonly SourceSnapshotEntry[]; fingerprint: string }
 export interface WorkAdapter {
   readonly kind: AdapterKind;
   discover(sourcePath: string): Promise<WorkCandidate[]>;
-  load(candidate: WorkCandidate): Promise<ParsedWork>;
+  snapshot(candidate: WorkCandidate): Promise<SourceSnapshot>;
+  load(candidate: WorkCandidate, snapshot?: SourceSnapshot): Promise<ParsedWork>;
 }
 export interface IndexStats { added: number; updated: number; deleted: number; skipped: number; documents: number; spans: number; entities: number; edges: number }
 export interface IndexResult { workRef: string; revision: number; schemaVersion: number; freshness: "fresh" | "stale" | "missing" | "incompatible"; stats: IndexStats; contextSources?: { byLayer: Record<string, number>; byKind: Record<string, number> }; diagnostics: Diagnostic[]; elapsedMs: number }
