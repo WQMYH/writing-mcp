@@ -1,7 +1,7 @@
 export type AdapterKind = "inkos" | "generic";
 export type DocumentKind = "chapter" | "outline" | "character" | "state" | "foreshadow" | "document";
 export type EntityKind = "Character" | "Location" | "Item" | "Event" | "Fact" | "Foreshadow" | "Chapter" | "OutlineNode";
-export type EdgeKind = "contains" | "appears_in" | "precedes";
+export type EdgeKind = "contains" | "mentions" | "appears_in" | "precedes";
 export type WorkCapability = "documents" | "full_text" | "epub" | "chapters" | "characters" | "outline" | "state" | "foreshadow";
 export type SourceKind = "native" | "deterministic" | "heuristic";
 
@@ -10,7 +10,7 @@ export type SourceKind = "native" | "deterministic" | "heuristic";
 // capabilities. Extending any list requires an M0 contract amendment, and
 // unimplemented relations are never advertised as existing capabilities.
 export const ENTITY_KINDS: readonly EntityKind[] = ["Character", "Location", "Item", "Event", "Fact", "Foreshadow", "Chapter", "OutlineNode"];
-export const EDGE_KINDS: readonly EdgeKind[] = ["contains", "appears_in", "precedes"];
+export const EDGE_KINDS: readonly EdgeKind[] = ["contains", "mentions", "appears_in", "precedes"];
 export const WORK_CAPABILITIES: readonly WorkCapability[] = ["documents", "full_text", "epub", "chapters", "characters", "outline", "state", "foreshadow"];
 
 export interface Diagnostic { code: string; message: string; path?: string }

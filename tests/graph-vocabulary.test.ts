@@ -23,6 +23,12 @@ const makeWork=(rootPath:string):ParsedWork=>{
 };
 
 describe("AUD-022 frozen deterministic graph vocabulary",()=>{
+  test("freezes the native mentions relationship alongside other produced edge kinds",()=>{
+    // Break caught: a future vocabulary reduction can no longer leave the
+    // persisted native `mentions` relationship outside the public contract.
+    expect(EDGE_KINDS).toContain("mentions");
+  });
+
   test("indexed entity kinds include OutlineNode and stay inside the frozen set",async()=>{
     const root=await mkdtemp(join(tmpdir(),"writing-mcp-vocab-")),work=makeWork(root),store=new WritingStore(work);
     try{
@@ -52,5 +58,47 @@ describe("AUD-022 frozen deterministic graph vocabulary",()=>{
       expect(genericCandidates).toHaveLength(1);
       expect(genericCandidates[0]!.capabilities.every(cap=>WORK_CAPABILITIES.includes(cap))).toBe(true);
     }finally{await rm(genericRoot,{recursive:true,force:true});}
+  });
+
+  test("resolves [[alias]] into a document-to-entity mentions edge with bidirectional BFS evidence",async()=>{
+    // Break caught: native references can be stored as unresolved, inverted,
+    // or lose their source evidence when a persisted alias is used.
+    const root=await mkdtemp(join(tmpdir(),"writing-mcp-mentions-alias-")),workRef=stableId("work","mentions-alias",root);
+    const doc=(name:string,title:string,kind:SourceDocument["kind"],content:string,chapterNumber?:number):SourceDocument=>({documentRef:stableId("doc",workRef,name),relativePath:name,absolutePath:name,title,kind,content,chapterNumber,sourceMtimeMs:1,sourceSize:Buffer.byteLength(content)});
+    const character=doc("character.md","语笙","character","# 语笙\n角色定义。"),chapter=doc("chapter.md","第一章","chapter","# 第一章\n尚未出现引用。",1);
+    const work:ParsedWork={workRef,title:"Alias mentions",rootPath:root,adapter:"generic",capabilities:[],documents:[character,chapter]};
+    const store=new WritingStore(work);
+    try{
+      await store.index("rebuild");
+      const dbPath=join(root,".writing-index",work.workRef.replace(":","-"),"index.sqlite"),db=new DatabaseSync(dbPath);
+      let entityRef="";
+      try{
+        entityRef=String((db.prepare("SELECT entity_ref FROM entities WHERE name='语笙'").get() as {entity_ref:string}).entity_ref);
+        // The generic fixture has no source alias declaration grammar. Seed a
+        // persisted, canonical alias, then change the source so incremental
+        // indexing exercises the real native-reference resolver.
+        db.prepare("INSERT INTO aliases(entity_ref,alias,normalized_alias) VALUES(?,?,?)").run(entityRef,"林夜","林夜");
+      }finally{db.close();}
+      chapter.content="# 第一章\n[[林夜]]走进北塔。";
+      chapter.sourceSize=Buffer.byteLength(chapter.content);
+      const indexed=await store.index("incremental");
+      const verified=new DatabaseSync(dbPath,{readOnly:true});
+      let sourceSpanRef="";
+      try{
+        const edge=verified.prepare("SELECT edge_ref,source_ref,target_ref,kind,span_ref,revision FROM edges WHERE kind='mentions'").get() as {edge_ref:string;source_ref:string;target_ref:string;kind:string;span_ref:string;revision:number};
+        sourceSpanRef=edge.span_ref;
+        expect(edge).toMatchObject({source_ref:chapter.documentRef,target_ref:entityRef,kind:"mentions",revision:indexed.revision});
+        expect(verified.prepare("SELECT COUNT(*) count FROM unresolved_mentions WHERE text='林夜'").get()).toEqual({count:0});
+        expect(verified.prepare("SELECT ee.span_ref,ee.revision,s.document_ref FROM edge_evidence ee JOIN spans s ON s.span_ref=ee.span_ref WHERE ee.edge_ref=?").get(edge.edge_ref)).toEqual({span_ref:sourceSpanRef,revision:indexed.revision,document_ref:chapter.documentRef});
+      }finally{verified.close();}
+
+      const fromDocument=await store.explore("neighborhood",chapter.documentRef,20,1);
+      const fromEntity=await store.explore("neighborhood",entityRef,20,1);
+      const documentPath=fromDocument.results.find(item=>item.ref===entityRef)?.pathEvidence?.find(edge=>edge.edgeKind==="mentions");
+      const entityPath=fromEntity.results.find(item=>item.ref===chapter.documentRef)?.pathEvidence?.find(edge=>edge.edgeKind==="mentions");
+      expect(documentPath).toMatchObject({direction:"outgoing",sourceRef:chapter.documentRef,targetRef:entityRef,evidence:{documentRef:chapter.documentRef,revision:indexed.revision}});
+      expect(entityPath).toMatchObject({direction:"incoming",sourceRef:chapter.documentRef,targetRef:entityRef,evidence:{documentRef:chapter.documentRef,revision:indexed.revision}});
+      expect(entityPath?.edgeRef).toBe(documentPath?.edgeRef);
+    }finally{store.close();await rm(root,{recursive:true,force:true});}
   });
 });

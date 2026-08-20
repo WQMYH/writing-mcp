@@ -76,6 +76,13 @@ Moving a work or document intentionally changes its reference. Editing content w
 - Extending any frozen set requires a new M0 contract amendment first.
 - The wire format is unchanged: `capabilities` remains an array of strings in every response, and `EntityKind` gains `OutlineNode`, which indexing already produced before this amendment.
 
+### M3 `mentions` vocabulary alignment amendment (2026-08-21)
+
+- `mentions` is added to the frozen public `EdgeKind` and `EDGE_KINDS` vocabulary. It already existed in schema-v4 derived data; this additive amendment aligns the public vocabulary with that persisted relationship rather than introducing a schema migration.
+- A native `[[alias]]` reference resolves through the persisted alias table to its canonical entity and creates a `Document → Entity` `mentions` edge. Its edge evidence retains the source span, document locator, source kind, confidence, and index revision. This direction is distinct from the deterministic `Entity → Document` `appears_in` edge.
+- Bounded neighborhood traversal may seed either a stable entity reference or a stable document reference, and exposes the same `mentions` edge as incoming or outgoing path evidence from the corresponding endpoint.
+- The native grammar remains double-bracket `[[alias]]` only. This amendment adds no single-bracket grammar, source-file write path, Agent judgment, or inference beyond deterministic alias resolution.
+
 ### M3 timeline target-chapter and reserved context inputs amendment (2026-08-16)
 
 - `writing_explore` accepts an optional `targetChapter` (integer, 1 to 1,000,000). It applies only to the `timeline` operation and is ignored by every other operation.

@@ -401,7 +401,14 @@ export class WritingStore {
 
   private refreshReferencesForRows(db:DatabaseSync,rows:Array<Record<string,unknown>>,revision:number){
     const entities=db.prepare("SELECT entity_ref,name,normalized_name,valid_from_chapter,valid_to_chapter FROM entities").all() as Array<Record<string,unknown>>;
-    const byName=new Map(entities.map(entity=>[String(entity.normalized_name),entity]));
+    // Native [[...]] references resolve through the persisted alias table as
+    // well as the canonical name. The stable order keeps a malformed duplicate
+    // alias from making the deterministic parser depend on SQLite row order.
+    const byName=new Map<string,Record<string,unknown>>();
+    for(const entity of db.prepare("SELECT a.normalized_alias,e.entity_ref,e.name,e.normalized_name,e.valid_from_chapter,e.valid_to_chapter FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref ORDER BY a.normalized_alias,e.entity_ref").all() as Array<Record<string,unknown>>){
+      const alias=String(entity.normalized_alias);
+      if(!byName.has(alias))byName.set(alias,entity);
+    }
     for(const row of rows){
       const spanRef=String(row.span_ref),documentRef=String(row.document_ref),content=String(row.content);
       db.prepare("DELETE FROM mentions WHERE span_ref=?").run(spanRef);
@@ -512,6 +519,13 @@ export class WritingStore {
   }
 
   private entityRows(db:DatabaseSync,query:string,limit:number):{rows:Array<Record<string,unknown>>;ambiguous:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}{
+    const directEntity=db.prepare("SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.entity_ref=?").get(query) as Record<string,unknown>|undefined;
+    if(directEntity)return{rows:[directEntity],ambiguous:[],diagnostics:[]};
+    // Graph documents are valid neighborhood seeds too. They are not named
+    // entities, so resolve the stable documentRef directly rather than asking
+    // callers to infer a surrogate Chapter entity.
+    const directDocument=db.prepare("SELECT d.document_ref ref,s.span_ref,d.kind,d.title heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,'native' source_kind,1 confidence,(SELECT revision FROM index_revisions WHERE status='valid' ORDER BY revision DESC LIMIT 1) revision FROM documents d JOIN spans s ON s.document_ref=d.document_ref WHERE d.document_ref=? ORDER BY s.ordinal LIMIT 1").get(query) as Record<string,unknown>|undefined;
+    if(directDocument)return{rows:[directDocument],ambiguous:[],diagnostics:[]};
     const normalized=query.normalize("NFKC").trim().toLowerCase(),pattern=`%${normalized.replaceAll("%","\\%").replaceAll("_","\\_")}%`;
     if(!normalized)return{rows:[],ambiguous:[],diagnostics:[{code:"NO_MATCHING_TERMS",message:"The entity query contains no searchable name"}]};
     const rows=db.prepare(`SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE a.normalized_alias LIKE ? ESCAPE '\\' ORDER BY CASE WHEN a.normalized_alias=? THEN 0 ELSE 1 END,e.normalized_name,e.entity_ref LIMIT ?`).all(pattern,normalized,limit) as Array<Record<string,unknown>>;
