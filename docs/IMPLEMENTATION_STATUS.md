@@ -3,7 +3,7 @@
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
 > 检查点时间：2026-08-21（Task 3 图与上下文契约硬化）
-> 当前状态：A1=SourceSnapshot/fingerprint 一致性与恢复；A2=评测实验隔离与只读门禁；Task 3=`mentions` 冻结词汇与 `ContextPacket.accountingScope` 已完成。当前验证为 147 项测试、lint 0 警告、公共基准 30/30、coverage lines 93.01%；私有 top-20 历史基线为 40/42、required 15/16，gold @50 候选门禁与 PRF 验收严格区分。response-size、EPUB UTF-8 byte accounting、lifecycle 与 PRF 仍已重开，M4 不得宣称完成。
+> 当前状态：A1=SourceSnapshot/fingerprint 一致性与恢复；A2=评测实验隔离与只读门禁；Task 3=`mentions` 冻结词汇与 `ContextPacket.accountingScope` 已完成。当前验证为 147 项测试、lint 0 警告、公共基准 30/30、coverage lines 93.13%；私有 top-20 历史基线为 40/42、required 15/16，gold @50 候选门禁与 PRF 验收严格区分。response-size、EPUB UTF-8 byte accounting、lifecycle 与 PRF 仍已重开，M4 不得宣称完成。
 
 ## 恢复入口
 
