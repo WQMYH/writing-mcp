@@ -26,13 +26,13 @@
 | `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见、超大 query 拒绝 |
 | `source-directory-observable.test.ts` | AUD-012 来源目录可观测：explore stats 的 contextSources（byLayer L1/L2/L3 + byKind）复用 AUD-013 注册表 |
 | `status-fast-path.test.ts` | status mtime/size 快速路径：指纹未变时重复 status 零 adapter.load（计数适配器）且结果与全路径语义一致、源编辑击穿快速路径报 stale、status 返回 contextSources |
-| `context-required-refs.test.ts` | AUD-005 requiredRefs 直接解析：池外 span/entity 强制命中、不存在 ref 进 omitted（not_found）、直解 ref 触发 budget_unsatisfiable、池内去重与优先 |
+| `context-required-refs.test.ts` | AUD-005 requiredRefs 直接解析：池外 span/entity 强制命中、不存在 ref 进 omitted（not_found）、直解 ref 触发 budget_unsatisfiable、池内去重与优先；所有 ContextPacket 路径声明 excerpt-only accountingScope，usedTokens 等于返回块 tokens 之和 |
 | `context-source-registry.test.ts` | AUD-013 来源提供器注册表：ENTITY_KINDS 全覆盖的语义分层映射、小写文档类型归一（character/state/foreshadow→L1，chapter/outline→L2，document/未知→L3）、required 晋升 L0、evidenceHash 折叠去重（required 前置保护、duplicate_evidence 进 omitted）、预算压力下自 L3 向低层裁剪、真实路径 L1 归属与不得整体落 L3 护栏 |
 | `bfs-batching.test.ts` | AUD-020 批量化护栏：宽图每节点 fan-out 确定性截断与重复运行一致、宽图 BFS 在确定性耗时预算内完成 |
 | `timeline.test.ts` | AUD-015 timeline 独立投影：章节+precedes 时序按章节位置排序、名称过滤、未知章节锚点稳定殿后、无时态数据 NO_RESULTS |
-| `graph-vocabulary.test.ts` | AUD-022 词汇表冻结：索引实体 kind 含 OutlineNode 且不超出 ENTITY_KINDS、边 kind 不超出 EDGE_KINDS、InkOS/generic 能力声明不超出 WORK_CAPABILITIES |
+| `graph-vocabulary.test.ts` | AUD-022 词汇表冻结：索引实体 kind 含 OutlineNode 且不超出 ENTITY_KINDS、边 kind（含原生 `mentions`）不超出 EDGE_KINDS、持久化别名 `[[alias]]` 生成 Document→Entity 边并从双端 BFS 保留证据、InkOS/generic 能力声明不超出 WORK_CAPABILITIES |
 | `timeline-tense-filter.test.ts` | AUD-012 章节时态过滤：targetChapter 锚点只保留当时态有效的实体/边（无界 from/to 视为书首/书尾）、锚点外章节排除、与名称过滤组合、重复运行确定性 |
-| `context-reserved-params.test.ts` | AUD-012 约束接口 MCP 契约（stdio）：explore schema 暴露 targetChapter 且锚定 timeline 排除锚点外章节实体；context schema 暴露四约束参数、taskType 值域开放（无 enum）且保留非驱动；描述声明 requiredRefs 胜出 excludeRefs 的优先级；exclude/pin 经 MCP 生效；未知 taskType 被接受且输出不变 |
+| `context-reserved-params.test.ts` | AUD-012/Task 3 约束接口 MCP 契约（stdio）：explore schema 暴露 targetChapter 且锚定 timeline 排除锚点外章节实体；context schema 暴露四约束参数、taskType 值域开放（无 enum）且保留非驱动；输出 schema/描述冻结 excerpt-only accountingScope 与外部 Token 复核语义；描述声明 requiredRefs 胜出 excludeRefs 的优先级；exclude/pin 经 MCP 生效；未知 taskType 被接受且输出不变 |
 | `context-constraint-wiring.test.ts` | AUD-012 约束接口接线（store 级）：excludeRefs 过滤与 excluded 报告、requiredRefs 胜出 excludeRefs、entityRefs/documentRefs 直解入 blocks 及层归属、targetChapter 锚定层内排序（同章→前距→后距）且无锚点时不生效、taskType 值域开放且任意值输出恒等、共享数据库句柄不被 context 误关、四份 ref 列表均受 CONTEXT_REFS_TOO_LARGE 校验、budget_unsatisfiable 保留各类真实 omitted 原因（excluded/not_found 不冒充预算原因） |
 | `search-source-trust.test.ts` | AUD-012 残留（M3 期）source-trust 排序因子：命中查询词的 deterministic 行获 +0.25 信任加分，反超原始分更高的 alias-only heuristic 行，重复运行确定性 |
 | `protocol-boundary.test.ts` | AUD-025 协议错误边界：数据 schema 单一真相源、输出失配记 failure 并返回 OUTPUT_SCHEMA_MISMATCH 一致信封、正常路径无协议错误、SDK 输入拒绝裸文本且无诊断记录、协议层未知消息经 onerror 上报 |

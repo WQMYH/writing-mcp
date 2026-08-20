@@ -8,7 +8,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 interface DiagnosticResult { traceId: string; tool: string; outcome: "success" | "failure" }
 interface SuccessEnvelope<T> { result: { ok: true; data: T; diagnostic: DiagnosticResult } }
 const success = <T>(call: unknown): SuccessEnvelope<T>["result"] => ((call as { structuredContent?: unknown }).structuredContent as SuccessEnvelope<T>).result;
-interface Packet { status: string; blocks: Array<{ ref: string; layer: string; evidence: { documentRef: string } }>; omitted: Array<{ ref: string; reason: string; tokens: number }> }
+interface Packet { status: string; accountingScope: string; blocks: Array<{ ref: string; layer: string; evidence: { documentRef: string } }>; omitted: Array<{ ref: string; reason: string; tokens: number }> }
 
 describe("AUD-012 constraint interface through MCP", () => {
   test("exposes wired constraints, excludes/pins via MCP, and keeps taskType value-open and non-driving", async () => {
@@ -31,6 +31,12 @@ describe("AUD-012 constraint interface through MCP", () => {
       expect(context.description).toMatch(/taskType/i);
       // The description must state the real precedence rule (contract: requiredRefs win over excludeRefs).
       expect(context.description).toMatch(/requiredRefs win over excludeRefs/);
+      // Break caught: MCP clients can no longer receive a packet schema or
+      // description that hides the estimator's deliberately narrow scope.
+      expect(JSON.stringify(context.outputSchema)).toContain("accountingScope");
+      expect(JSON.stringify(context.outputSchema)).toContain("evidence_excerpts_only");
+      expect(context.description).toMatch(/estimated excerpt-only accounting scope/i);
+      expect(context.description).toMatch(/external token evaluation/i);
 
       const resolvedCall = await client.callTool({ name: "writing_resolve", arguments: { sourcePath: source } });
       const workRef = success<{ workRef: string }>(resolvedCall).data.workRef;
@@ -48,6 +54,7 @@ describe("AUD-012 constraint interface through MCP", () => {
       const baseline = success<Packet>(baselineCall);
       expect(baseline.data.status).not.toBe("budget_unsatisfiable");
       expect(baseline.data.blocks.length).toBeGreaterThan(0);
+      expect(baseline.data.accountingScope).toBe("evidence_excerpts_only");
 
       // excludeRefs removes a candidate and reports it.
       const victim = baseline.data.blocks[0]!.ref;

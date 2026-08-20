@@ -57,4 +57,4 @@ export type ContextLayer = "L0" | "L1" | "L2" | "L3";
 export type TaskType = "continue_chapter" | "draft_chapter" | "revise" | "answer" | "custom" | (string & {});
 export interface ContextOptions { excludeRefs?: string[]; entityRefs?: string[]; documentRefs?: string[]; targetChapter?: number; taskType?: TaskType }
 export interface ContextBlock extends ExploreItem { layer: ContextLayer; tokens: number; required: boolean }
-export interface ContextPacket { status: "complete" | "truncated" | "budget_unsatisfiable"; workRef: string; revision: number; budgetTokens: number; usedTokens: number; estimated: boolean; estimator: string; blocks: ContextBlock[]; omitted: Array<{ ref: string; reason: string; tokens: number }>; diagnostics: Diagnostic[] }
+export interface ContextPacket { status: "complete" | "truncated" | "budget_unsatisfiable"; workRef: string; revision: number; budgetTokens: number; usedTokens: number; estimated: boolean; estimator: string; accountingScope: "evidence_excerpts_only"; blocks: ContextBlock[]; omitted: Array<{ ref: string; reason: string; tokens: number }>; diagnostics: Diagnostic[] }
