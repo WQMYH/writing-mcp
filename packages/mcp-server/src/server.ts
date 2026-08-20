@@ -5,7 +5,8 @@ import { z } from "zod";
 import { WritingService } from "@writing-mcp/core";
 import { GenericAdapter } from "@writing-mcp/adapter-generic";
 import { InkosAdapter } from "@writing-mcp/adapter-inkos";
-import { DiagnosticRecorder, type PostCallDiagnostic, type SafeErrorDetail } from "./diagnostics.js";
+import { DiagnosticRecorder, type SafeErrorDetail } from "./diagnostics.js";
+import { assembleResult, boundDiagnostic, boundError, fitBusinessData } from "./response-limits.js";
 
 const sourceDiagnosticSchema = z.object({ code: z.string(), message: z.string(), path: z.string().optional() });
 const evidenceLocatorSchema = z.object({ relativePath: z.string(), startLine: z.number(), endLine: z.number() });
@@ -42,18 +43,9 @@ export function createService(): WritingService {
   return new WritingService([new InkosAdapter(), new GenericAdapter()], roots);
 }
 
-function success(value: Record<string, unknown>, diagnostic: PostCallDiagnostic) {
-  const result = { ok: true as const, data: value, diagnostic };
-  return { content: [{ type: "text" as const, text: "```json\n" + JSON.stringify({ data: value, diagnostic }, null, 2) + "\n```" }], structuredContent: { result } };
-}
-
 function errorDetail(error: unknown, traceId: string): SafeErrorDetail & { traceId: string } {
   const code = typeof error === "object" && error && "code" in error ? String(error.code) : "INTERNAL_ERROR";
   return { code, message: error instanceof Error ? error.message : "Unexpected error", traceId, recovery: recoveryFor(code) };
-}
-
-function failure(detail: SafeErrorDetail & { traceId: string }, diagnostic: PostCallDiagnostic) {
-  return { content: [{ type: "text" as const, text: `Error ${detail.code} (${detail.traceId}): ${detail.message}` }], structuredContent: { result: { ok: false as const, error: detail, diagnostic } }, isError: true };
 }
 
 function recoveryFor(code: string): string {
@@ -62,6 +54,7 @@ function recoveryFor(code: string): string {
   if (code.startsWith("DIAGNOSTIC_")) return "Start a new development capture or remove old derived diagnostic reports, then retry.";
   if (code === "PATH_NOT_ALLOWED" || code === "AUTHORIZED_ROOTS_REQUIRED") return "Check WRITING_MCP_ROOTS and use a source inside an authorized root.";
   if (code === "OUTPUT_SCHEMA_MISMATCH") return "This is a server-side contract defect, not a caller error; report the traceId and retry after the server is updated.";
+  if (code === "RESPONSE_TOO_LARGE") return "Narrow the query, lower the result limit, or request a smaller diagnostic window, then retry.";
   return "Check the tool arguments and related work reference, then retry.";
 }
 
@@ -82,12 +75,14 @@ async function handleDiagnosed(recorder: DiagnosticRecorder, tool: string, input
     // otherwise the SDK's post-handler output validation could reject a result
     // that diagnostics already recorded as success.
     if (!dataSchema.safeParse(value).success) throw Object.assign(new Error(`${tool} produced a result that does not match its declared output data schema`), { code: "OUTPUT_SCHEMA_MISMATCH" });
-    const diagnostic = await recorder.record({ traceId, tool, input, output: value, elapsedMs: performance.now() - started, ...(correlationRef ? { diagnosticRunRef: correlationRef } : {}) });
-    return success(value, diagnostic);
+    const reduced = fitBusinessData(tool, value);
+    if (!dataSchema.safeParse(reduced).success) throw Object.assign(new Error(`${tool} response reduction produced a result that does not match its declared output data schema`), { code: "OUTPUT_SCHEMA_MISMATCH" });
+    const diagnostic = boundDiagnostic(await recorder.record({ traceId, tool, input, output: reduced, elapsedMs: performance.now() - started, ...(correlationRef ? { diagnosticRunRef: correlationRef } : {}) }));
+    return assembleResult({ ok: true, data: reduced, diagnostic });
   } catch (error) {
-    const detail = errorDetail(error, traceId);
-    const diagnostic = await recorder.record({ traceId, tool, input, error: detail, elapsedMs: performance.now() - started, ...(correlationRef ? { diagnosticRunRef: correlationRef } : {}) });
-    return failure(detail, diagnostic);
+    const detail = boundError(tool, errorDetail(error, traceId));
+    const diagnostic = boundDiagnostic(await recorder.record({ traceId, tool, input, error: detail, elapsedMs: performance.now() - started, ...(correlationRef ? { diagnosticRunRef: correlationRef } : {}) }));
+    return assembleResult({ ok: false, error: detail, diagnostic });
   }
 }
 
