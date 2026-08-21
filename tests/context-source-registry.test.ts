@@ -77,6 +77,22 @@ describe("AUD-013 source provider registry", () => {
 });
 
 describe("AUD-013 context assembly uses semantic layers instead of positions", () => {
+  test("bounds the internal search pool before PRF context assembly", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-context-pool-"));
+    const workRef = stableId("work", "context-pool", root);
+    const documents: SourceDocument[] = Array.from({ length: 40 }, (_, index) => {
+      const name = `entry-${String(index).padStart(2, "0")}.md`;
+      const content = `# Entry ${index}\nshared query beacon detail ${index}`;
+      return { documentRef: stableId("doc", workRef, name), relativePath: name, absolutePath: name, title: `Entry ${index}`, kind: "document", content, sourceMtimeMs: 1, sourceSize: content.length };
+    });
+    const store = new WritingStore({ workRef, title: "ContextPool", rootPath: root, adapter: "generic", capabilities: [], documents });
+    try {
+      await store.index("rebuild");
+      const packet = await store.context("shared query", 1_000_000);
+      expect(packet.blocks).toHaveLength(30);
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
   test("assigns layers by source kind and promotes required refs to L0", async () => {
     const root = await mkdtemp(join(tmpdir(), "writing-mcp-layer-")), work = makeWork(root), store = new WritingStore(work);
     try {

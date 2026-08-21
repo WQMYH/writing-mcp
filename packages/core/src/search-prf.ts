@@ -3,7 +3,7 @@ import type { PrfConfiguration } from "./types.js";
 const TOP_K = new Set([5, 8, 12]);
 const TERM_COUNTS = new Set([4, 6, 8]);
 const WEIGHTS = new Set([0.15, 0.25, 0.35]);
-export const PRODUCTION_PRF_CONFIGURATION: PrfConfiguration = { topK: 8, termCount: 4, weight: 0.35 };
+export const PRODUCTION_PRF_CONFIGURATION: PrfConfiguration = { topK: 5, termCount: 6, weight: 0.35 };
 const STOPWORDS = new Set([
   "and", "are", "for", "from", "into", "is", "that", "the", "this", "was", "were", "with",
   "一个", "一种", "以及", "但是", "因为", "所以", "他们", "她们", "它们", "没有", "可以",
@@ -65,7 +65,9 @@ export function derivePrfTerms(
     }
   }
   return [...candidates]
-    .filter(([, value]) => value.occurrences >= 2)
+    .filter(([term, value]) => [...term].length >= 3 && value.occurrences >= 2)
+    .sort((left, right) => right[1].cooccurrence - left[1].cooccurrence || (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0))
+    .slice(0, 32)
     .map(([term, value]) => {
       const frequency = Math.max(0, documentFrequency(term));
       const idf = Math.log((Math.max(0, totalSpans) + 1) / (frequency + 1)) + 1;

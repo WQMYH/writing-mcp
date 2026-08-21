@@ -101,10 +101,10 @@ describe("evaluator-only search experiments", () => {
       expect(narrow.diagnostics.some((item) => item.code === "PRF_EXPANDED")).toBe(true);
       const production = await fixture.service.explore(fixture.workRef, "search", "lost crown", 10, 0);
       const accepted = await fixture.service.evaluateSearch(fixture.workRef, "lost crown", 10, {
-        prf: { topK: 8, termCount: 4, weight: 0.35 },
+        prf: { topK: 5, termCount: 6, weight: 0.35 },
       });
       const acceptedAgain = await fixture.service.evaluateSearch(fixture.workRef, "lost crown", 10, {
-        prf: { topK: 8, termCount: 4, weight: 0.35 },
+        prf: { topK: 5, termCount: 6, weight: 0.35 },
       });
       expect(production.results).toEqual(accepted.results);
       expect(production.results).not.toEqual(baseline.results);
