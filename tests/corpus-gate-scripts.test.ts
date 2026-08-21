@@ -16,7 +16,7 @@ describe("corpus performance gate scripts", () => {
       const result = run(["scripts/run-corpus-benchmark.mjs", corpus, tasks, reports], { ...process.env, WRITING_MCP_CORPUS_MAX_INDEX_PER_MILLION_MS: "1000000000" });
       expect(result.status, result.stderr).toBe(0);
       const report = JSON.parse(await readFile(join(reports, "corpus-benchmark-report.json"), "utf8"));
-      expect(report.measurement).toEqual({ warmupRunsPerTask: 1, measuredRunsPerTask: 1, percentile: 0.95 });
+      expect(report.measurement).toEqual({ warmupRunsPerTask: 1, measuredRunsPerTask: 3, percentile: 0.95 });
       const materialPath = join(reports, "token-evaluation-materials.json");
       const first = JSON.parse(await readFile(materialPath, "utf8"));
       expect(first.schemaVersion).toBe("token-evaluation-materials-v1");

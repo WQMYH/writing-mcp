@@ -32,7 +32,7 @@
 - ablation 改为单次建索引、多变体评测；证明环境变量不影响生产路径且注入能产生变体差异。
 - 修复 `gold-hit.mjs` lint；新增 `verify`、`gold:gate`、`gold:check`、`gold:update`、`private:measure`、`verify:private:pre-prf`、`verify:private`。
 - 将黄金计算与快照写入拆开；任何 verify 命令运行后 Git diff 必须不变。
-- corpus 门禁机器检查索引 ≤60 秒/百万字、Explore 暖查询 P95 ≤1000ms、Context 暖查询 P95 ≤500ms；每个冻结任务先无计时预热一次，再计时一次，报告必须公开测量轮廓。另输出本地、未跟踪的外部 Token 复核材料，未复核时标为 `not_evaluated`。
+- corpus 门禁机器检查索引 ≤60 秒/百万字、Explore 暖查询 P95 ≤1000ms、Context 暖查询 P95 ≤500ms；每个冻结任务先无计时预热一次，再测量三次，以全部测量样本计算 nearest-rank P95，报告必须公开测量轮廓。另输出本地、未跟踪的外部 Token 复核材料，未复核时标为 `not_evaluated`。
 - 立即更新实施状态、v2 计划、M0 契约、测试清单和运行 skill，消除 lint、私有语料位置、M4 完成度等漂移。
 
 ## Task 3：图与上下文契约硬化
