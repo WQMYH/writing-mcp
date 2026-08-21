@@ -98,14 +98,56 @@ export interface StdioRuntime {
   readonly shutdown: () => Promise<void>;
 }
 
+export interface TerminationCoordinatorOptions {
+  readonly fallbackMs?: number;
+  readonly setTimer?: (callback: () => void, milliseconds: number) => ReturnType<typeof setTimeout>;
+  readonly clearTimer?: (timer: ReturnType<typeof setTimeout>) => void;
+  readonly forceExit?: (code: number) => void;
+  readonly setExitCode?: (code: number) => void;
+  readonly onError?: (error: unknown) => void;
+}
+
+export interface TerminationCoordinator {
+  readonly terminate: () => Promise<void>;
+  readonly completion: Promise<void>;
+}
+
+export function createTerminationCoordinator(shutdown: () => Promise<void>, options?: TerminationCoordinatorOptions): TerminationCoordinator {
+  const setTimer = options?.setTimer ?? ((callback, milliseconds) => setTimeout(callback, milliseconds));
+  const clearTimer = options?.clearTimer ?? (timer => clearTimeout(timer));
+  const forceExit = options?.forceExit ?? (code => process.exit(code));
+  const setExitCode = options?.setExitCode ?? (code => { process.exitCode = code; });
+  const onError = options?.onError ?? (error => console.error(`[writing-mcp][lifecycle] shutdown failed: ${error instanceof Error ? error.message : String(error)}`));
+  let resolveCompletion!: () => void;
+  const completion = new Promise<void>(resolve => { resolveCompletion = resolve; });
+  let terminationPromise: Promise<void> | undefined;
+  const terminate = (): Promise<void> => {
+    if (terminationPromise) return terminationPromise;
+    const fallback = setTimer(() => forceExit(1), options?.fallbackMs ?? 5_000);
+    fallback.unref?.();
+    terminationPromise = Promise.resolve()
+      .then(shutdown)
+      .catch(error => {
+        try { onError(error); } catch { /* stderr/reporting failure must not strand termination */ }
+        setExitCode(1);
+      })
+      .finally(() => { clearTimer(fallback); resolveCompletion(); });
+    return terminationPromise;
+  };
+  return { terminate, completion };
+}
+
 export function createStdioRuntime(service: WritingService, options?: ServerOptions): StdioRuntime {
   const server = createServer(service, undefined, options);
-  let closing = false;
-  const shutdown = async (): Promise<void> => {
-    if (closing) return;
-    closing = true;
-    try { await server.close(); } catch (error) { console.error(`[writing-mcp][lifecycle] server close failed: ${error instanceof Error ? error.message : String(error)}`); }
-    try { service.close(); } catch (error) { console.error(`[writing-mcp][lifecycle] service close failed: ${error instanceof Error ? error.message : String(error)}`); }
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = (): Promise<void> => {
+    shutdownPromise ??= (async () => {
+      const failures: unknown[] = [];
+      try { await server.close(); } catch (error) { failures.push(error); }
+      try { await service.close(); } catch (error) { failures.push(error); }
+      if (failures.length) throw new AggregateError(failures, "Writing MCP shutdown failed");
+    })();
+    return shutdownPromise;
   };
   return { server, shutdown };
 }
@@ -147,16 +189,21 @@ export async function runStdio(): Promise<void> {
   // SDK input rejections and handler-level failures stay in the MCP envelope.
   // stdout stays pure JSON-RPC; shutdown closes server and service (AUD-032).
   const runtime = createStdioRuntime(service, { onerror: error => console.error(`[writing-mcp][protocol] ${error instanceof Error ? error.stack ?? error.message : String(error)}`) });
-  const terminate = (): void => {
-    void runtime.shutdown().finally(() => process.exit(0));
-    // Grace guard: synchronous SQLite work cannot be cancelled, but the process
-    // must still exit deterministically once shutdown is requested (AUD-032).
-    setTimeout(() => process.exit(1), 5_000).unref();
-  };
+  const termination = createTerminationCoordinator(runtime.shutdown);
+  const terminate = (): void => { void termination.terminate(); };
   process.once("SIGINT", terminate);
   process.once("SIGTERM", terminate);
-  // stdin EOF (client disconnect) closes the transport and fires onclose.
+  // stdin EOF (client disconnect) closes the transport and enters the same
+  // memoized promise as SIGINT/SIGTERM; repeated triggers cannot double-close.
   runtime.server.server.onclose = terminate;
-  process.once("exit", () => service.close());
-  await runtime.server.connect(new StdioServerTransport());
+  try {
+    await runtime.server.connect(new StdioServerTransport());
+    await termination.completion;
+  } catch (error) {
+    await termination.terminate();
+    throw error;
+  } finally {
+    process.off("SIGINT", terminate);
+    process.off("SIGTERM", terminate);
+  }
 }
