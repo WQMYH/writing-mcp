@@ -1,27 +1,26 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "instrument": "gold-span hit (gold-hit.mjs), limit=50 true truncation, volume-aware head/tail split",
   "criterion": "gold span = full-content literal evidenceQuote containment; hit = span ref in top-k",
   "gates": {
     "recall50Min": 0.9,
     "requiredRecall50": 1
   },
-  "gitCommit": "e1b3c84d1580d88df64580d90d5e9c9aff42a0b1",
-  "generatedAt": "2026-08-19T17:14:16.376Z",
+  "gitCommit": "b5d30e0a96c869ba17a79cf5269246abfc1f3751",
   "train": {
     "count": 18,
     "recallAt5": 0.7778,
     "recallAt10": 0.8333,
     "recallAt50": 1,
-    "mrr": 0.58,
+    "mrr": 0.5821,
     "requiredRecallAt50": 1
   },
   "holdout": {
     "count": 24,
     "recallAt5": 0.8333,
-    "recallAt10": 0.9167,
+    "recallAt10": 0.9583,
     "recallAt50": 1,
-    "mrr": 0.6901,
+    "mrr": 0.6941,
     "requiredRecallAt50": 1
   },
   "territories": [

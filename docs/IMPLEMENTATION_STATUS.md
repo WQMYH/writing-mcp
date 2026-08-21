@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-08-21（Task 5 运行时硬化）
-> 当前状态：A1=SourceSnapshot/fingerprint 一致性与恢复；A2=评测实验隔离与只读门禁；Task 3=`mentions`/`ContextPacket.accountingScope`、Task 4=server response-size，以及 Task 5=EPUB UTF-8 byte accounting/诊断留存/统一 lifecycle 已完成。当前验证为 40 个测试文件、184 项测试、lint 0 警告、公共基准 30/30、coverage lines 94.72%；私有 top-20 历史基线为 40/42、required 15/16，gold @50 候选门禁与 PRF 验收严格区分。PRF 与真实长语料重测仍未完成，M4 不得宣称完成。
+> 检查点时间：2026-08-21（Task 6 PRF 与私有门禁闭环）
+> 当前状态：可靠性 Task 1～6 已完成；PRF 生产配置为 `topK=12/termCount=8/weight=0.35`。干净 HEAD `b5d30e0` 上 `pnpm verify` 与 `pnpm verify:private` 均通过：41 个测试文件、194 项测试、lint 0、公共基准 30/30、coverage lines 94.98%；私有 top-20 为 41/42、required 16/16、证据覆盖 100%。4,789,903 字符《语料B》门禁为索引 11.87s/百万字符、Explore P95 438.28ms、Context P95 407.80ms。外部 tokenizer 仍为 `not_evaluated`，M4 不得据启发式估算宣称精确 Token 收益。
 
 ## 恢复入口
 
@@ -72,8 +72,8 @@ pnpm start
 | M0.1 | ✅ 完成 | 全工具诊断 wrapper、显式 capture、脱敏与报告哈希、开发捕获有界命中 ref（AUD-023 主体）、general JSONL 串行轮转与并发/写失败护栏（AUD-024 主体）、协议层错误边界（AUD-025 主体） | — |
 | M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB、跨 spine 分段 locator、通用作品边界与 capabilities 实际化（AUD-026 主体）、章节编号语法明确化（AUD-027 主体）、EPUB 资源上限（AUD-028 主体）、snapshot 一致性与文本内存上限（AUD-029 主体）、span 硬上限与 locator 精确规则（AUD-030 主体）、进程生命周期与优雅关闭（AUD-032 主体）、工程硬化门禁与适配器模块抽离（AUD-035 第一/二阶段主体） | AUD-035 格式化阶段（用户决策延后至 M3/M4 语义冻结后的重构窗口再评估） |
 | M2 | ✅ 基础门禁完成 | SQLite/FTS5、schema v4、语义 snapshot、truthful status、revision/事务、原子替换、作品级串行/写锁、恢复、work/document 作用域身份、规范定义晋升、多 mention/关系证据、源顺序图 | 后续只随 M3/M4 查询语义做受控增强 |
-| M3 | 进行中 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限、0～3 跳 BFS、timeline、词汇表、source-trust 与 A1 freshness；corpus 阈值门禁代码已落地 | 完整重排与真实长语料重测；本轮无新的长语料性能主张 |
-| M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、AUD-005/AUD-012/AUD-013 的约束与来源装配；`accountingScope: evidence_excerpts_only` 已在 core/MCP schema/工具描述冻结；A1 已完成 adapter-owned `SourceSnapshot` 与 loaded/indexed 双指纹；Task 4 已完成 server 最终响应字节门禁；Task 5 已完成 EPUB UTF-8 bytes、诊断留存与统一 lifecycle；stats/diagnose 提供 contextSources | PRF 与完整重排、真实语料重测待后续 |
+| M3 | 主体完成 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限、0～3 跳 BFS、timeline、词汇表、source-trust、A1 freshness 与确定性两遍 PRF；真实长语料性能门禁通过 | 后续仅做受控检索质量增强与重构，不再以未验证的“完整重排”作为完成声明 |
+| M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、AUD-005/AUD-012/AUD-013 的约束与来源装配；`accountingScope: evidence_excerpts_only` 已冻结；Context 内部池 12 且真实长语料 P95 通过；A1、server 响应字节、EPUB/诊断/lifecycle 均完成 | 外部 tokenizer 复核尚未完成；token-evaluation-materials 只提供复核材料，不给出精确 Token 结论 |
 | M5 | 待开始（已有纵向切片） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归 | 真实 InkOS、更多 EPUB 2/3 变体、客户端安装与故障文档 |
 
 Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、007～010 的当前门禁；Step 3 已完成中文问句、别名/歧义、稳定排序、输入上限、FTS 降级与检索诊断（提交 `4030085`），并完成 AUD-018 时间上限（提交 `c376df7`）；AUD-021 源指纹复用修复（`service.index()` 增加指纹记录，修复 `ensureFresh` 在 `previous === undefined` 时跳过增量更新的逻辑缺陷，55/55 测试全部通过）。AUD-005（REVIEW_2026-08-16 P0，提前于 Step 3 剩余项处理）：`requiredRefs` 脱离 search top-50 候选池按 entity/span/document 三级直接解析，池外必选 ref 进 blocks 并计入预算最小值，不存在 ref 以 `not_found` 进 omitted，预算不足触发 `budget_unsatisfiable`；`ContextPacket` 形状与状态词汇未变（M0_CONTRACT 新增 M4 requiredRefs amendment）。M0.1、M1 其余问题和 M3～M5 尚未完成，现有成果不能据此宣称 Writing MCP v1 已完成。
@@ -82,7 +82,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
-- 40 个测试文件 / 184 项测试，覆盖：通用链路、MCP 协议与诊断、诊断 retention/协作锁、server/core 响应字节上限与 recorder ordering、统一进程关闭链、检索正确性、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
+- 41 个测试文件 / 194 项测试，覆盖：通用链路、MCP 协议与诊断、诊断 retention/协作锁、server/core 响应字节上限与 recorder ordering、统一进程关闭链、检索正确性、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、两遍 PRF/双字候选/批量频率上限、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
 - 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制
@@ -94,7 +94,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - `workRef` 只在当前 server 进程中注册；重启后客户端需重新调用 `writing_resolve`。
 - schema v4 writer lock 是 Writing MCP 进程间的合作式协议，不能强制无关程序释放 SQLite 句柄；此类占用稳定返回 `INDEX_BUSY`。
 - A1 SourceSnapshot/fingerprint 已完成并回归覆盖：未变化时复用 store，来源变化即通过 adapter snapshot 触发一致性重读/索引；保留同 mtime/size 原地替换的明确边界，不再标记为待审阅或待落地。
-- 私有 top-20 当前为 40/42，required 15/16；该 PRF 前基线与 gold @50 门禁分开报告，不能弱化为 optional-only miss。
+- 私有 top-20 当前为 41/42，required 16/16；唯一未命中为 optional `event-004`（probe-100 rank 22）。该产品门禁与 gold @50 候选门禁继续分开报告。
 - 中文问句分析当前是有界规则与 n-gram，不是通用分词器；问题短语表会继续通过真实调用链回归校准。
 - `stats` 的 content 受 900 字符 excerpt 截断（既有模式，`item()` 切片）；`contextSources` 增大了 stats JSON，现实 kind 数下安全，但 stats 内容截断属潜在坑。
 - `entityRefs`/`documentRefs` 的 pinned 块不参与 evidenceHash 去重（显式请求豁免，与 requiredRefs 一致）；已是搜索命中的 pinned ref 保持搜索命中排名，不再获得 pinned 提升。
@@ -103,9 +103,9 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 - 批次 C（AUD-026～032 + AUD-035 第一/二阶段）已全部完成并审阅归档。
 - AUD-035 第三阶段（Biome 格式化）已由用户决策延后：store.ts 即将被 M3/M4 修改，现在做巨型函数展开与全量格式化必然返工；正确时机是完整重排落地后（检索侧冻结）的重构窗口，届时再评估格式化是否必要。
-- Corpus 阈值门禁代码已落地（索引≤60s/百万正文字符、Explore P95≤1000ms、Context P95≤500ms）；本轮只用受控 fixture 验证脚本行为，未重新运行真实长语料，历史长语料数字不得作为当前验收。
+- Corpus 阈值门禁已在 4,789,903 字符《语料B》上重跑并通过：索引 11.87s/百万字符、Explore P95 438.28ms、Context P95 407.80ms；报告与 Token 材料仅留本机。
 - **重构窗口按触碰面分流（2026-08-18）**：装配侧窗口已开（M4 冻结后）——context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已落地，sources/budget/layer 可与完整重排并行）；检索侧窗口待**完整重排落地后**——（1）store.ts 图构建/检索 SQL 抽离；（2）移除 oxlintrc.json 对 store.ts 的 ignorePatterns 忽略项；（3）评估 Biome 格式化（若执行：quoteStyle single / semicolons asNeeded / lineWidth 120）。
-- M4 剩余：Task 5 已关闭 EPUB UTF-8 byte accounting、诊断留存和生命周期；当前剩余为 PRF/完整重排、真实长语料重测，以及仍延后的 tokenizer profile 决策。排序改动仍须以 gold 门禁与私有 PRF 验收重新裁决。
+- M4 剩余：PRF 与真实长语料重测已关闭；仍待外部 tokenizer 对本地材料复核。`mixed-cjk-v1` 继续只是 excerpt-only 启发式估算，不升级为精确 Token 结论。
 - M4 审议：已完成的来源/约束装配、excerpt-only accountingScope、server response-size 与 Task 5 运行时硬化保留；A1 使用 adapter-owned `SourceSnapshot`、一致读取重试、及 `loadedFingerprint`/`indexedFingerprint` 双指纹状态语义。真实长语料数字未在本轮重测，不把历史数字当作当前验收。
 
 > 更早阶段（Step 3 / AUD-005～035）的逐条落地叙事已于 2026-08-17 移除：事实由「可追溯提交清单」与 commit message 承载，审阅结论由下节表格承载，不在此重复。
@@ -179,6 +179,12 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
+- `b5d30e0` — fix(gates): 外部受控黄金快照可在 dirty 开发树中测试，但默认仓库快照仍要求 clean HEAD；测量期间 HEAD/工作树必须保持完全不变，使提交前 `pnpm verify` 可执行。
+- `9dbc0c2` — feat(search): Task 6 恢复双字 PRF，预 IDF 池 128、三字 FTS vocabulary 批量频率、其他长度保守频率；冻结 `12/8/0.35`，Context 内部池 12；私有 41/42、required 16/16，4.79M 字符性能门禁通过。
+- `c7f563d` — test(gates): corpus 默认报告路径测试不再继承私有报告目录环境变量，保证门禁隔离可复现。
+- `2bb90b2` — perf(search): 初始 PRF 大语料有界化（候选/缓存/Context 池）；其 32 候选与三字限定后被 `9dbc0c2` 的质量/性能闭环替代。
+- `40ad7e2` — feat(search): evaluator-only 两遍 PRF 初版与生产路径接线；后续由大语料门禁加固。
+- `5511e0a` — docs(contract): 冻结确定性 PRF 的 Agent/MCP 边界、参数网格、数据泄漏边界和验收门禁。
 - `f5c3e74` — fix(lifecycle): Task 5C 将 runtime shutdown 与 SIGINT/SIGTERM/stdin EOF 收敛到各自唯一的 memoized promise；关闭顺序固定 server→service，失败在两次尝试后汇总，正常关闭清除兜底并自然退出，5 秒悬挂才强退；184/184 + 30/30 + lint 0 + coverage lines 94.72%。
 - `7e756eb` — feat(diagnostics): Task 5B 增加按目录串行的摊销扫描、稳定清理顺序、可恢复合作锁、active/当前 artifact 保护与完整写入计数；100 MiB 明确为最终收敛目标；179/179 + 30/30 + lint 0 + coverage lines 94.95%。
 - `64651bf` — fix(epub): Task 5A 将 OPF、单个 spine 与累计 spine 限制统一为解码 UTF-8 bytes，并以中文多字节精确边界回归锁定。

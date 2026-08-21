@@ -25,11 +25,16 @@
 | `resolve-matrix.test.ts` | 作品识别矩阵：空目录、不支持扩展名、多书歧义、同目录直接文件隔离、InkOS 新旧结构 |
 | `response-limits.test.ts` | Task 4 server 最终响应门禁：中文 UTF-8 byte accounting、8,192-byte 诊断预留、explore/context/resolve/diagnose/index 确定性 reducer、完整 L3→L2→L1→optional L0 次序、budget-unsatisfiable required 事实保护、真实 WritingStore→server omission 守恒、recorder 只见最终 data/error、动态 Markdown 防 CR/LF/控制字符伪造与 16,384-byte 上限、输出 schema 保真 |
 | `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限、core UTF-8 响应预裁剪（ambiguous tail 先于 results、omittedEstimate 守恒、evaluator 同口径） |
+| `search-prf.test.ts` | Task 6 PRF 纯逻辑：冻结生产配置 `12/8/0.35`、原词/别名/停用词/单字/单 span 过滤、双字/三字/四字候选、bytewise tie-break、128 预频率池与单批调用、非法网格拒绝 |
+| `evaluator-isolation.test.ts` | evaluator-only 搜索隔离：环境变量不影响生产查询、调用级 ablation/PRF 不重建索引且不污染普通路径、生产配置与显式评测一致、非法网格拒绝、重复双字中文词可扩展真实候选 |
+| `gold-script-isolation.test.ts` | 黄金脚本写隔离：只有 `gold:update` 可写显式仓库外受控快照，gate/check/legacy gate 全部只读；默认仓库快照仍受 clean-HEAD 保护 |
+| `corpus-gate-scripts.test.ts` | corpus 门禁脚本：显式/默认报告目录、完整 token-evaluation-materials、外部 tokenizer `not_evaluated`、阈值失败与输出目录隔离 |
+| `private-script-mode.test.ts` | 私有验收 report-only 与 enforce 模式边界，已知 required miss 只能在前置测量阶段记录，PRF 完成后 enforce 为硬门禁 |
 | `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见、超大 query 拒绝 |
 | `source-directory-observable.test.ts` | AUD-012 来源目录可观测：explore stats 的 contextSources（byLayer L1/L2/L3 + byKind）复用 AUD-013 注册表 |
 | `status-fast-path.test.ts` | status mtime/size 快速路径：指纹未变时重复 status 零 adapter.load（计数适配器）且结果与全路径语义一致、源编辑击穿快速路径报 stale、status 返回 contextSources |
 | `context-required-refs.test.ts` | AUD-005 requiredRefs 直接解析：池外 span/entity 强制命中、不存在 ref 进 omitted（not_found）、直解 ref 触发 budget_unsatisfiable、池内去重与优先；所有 ContextPacket 路径声明 excerpt-only accountingScope，usedTokens 等于返回块 tokens 之和 |
-| `context-source-registry.test.ts` | AUD-013 来源提供器注册表：ENTITY_KINDS 全覆盖的语义分层映射、小写文档类型归一（character/state/foreshadow→L1，chapter/outline→L2，document/未知→L3）、required 晋升 L0、evidenceHash 折叠去重（required 前置保护、duplicate_evidence 进 omitted）、预算压力下自 L3 向低层裁剪、真实路径 L1 归属与不得整体落 L3 护栏 |
+| `context-source-registry.test.ts` | AUD-013 来源提供器注册表：ENTITY_KINDS 全覆盖的语义分层映射、小写文档类型归一、required 晋升 L0、evidenceHash 去重、L3→低层预算裁剪、真实路径 L1 归属；Task 6 后 Context 内部搜索池固定为 12，requiredRefs 仍走独立直解 |
 | `bfs-batching.test.ts` | AUD-020 批量化护栏：宽图每节点 fan-out 确定性截断与重复运行一致、宽图 BFS 在确定性耗时预算内完成 |
 | `timeline.test.ts` | AUD-015 timeline 独立投影：章节+precedes 时序按章节位置排序、名称过滤、未知章节锚点稳定殿后、无时态数据 NO_RESULTS |
 | `graph-vocabulary.test.ts` | AUD-022 词汇表冻结：索引实体 kind 含 OutlineNode 且不超出 ENTITY_KINDS、边 kind（含原生 `mentions`）不超出 EDGE_KINDS、唯一持久化别名 `[[alias]]` 生成 Document→Entity 边并从双端 BFS 保留精确 alias-capture 证据，多 owner alias 保持 `AMBIGUOUS_ALIAS` 未解析、InkOS/generic 能力声明不超出 WORK_CAPABILITIES |
@@ -57,6 +62,7 @@
 | `scripts/attribute-misses.mjs` | miss 三层归因（数据层→机制层）：L1 查询词条可达性 / L2 候选可达性（LIKE 匹配数 vs candidateLimit）/ L3 公式因子分解；镜像 store 私有逻辑，需与 store.ts 手工同步 |
 | `scripts/load-corpus.mjs` | 语料加载：扫描目录、统计文件数量/大小/字符数、检测编码格式 |
 | `scripts/run-corpus-benchmark.mjs` | 显式 corpus/tasks/report-dir 的私有语料门禁：每百万字符索引、Explore/Context P95，以及本地 token-evaluation-materials.json（仅 evidence excerpts，外部 tokenizer 未评估） |
+| `scripts/prf-calibration.mjs` | 冻结 27 组 PRF 网格；train 先执行 recall@5/@10/MRR/@50/required@50 不回退资格筛选，再按 recall@5→MRR→低复杂度选择；holdout 只验证，另执行私有 top-20/required 门禁 |
 
 ## 覆盖清单（按能力域）
 

@@ -57,9 +57,9 @@
 ## Task 6：PRF 候选层改进
 
 - 先提交 M0 amendment，冻结 PRF 为确定性 search 候选扩展，不改变 Agent/MCP 边界。
-- 单轮两遍：第一遍基线；从 top-k `{5,8,12}` heading/excerpt 提词；过滤原词、别名、停用词、单字，要求至少两个 top span 共现；按 rank-weighted co-occurrence × IDF 排序，词数 `{4,6,8}`；第二遍权重 `{0.15,0.25,0.35}`。
-- train 按 recall@5、MRR、低复杂度选唯一配置；holdout 只验证。运行时严禁读取 expectedTerms、expectedChapters、evidenceQuotes、gold refs。
-- 成功门禁：公开 30/30；train/holdout recall@50 与 required@50 不退；私有 top-20 recall ≥90%、required=1；recall@5/MRR 不退；性能与确定性通过。
+- 单轮两遍：第一遍基线；从 top-k `{5,8,12}` heading/excerpt 提词；过滤原词、别名、停用词、单字，要求至少两个 top span 共现；按 rank-weighted co-occurrence 预排并截到 128，再以三字精确 FTS vocabulary DF/其他长度保守 DF 加权，词数 `{4,6,8}`；第二遍权重 `{0.15,0.25,0.35}`。
+- train 先淘汰 recall@5、recall@10、MRR、recall@50、required@50 任一回退的配置，再按 recall@5、MRR、低复杂度选唯一配置；holdout 只验证。运行时严禁读取 expectedTerms、expectedChapters、evidenceQuotes、gold refs。
+- 成功门禁：公开 30/30；train/holdout recall@5、recall@10、MRR、recall@50 与 required@50 不退；私有 top-20 recall ≥90%、required=1；性能与确定性通过。当前接受配置 `12/8/0.35`，Context 内部池为 12。
 - 无配置满足时不降低门禁、不发布 PRF。代码先提交，再显式 `gold:update` 并用第二个提交归档基线和被测代码哈希。
 
 ## Task 7：最终复审与交付
