@@ -1,13 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { DiagnosticRetention, type DiagnosticRetentionOptions, type RetentionStats } from "./diagnostic-retention.js";
 
 const REPORT_SCHEMA_VERSION = 1;
 const MAX_GENERAL_EVENTS = 1_000;
 const MAX_GENERAL_BYTES = 5 * 1024 * 1024;
 const MAX_CAPTURE_CALLS = 500;
 const MAX_CAPTURE_BYTES = 10 * 1024 * 1024;
-const MAX_DIAGNOSTIC_BYTES = 100 * 1024 * 1024;
 const MAX_CAPTURE_REF_ENTRIES = 100;
 
 export type DiagnosticPurpose = "usage" | "development";
@@ -128,6 +128,10 @@ export interface InspectResult {
 export interface GeneralEventLimits {
   readonly generalEvents?: number;
   readonly generalBytes?: number;
+  /** @internal Evaluator seam; production continues to use the fixed capture limits. */
+  readonly captureCalls?: number;
+  /** @internal Evaluator seam; production continues to use the fixed capture limits. */
+  readonly captureBytes?: number;
 }
 
 type DirectoryResolver = (workRef?: string) => string | undefined;
@@ -139,10 +143,16 @@ export class DiagnosticRecorder {
   private readonly queues = new Map<string, Promise<unknown>>();
   private readonly generalEventsLimit: number;
   private readonly generalBytesLimit: number;
+  private readonly captureCallsLimit: number;
+  private readonly captureBytesLimit: number;
+  private readonly retention: DiagnosticRetention;
 
-  constructor(private readonly resolveDirectory: DirectoryResolver, limits?: GeneralEventLimits) {
+  constructor(private readonly resolveDirectory: DirectoryResolver, limits?: GeneralEventLimits, retentionOptions?: DiagnosticRetentionOptions) {
     this.generalEventsLimit = limits?.generalEvents ?? MAX_GENERAL_EVENTS;
     this.generalBytesLimit = limits?.generalBytes ?? MAX_GENERAL_BYTES;
+    this.captureCallsLimit = limits?.captureCalls ?? MAX_CAPTURE_CALLS;
+    this.captureBytesLimit = limits?.captureBytes ?? MAX_CAPTURE_BYTES;
+    this.retention = new DiagnosticRetention(retentionOptions);
   }
 
   // Diagnostic files are disposable derived artifacts. Keep detailed data on
@@ -162,9 +172,7 @@ export class DiagnosticRecorder {
   async startCapture(workRef: string, label?: string, contentPolicy: DiagnosticContentPolicy = "metadata"): Promise<CaptureStartResult> {
     const directory = this.requireDirectory(workRef);
     await mkdir(join(directory, "runs"), { recursive: true });
-    if (await directorySize(directory) >= MAX_DIAGNOSTIC_BYTES) {
-      throw codedError("DIAGNOSTIC_STORAGE_LIMIT", "Diagnostic storage reached the 100 MiB limit; remove old derived reports before starting another capture");
-    }
+    await this.retention.maintain(directory);
     const diagnosticRunRef = `diag-${randomUUID().replaceAll("-", "").slice(0, 24)}`;
     const meta: CaptureMeta = {
       schemaVersion: REPORT_SCHEMA_VERSION,
@@ -178,9 +186,11 @@ export class DiagnosticRecorder {
       nextSequence: 1,
       truncated: false,
     };
-    await atomicWrite(this.metaPath(directory, diagnosticRunRef), JSON.stringify(meta, null, 2));
+    const metaJson = JSON.stringify(meta, null, 2);
+    await atomicWrite(this.metaPath(directory, diagnosticRunRef), metaJson);
     await writeFile(this.eventsPath(directory, diagnosticRunRef), "", { flag: "wx" });
-    return { action: "start_capture", workRef, purpose: "development", diagnosticRunRef, contentPolicy, limits: { calls: MAX_CAPTURE_CALLS, bytes: MAX_CAPTURE_BYTES } };
+    await this.retention.maintain(directory, { writes: 2, addedBytes: Buffer.byteLength(metaJson, "utf8") });
+    return { action: "start_capture", workRef, purpose: "development", diagnosticRunRef, contentPolicy, limits: { calls: this.captureCallsLimit, bytes: this.captureBytesLimit } };
   }
 
   async finishCapture(workRef: string, diagnosticRunRef: string, formats: ReadonlyArray<"json" | "markdown"> = ["json"]): Promise<CaptureFinishResult> {
@@ -214,7 +224,8 @@ export class DiagnosticRecorder {
       const json = JSON.stringify(artifact, null, 2);
       const jsonPath = join(directory, "runs", `${diagnosticRunRef}.json`);
       await atomicWrite(jsonPath, json);
-      if (normalizedFormats.includes("markdown")) await atomicWrite(join(directory, "runs", `${diagnosticRunRef}.md`), renderCaptureMarkdown(artifact));
+      const markdown = normalizedFormats.includes("markdown") ? renderCaptureMarkdown(artifact) : undefined;
+      if (markdown !== undefined) await atomicWrite(join(directory, "runs", `${diagnosticRunRef}.md`), markdown);
       const artifactInfo: CaptureArtifactInfo = {
         artifactRef: `diagnostic-artifact-${diagnosticRunRef}`,
         artifactPath: `runs/${diagnosticRunRef}.json`,
@@ -225,7 +236,13 @@ export class DiagnosticRecorder {
         truncated: meta.truncated,
       };
       const closed: CaptureMeta = { ...meta, status: "closed", artifact: artifactInfo };
-      await atomicWrite(this.metaPath(directory, diagnosticRunRef), JSON.stringify(closed, null, 2));
+      const closedJson = JSON.stringify(closed, null, 2);
+      await atomicWrite(this.metaPath(directory, diagnosticRunRef), closedJson);
+      await this.retention.maintain(directory, {
+        writes: markdown === undefined ? 2 : 3,
+        addedBytes: Buffer.byteLength(json, "utf8") + Buffer.byteLength(closedJson, "utf8") + (markdown === undefined ? 0 : Buffer.byteLength(markdown, "utf8")),
+        protectedPaths: [`runs/${diagnosticRunRef}.meta.json`, `runs/${diagnosticRunRef}.events.jsonl`, `runs/${diagnosticRunRef}.json`, ...(markdown === undefined ? [] : [`runs/${diagnosticRunRef}.md`])],
+      });
       return { action: "finish_capture", workRef, purpose: "development", diagnosticRunRef, formats: normalizedFormats, ...artifactInfo };
     });
   }
@@ -280,14 +297,18 @@ export class DiagnosticRecorder {
       ...(input.error ? { error: { code: input.error.code, recoverable: input.error.code !== "INTERNAL_ERROR" } } : {}),
       executionSummary,
     };
+    return this.serial(`record:${directory}`, async () => {
     try {
+      await this.retention.maintain(directory);
       // Serialize rotation and append per directory: concurrent records must
       // never interleave a rotation rewrite with appends (AUD-024).
-      await this.serial(`general:${directory}`, async () => {
+      const rotation = await this.serial(`general:${directory}`, async () => {
         await mkdir(join(directory, "reports"), { recursive: true });
-        await rotateGeneralEvents(join(directory, "diagnostics.jsonl"), this.generalEventsLimit, this.generalBytesLimit);
+        const rotation = await rotateGeneralEvents(join(directory, "diagnostics.jsonl"), this.generalEventsLimit, this.generalBytesLimit);
         await appendFile(join(directory, "diagnostics.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
+        return rotation;
       });
+      await this.retention.maintain(directory, { writes: 1 + rotation.writes, addedBytes: Buffer.byteLength(`${JSON.stringify(event)}\n`, "utf8") + rotation.addedBytes });
       let capturePersistenceError: string | undefined;
       if (input.diagnosticRunRef && workRef) {
         try { await this.appendCaptureEvent(workRef, input.diagnosticRunRef, event, input.input, input.output); }
@@ -296,17 +317,20 @@ export class DiagnosticRecorder {
       const reportJson = JSON.stringify({ ...event, observationScope: "mcp_calls_only", redactions: ["source_text", "returned_excerpts", "absolute_paths", "stack_traces", "sql", "credentials"] }, null, 2);
       const reportName = `${input.traceId}.json`;
       await atomicWrite(join(directory, "reports", reportName), reportJson);
+      await this.retention.maintain(directory, { writes: 1, addedBytes: Buffer.byteLength(reportJson, "utf8"), protectedPaths: [`reports/${reportName}`] });
+      const retentionNotice = this.retention.takeNotice(directory);
       return {
         ...base,
         persistence: "persisted",
         artifactRef: `diagnostic-artifact-${input.traceId}`,
         artifactPath: `reports/${reportName}`,
         artifactSha256: hash(reportJson),
-        ...(capturePersistenceError ? { persistenceError: capturePersistenceError } : {}),
+        ...(capturePersistenceError || retentionNotice ? { persistenceError: capturePersistenceError ?? retentionNotice } : {}),
       };
     } catch (error) {
       return { ...base, persistence: "failed", persistenceError: diagnosticWriteCode(error) };
     }
+    });
   }
 
   private async appendCaptureEvent(workRef: string, diagnosticRunRef: string, event: InvocationEvent, rawInput: Readonly<Record<string, unknown>>, output?: Readonly<Record<string, unknown>>): Promise<void> {
@@ -316,8 +340,12 @@ export class DiagnosticRecorder {
       if (meta.status !== "active") throw codedError("DIAGNOSTIC_RUN_CLOSED", `Diagnostic run ${diagnosticRunRef} is already closed`);
       const eventsPath = this.eventsPath(directory, diagnosticRunRef);
       const size = await fileSize(eventsPath);
-      if (meta.nextSequence > MAX_CAPTURE_CALLS || size >= MAX_CAPTURE_BYTES) {
-        if (!meta.truncated) await atomicWrite(this.metaPath(directory, diagnosticRunRef), JSON.stringify({ ...meta, truncated: true }, null, 2));
+      if (meta.nextSequence > this.captureCallsLimit || size >= this.captureBytesLimit) {
+        if (!meta.truncated) {
+          const truncatedMeta = JSON.stringify({ ...meta, truncated: true }, null, 2);
+          await atomicWrite(this.metaPath(directory, diagnosticRunRef), truncatedMeta);
+          await this.retention.maintain(directory, { writes: 1, addedBytes: Buffer.byteLength(truncatedMeta, "utf8") });
+        }
         return;
       }
       const query = meta.contentPolicy === "query" && typeof rawInput.query === "string" ? rawInput.query : undefined;
@@ -325,7 +353,9 @@ export class DiagnosticRecorder {
       const hits = captureOutputHits(output);
       const sequenced: InvocationEvent = { ...event, sequence: meta.nextSequence, ...(query !== undefined ? { inputSummary: { ...inputSummary, query } } : {}), ...(hits ? { outputHits: hits } : {}) };
       await appendFile(eventsPath, `${JSON.stringify(sequenced)}\n`, "utf8");
-      await atomicWrite(this.metaPath(directory, diagnosticRunRef), JSON.stringify({ ...meta, nextSequence: meta.nextSequence + 1 }, null, 2));
+      const nextMeta = JSON.stringify({ ...meta, nextSequence: meta.nextSequence + 1 }, null, 2);
+      await atomicWrite(this.metaPath(directory, diagnosticRunRef), nextMeta);
+      await this.retention.maintain(directory, { writes: 2, addedBytes: Buffer.byteLength(`${JSON.stringify(sequenced)}\n`, "utf8") + Buffer.byteLength(nextMeta, "utf8") });
     });
   }
 
@@ -346,6 +376,9 @@ export class DiagnosticRecorder {
     if (!directory) throw codedError("DIAGNOSTIC_RUN_NOT_FOUND", "No authorized diagnostic directory is available");
     return directory;
   }
+
+  /** @internal Read-only evaluator seam for retention accounting tests. */
+  retentionStats(workRef: string): RetentionStats { return this.retention.stats(this.requireDirectory(workRef)); }
 
   private metaPath(directory: string, diagnosticRunRef: string): string { return join(directory, "runs", `${diagnosticRunRef}.meta.json`); }
   private eventsPath(directory: string, diagnosticRunRef: string): string { return join(directory, "runs", `${diagnosticRunRef}.events.jsonl`); }
@@ -478,20 +511,14 @@ async function fileSize(path: string): Promise<number> {
   try { return (await stat(path)).size; } catch (error) { if (typeof error === "object" && error && "code" in error && error.code === "ENOENT") return 0; throw error; }
 }
 
-async function directorySize(path: string): Promise<number> {
-  let total = 0;
-  try {
-    for (const entry of await readdir(path, { withFileTypes: true })) total += entry.isDirectory() ? await directorySize(join(path, entry.name)) : await fileSize(join(path, entry.name));
-  } catch (error) { if (!(typeof error === "object" && error && "code" in error && error.code === "ENOENT")) throw error; }
-  return total;
-}
-
-async function rotateGeneralEvents(path: string, maxEvents: number, maxBytes: number): Promise<void> {
+async function rotateGeneralEvents(path: string, maxEvents: number, maxBytes: number): Promise<{ writes: number; addedBytes: number }> {
   const size = await fileSize(path);
   const events = await readJsonLines(path);
-  if (size < maxBytes && events.length < maxEvents) return;
+  if (size < maxBytes && events.length < maxEvents) return { writes: 0, addedBytes: 0 };
   const retained = events.slice(-Math.floor(maxEvents / 2));
-  await atomicWrite(path, retained.map(event => JSON.stringify(event)).join("\n") + (retained.length ? "\n" : ""));
+  const rewritten = retained.map(event => JSON.stringify(event)).join("\n") + (retained.length ? "\n" : "");
+  await atomicWrite(path, rewritten);
+  return { writes: 1, addedBytes: Buffer.byteLength(rewritten, "utf8") };
 }
 
 function diagnosticWriteCode(error: unknown): string {

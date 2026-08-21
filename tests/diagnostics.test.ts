@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
@@ -142,5 +142,67 @@ describe("diagnostic recorder", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  test("keeps a returned per-call report even when its maintenance pass must trim reports", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-diagnostics-returned-report-"));
+    const workRef = "work:test", directory = join(root, "diagnostics");
+    const recorder = new DiagnosticRecorder(ref => ref === workRef ? directory : undefined, undefined, { maxDirectoryBytes: 1 });
+    try {
+      const diagnostic = await recorder.record({ traceId: "trace-returned-report", tool: "writing_explore", input: { workRef }, output: { workRef, revision: 1 }, elapsedMs: 1 });
+      await stat(join(directory, diagnostic.artifactPath!));
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("keeps a returned capture artifact when finishing it triggers retention", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-diagnostics-returned-capture-"));
+    const workRef = "work:test", directory = join(root, "diagnostics");
+    const recorder = new DiagnosticRecorder(ref => ref === workRef ? directory : undefined, undefined, { maxDirectoryBytes: 1 });
+    try {
+      const started = await recorder.startCapture(workRef);
+      const finished = await recorder.finishCapture(workRef, started.diagnosticRunRef);
+      await stat(join(directory, finished.artifactPath));
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("accounts for the capture-truncation metadata rewrite", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-diagnostics-capture-truncation-"));
+    const workRef = "work:test", directory = join(root, "diagnostics");
+    const recorder = new DiagnosticRecorder(ref => ref === workRef ? directory : undefined, { captureCalls: 1 }, { scanEveryWrites: 8, scanEveryAddedBytes: 1_000_000 });
+    try {
+      const started = await recorder.startCapture(workRef);
+      await recorder.record({ traceId: "trace-first", tool: "writing_explore", input: { workRef, diagnosticRunRef: started.diagnosticRunRef }, output: { workRef, revision: 1 }, elapsedMs: 1, diagnosticRunRef: started.diagnosticRunRef });
+      await recorder.record({ traceId: "trace-truncated", tool: "writing_explore", input: { workRef, diagnosticRunRef: started.diagnosticRunRef }, output: { workRef, revision: 1 }, elapsedMs: 1, diagnosticRunRef: started.diagnosticRunRef });
+      const meta = JSON.parse(await readFile(join(directory, "runs", `${started.diagnosticRunRef}.meta.json`), "utf8")) as { truncated: boolean };
+      expect(meta.truncated).toBe(true);
+      expect(recorder.retentionStats(workRef).scans).toBe(2);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("records cooperative cleanup deferral without failing the diagnostic write", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-diagnostics-deferred-"));
+    const workRef = "work:test", directory = join(root, "diagnostics");
+    await mkdir(join(directory, "reports"), { recursive: true });
+    await writeFile(join(directory, "reports", "old.json"), "x".repeat(100));
+    await writeFile(join(directory, ".cleanup.lock"), JSON.stringify({ pid: process.pid, token: "live-other", createdAt: "2026-01-01T00:00:00.000Z" }));
+    const recorder = new DiagnosticRecorder(ref => ref === workRef ? directory : undefined, undefined, { maxDirectoryBytes: 10 });
+    try {
+      const diagnostic = await recorder.record({ traceId: "trace-deferred", tool: "writing_explore", input: { workRef }, output: { workRef, revision: 1 }, elapsedMs: 1 });
+      expect(diagnostic).toMatchObject({ persistence: "persisted", persistenceError: "DIAGNOSTIC_CLEANUP_DEFERRED" });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("starting a capture uses retention maintenance while protecting the new active group", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-diagnostics-start-retention-"));
+    const workRef = "work:test", directory = join(root, "diagnostics"), reports = join(directory, "reports");
+    await mkdir(reports, { recursive: true });
+    await writeFile(join(reports, "old.json"), "x".repeat(100));
+    const recorder = new DiagnosticRecorder(ref => ref === workRef ? directory : undefined, undefined, { maxDirectoryBytes: 10 });
+    try {
+      const started = await recorder.startCapture(workRef);
+      await expect(stat(join(reports, "old.json"))).rejects.toMatchObject({ code: "ENOENT" });
+      await stat(join(directory, "runs", `${started.diagnosticRunRef}.meta.json`));
+      await stat(join(directory, "runs", `${started.diagnosticRunRef}.events.jsonl`));
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
