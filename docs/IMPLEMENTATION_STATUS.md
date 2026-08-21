@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-08-21（Task 4 响应字节上限）
-> 当前状态：A1=SourceSnapshot/fingerprint 一致性与恢复；A2=评测实验隔离与只读门禁；Task 3=`mentions`/`ContextPacket.accountingScope` 与 Task 4=server response-size 契约已完成。当前验证为 39 个测试文件、161 项测试、lint 0 警告、公共基准 30/30、coverage lines 94.72%；私有 top-20 历史基线为 40/42、required 15/16，gold @50 候选门禁与 PRF 验收严格区分。EPUB UTF-8 byte accounting、诊断留存、lifecycle 与 PRF 仍已重开，M4 不得宣称完成。
+> 检查点时间：2026-08-21（Task 5 运行时硬化）
+> 当前状态：A1=SourceSnapshot/fingerprint 一致性与恢复；A2=评测实验隔离与只读门禁；Task 3=`mentions`/`ContextPacket.accountingScope`、Task 4=server response-size，以及 Task 5=EPUB UTF-8 byte accounting/诊断留存/统一 lifecycle 已完成。当前验证为 40 个测试文件、184 项测试、lint 0 警告、公共基准 30/30、coverage lines 94.72%；私有 top-20 历史基线为 40/42、required 15/16，gold @50 候选门禁与 PRF 验收严格区分。PRF 与真实长语料重测仍未完成，M4 不得宣称完成。
 
 ## 恢复入口
 
@@ -57,6 +57,8 @@ pnpm start
 - 所有公共工具通过同一个 server-side post-call diagnostic wrapper；成功和失败均返回 `traceId`、`executionSummary`、持久化状态和报告引用，不依赖 prompt 提醒。
 - 每次调用静默写入脱敏 JSON 报告和有界 JSONL 事件；显式 `start_capture → diagnosticRunRef → finish_capture` 可生成小规模真实使用链的规范 JSON 和可选 Markdown。
 - 诊断产物只保存 MCP 可观察的参数/结果摘要、错误、耗时、revision、证据引用、截断和 Token 指标；默认不保存查询文本，也不保存正文、绝对路径、堆栈、SQL 或凭据。
+- 诊断目录按首用/64 次写入/新增 1 MiB/估算越界做摊销扫描，使用合作式清理锁并按稳定顺序先清 per-call reports、再清 closed captures；active capture 与当前返回 artifact 受保护。100 MiB 是多进程下的最终收敛目标，不是瞬时硬上限。
+- EPUB OPF、单个 spine 文档与累计 spine 上限均按解码后的 UTF-8 bytes 计算；SIGINT、SIGTERM 和 stdin EOF 共用一个幂等 termination promise，正常关闭不主动 `process.exit(0)`，5 秒仅作悬挂兜底。
 - `benchmarks/m0.json` 已建立 30 个机器可读任务，并由 `tests/benchmark.test.ts` 执行确定性门禁。
 - `docs/M0_CONTRACT.md` 已冻结引用格式、SQLite v1、查询限制、初始排序、Token 估算与 MCP 结果规则。
 - `docs/REFERENCE.md` 已归纳成熟知识维护、精准检索、属性图和小说领域模型经验，并明确其为设计输入而非 v1 承诺。
@@ -71,7 +73,7 @@ pnpm start
 | M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB、跨 spine 分段 locator、通用作品边界与 capabilities 实际化（AUD-026 主体）、章节编号语法明确化（AUD-027 主体）、EPUB 资源上限（AUD-028 主体）、snapshot 一致性与文本内存上限（AUD-029 主体）、span 硬上限与 locator 精确规则（AUD-030 主体）、进程生命周期与优雅关闭（AUD-032 主体）、工程硬化门禁与适配器模块抽离（AUD-035 第一/二阶段主体） | AUD-035 格式化阶段（用户决策延后至 M3/M4 语义冻结后的重构窗口再评估） |
 | M2 | ✅ 基础门禁完成 | SQLite/FTS5、schema v4、语义 snapshot、truthful status、revision/事务、原子替换、作品级串行/写锁、恢复、work/document 作用域身份、规范定义晋升、多 mention/关系证据、源顺序图 | 后续只随 M3/M4 查询语义做受控增强 |
 | M3 | 进行中 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限、0～3 跳 BFS、timeline、词汇表、source-trust 与 A1 freshness；corpus 阈值门禁代码已落地 | 完整重排与真实长语料重测；本轮无新的长语料性能主张 |
-| M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、AUD-005/AUD-012/AUD-013 的约束与来源装配；`accountingScope: evidence_excerpts_only` 已在 core/MCP schema/工具描述冻结；A1 已完成 adapter-owned `SourceSnapshot` 与 loaded/indexed 双指纹；Task 4 已完成 server 最终响应字节门禁、诊断预留、recorder ordering 与各工具保真裁剪；stats/diagnose 提供 contextSources | EPUB UTF-8 byte accounting、诊断留存、lifecycle 与 PRF 仍重开；完整重排与真实语料重测待后续 |
+| M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、AUD-005/AUD-012/AUD-013 的约束与来源装配；`accountingScope: evidence_excerpts_only` 已在 core/MCP schema/工具描述冻结；A1 已完成 adapter-owned `SourceSnapshot` 与 loaded/indexed 双指纹；Task 4 已完成 server 最终响应字节门禁；Task 5 已完成 EPUB UTF-8 bytes、诊断留存与统一 lifecycle；stats/diagnose 提供 contextSources | PRF 与完整重排、真实语料重测待后续 |
 | M5 | 待开始（已有纵向切片） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归 | 真实 InkOS、更多 EPUB 2/3 变体、客户端安装与故障文档 |
 
 Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、007～010 的当前门禁；Step 3 已完成中文问句、别名/歧义、稳定排序、输入上限、FTS 降级与检索诊断（提交 `4030085`），并完成 AUD-018 时间上限（提交 `c376df7`）；AUD-021 源指纹复用修复（`service.index()` 增加指纹记录，修复 `ensureFresh` 在 `previous === undefined` 时跳过增量更新的逻辑缺陷，55/55 测试全部通过）。AUD-005（REVIEW_2026-08-16 P0，提前于 Step 3 剩余项处理）：`requiredRefs` 脱离 search top-50 候选池按 entity/span/document 三级直接解析，池外必选 ref 进 blocks 并计入预算最小值，不存在 ref 以 `not_found` 进 omitted，预算不足触发 `budget_unsatisfiable`；`ContextPacket` 形状与状态词汇未变（M0_CONTRACT 新增 M4 requiredRefs amendment）。M0.1、M1 其余问题和 M3～M5 尚未完成，现有成果不能据此宣称 Writing MCP v1 已完成。
@@ -80,7 +82,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
-- 39 个测试文件 / 161 项测试，覆盖：通用链路、MCP 协议与诊断、server/core 响应字节上限与 recorder ordering、检索正确性、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
+- 40 个测试文件 / 184 项测试，覆盖：通用链路、MCP 协议与诊断、诊断 retention/协作锁、server/core 响应字节上限与 recorder ordering、统一进程关闭链、检索正确性、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
 - 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制
@@ -103,8 +105,8 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - AUD-035 第三阶段（Biome 格式化）已由用户决策延后：store.ts 即将被 M3/M4 修改，现在做巨型函数展开与全量格式化必然返工；正确时机是完整重排落地后（检索侧冻结）的重构窗口，届时再评估格式化是否必要。
 - Corpus 阈值门禁代码已落地（索引≤60s/百万正文字符、Explore P95≤1000ms、Context P95≤500ms）；本轮只用受控 fixture 验证脚本行为，未重新运行真实长语料，历史长语料数字不得作为当前验收。
 - **重构窗口按触碰面分流（2026-08-18）**：装配侧窗口已开（M4 冻结后）——context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已落地，sources/budget/layer 可与完整重排并行）；检索侧窗口待**完整重排落地后**——（1）store.ts 图构建/检索 SQL 抽离；（2）移除 oxlintrc.json 对 store.ts 的 ignorePatterns 忽略项；（3）评估 Biome 格式化（若执行：quoteStyle single / semicolons asNeeded / lineWidth 120）。
-- M4 剩余：EPUB UTF-8 byte accounting、诊断留存、生命周期与 PRF 都是重开工作；response-size 已由 Task 4 在 server 最终边界关闭，`accountingScope: evidence_excerpts_only` 已冻结，但 tokenizer profile 仍延后且不构成 M4 完成。排序改动仍须以 gold 门禁与私有 PRF 验收重新裁决。
-- M4 审议：已完成的来源/约束装配、excerpt-only accountingScope 与 server response-size 保留；A1 使用 adapter-owned `SourceSnapshot`、一致读取重试、及 `loadedFingerprint`/`indexedFingerprint` 双指纹状态语义。M4 当前剩余为 EPUB UTF-8 byte accounting、诊断留存、lifecycle 与 PRF；真实长语料仅待重测，不把历史数字当作本轮验收。
+- M4 剩余：Task 5 已关闭 EPUB UTF-8 byte accounting、诊断留存和生命周期；当前剩余为 PRF/完整重排、真实长语料重测，以及仍延后的 tokenizer profile 决策。排序改动仍须以 gold 门禁与私有 PRF 验收重新裁决。
+- M4 审议：已完成的来源/约束装配、excerpt-only accountingScope、server response-size 与 Task 5 运行时硬化保留；A1 使用 adapter-owned `SourceSnapshot`、一致读取重试、及 `loadedFingerprint`/`indexedFingerprint` 双指纹状态语义。真实长语料数字未在本轮重测，不把历史数字当作当前验收。
 
 > 更早阶段（Step 3 / AUD-005～035）的逐条落地叙事已于 2026-08-17 移除：事实由「可追溯提交清单」与 commit message 承载，审阅结论由下节表格承载，不在此重复。
 
@@ -120,7 +122,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 | **AUD-028** EPUB 资源上限 | ✅ 合格：三级确定性上限（4096 entries / 16 MiB / 64 MiB）、稳定错误码、可注入上限 | `0b83baf` | `epub-resource-limits.test.ts` 4 项 | 加法式（新错误码 + 新导出 + 可选构造参数） |
 | **AUD-029** snapshot 一致性 | ✅ 合格：读取前后指纹校验、有界重试、文本内存上限、源变化显式错误 | `b4b2cb9` | `snapshot-consistency.test.ts` 5 项 | 加法式（新错误码 + 新导出 + 构造参数扩展） |
 | **AUD-030** splitDocument 硬切与边界规则 | ✅ 合格：超长行硬切、locator 精确排除空行、连续平铺无重叠无遗漏、重叠方案拒绝 | `2f4916d` | `span-hard-split.test.ts` 5 项 | 无接口变更（仅切分行为变化） |
-| **AUD-032** 进程生命周期与优雅关闭 | ✅ 合格：`createStdioRuntime` 统一关闭链、信号/stdin EOF 确定性退出、stdout 纯 JSON-RPC | `3a53209` | `lifecycle.test.ts` 5 项 | 加法式（新导出 + 行为变更：挂起→确定性退出） |
+| **AUD-032** 进程生命周期与优雅关闭 | ✅ 合格并硬化：`createStdioRuntime` 与 process termination 均返回同一 memoized promise；信号/stdin EOF 共链，先关 server 再关 service，失败后置汇总，正常退出不主动调用 `process.exit(0)`，5 秒仅作悬挂兜底，stdout 纯 JSON-RPC | `3a53209` + `f5c3e74` | `lifecycle.test.ts` 11 项 | 加法式内部测试 seam + 行为收敛（正常自然退出/失败非零） |
 | **AUD-035-1** lint/coverage 门禁 | ✅ 合格：oxlint 0 警告、coverage 阈值棘轮、vitest 别名修复覆盖率失真 | `3041650` | 108/108 回归 | 无产品接口变更（工程基建） |
 | **AUD-035-2** generic 适配器模块抽离 | ✅ 合格：21.8KB 单文件拆为 errors/numbering/txt/epub 四策略模块、公共 API 兼容、覆盖率逐位不变 | `8764652` | 108/108 回归 | 无（纯结构重构） |
 | **AUD-013** 来源提供器注册表与 evidenceHash 去重 | ✅ 合格（含缺陷修复）：语义分层、required 晋升 L0、duplicate_evidence 折叠；审阅发现 kind 输入接错——searchRows 返回小写文档类型（d.kind）而注册表键为大写实体类型，全落 L3 → `d47b2da` 以 DOCUMENT_KIND_ALIASES 归一修复并补真实路径 L1/L2 断言（教训：原单元测试喂大写键绕过真实输入路径而漏检） | `2ddb40c` + `d47b2da` | `context-source-registry.test.ts` 7 项 | 无接口变更（内部装配语义） |
@@ -177,6 +179,9 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
+- `f5c3e74` — fix(lifecycle): Task 5C 将 runtime shutdown 与 SIGINT/SIGTERM/stdin EOF 收敛到各自唯一的 memoized promise；关闭顺序固定 server→service，失败在两次尝试后汇总，正常关闭清除兜底并自然退出，5 秒悬挂才强退；184/184 + 30/30 + lint 0 + coverage lines 94.72%。
+- `7e756eb` — feat(diagnostics): Task 5B 增加按目录串行的摊销扫描、稳定清理顺序、可恢复合作锁、active/当前 artifact 保护与完整写入计数；100 MiB 明确为最终收敛目标；179/179 + 30/30 + lint 0 + coverage lines 94.95%。
+- `64651bf` — fix(epub): Task 5A 将 OPF、单个 spine 与累计 spine 限制统一为解码 UTF-8 bytes，并以中文多字节精确边界回归锁定。
 - `0b2d5bd` — feat(context): Task 3 将必填 `accountingScope: evidence_excerpts_only` 写入所有 ContextPacket 路径（含 budget_unsatisfiable）、core/MCP output schema 与 writing_context 描述；明确 usedTokens 仅计 returned evidence excerpts 的 mixed-cjk-v1 估算、供外部 tokenizer 复核而非精确 token 声称；146/146 + 30/30 + lint 0 + coverage lines 93.01%。
 - `661dd28` — feat(graph): Task 3 将 schema-v4 已有 `mentions` 纳入冻结 EdgeKind/EDGE_KINDS；`[[alias]]` 经持久化别名解析为 Document→Entity，双端 BFS 返回相同边的 incoming/outgoing 证据；稳定 documentRef/entityRef 可作为 neighborhood 种子；146/146 门禁验证见后续上下文契约提交。
 - `42849f4` — feat(eval): §266 形式达标——`WRITING_MCP_ABLATE` 运行时开关（store.ts，默认行为不变）+ ablation-test.mjs 重写（gold-span 口径，bm25 项/FTS 合并分离）+ gate-gold-evidence.mjs 门禁 4/4 PASS + `reports/gold-evidence-baseline.json` 快照提交（.gitignore 白名单）。ablation 实证：coverage/alias KEEP，proximity/heading/trust REMOVABLE，bm25 项与 FTS 合并为负因子（删后 MRR↑）——公式层非杠杆，与归因结论互证；127/127 + 30/30 绿。

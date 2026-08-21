@@ -192,7 +192,7 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Capture reports observe MCP calls only. They do not claim access to agent reasoning, non-MCP tools, or user actions not submitted to this server.
 - Default capture policy stores metadata, hashes, stable references, counts, errors, timings, revisions, evidence references, truncation, and token metrics. It does not store source text, returned excerpts, absolute paths, stack traces, SQL, keys, or tokens.
 - `writing_diagnose` may write disposable diagnostic artifacts but cannot modify source works or index semantics and cannot automatically invoke index repair.
-- Stable diagnostic errors include `INVALID_DIAGNOSTIC_REQUEST`, `DIAGNOSTIC_RUN_NOT_FOUND`, `DIAGNOSTIC_RUN_CLOSED`, and `DIAGNOSTIC_STORAGE_LIMIT`.
+- Stable diagnostic errors include `INVALID_DIAGNOSTIC_REQUEST`, `DIAGNOSTIC_RUN_NOT_FOUND`, and `DIAGNOSTIC_RUN_CLOSED`. The former hard-cap error `DIAGNOSTIC_STORAGE_LIMIT` is superseded by the 2026-08-21 retention amendment below.
 
 ### M0.1 capture bounded-refs amendment (2026-08-16)
 
@@ -205,6 +205,14 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Every append to the general `diagnostics.jsonl` history runs inside a per-directory serial queue together with its rotation check; concurrent records can no longer interleave a rotation rewrite with appends, lose events, or produce interleaved lines.
 - Rotation limits (1,000 events / 5 MiB by default) remain unchanged in production and are injectable for tests; rotation still retains the newest half of events.
 - A general-history write failure still never replaces a successful business result: persistence degrades to `failed` with a `persistenceError` code in the returned diagnostic.
+
+### M0.1 diagnostic retention amendment (2026-08-21)
+
+- Diagnostic retention keeps a per-directory estimate and performs a real recursive scan on first use, after exactly 64 recorder-owned writes, after at least 1 MiB of estimated additions, or when the estimate crosses the 100 MiB target. Same-process maintenance for one directory is serialized, so concurrent first use coalesces rather than multiplying scans.
+- Cleanup uses a non-blocking cooperative cross-process lock. A live owner defers cleanup and is disclosed as `DIAGNOSTIC_CLEANUP_DEFERRED`; dead, malformed, or truncated locks are recoverable without displacing a replacement live owner. Scan/delete disappearance races are tolerated.
+- Candidates are ordered by mtime and then NFC-normalized Unicode code-point filename. Old per-call reports are removed before complete closed-capture groups. Active captures, `diagnostics.jsonl`, cleanup locks, and the artifact being returned by the current call are protected.
+- 100 MiB is an eventual-convergence target, not an instantaneous hard cap: concurrent writers and protected/active artifacts may cause a temporary or irreducible overshoot. The recorder never claims otherwise and does not make a successful business result fail merely because another process currently owns cleanup.
+- This amendment retires `DIAGNOSTIC_STORAGE_LIMIT`: `start_capture` runs the same cooperative maintenance path instead of performing an unconditional full-directory scan and rejecting at an inaccurately hard boundary.
 
 ### M0.1 protocol error boundary amendment (2026-08-17)
 
@@ -229,7 +237,7 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 
 ### M1 EPUB resource limits amendment (2026-08-17)
 
-- EPUB ingestion enforces deterministic resource limits before and during ZIP expansion: ZIP entry count (`maxEntries`), per-document decoded size including the OPF package (`maxDocumentBytes`), and total decoded spine size (`maxTotalBytes`). Defaults: 4096 entries, 16 MiB per document, 64 MiB total.
+- EPUB ingestion enforces deterministic resource limits before and during ZIP expansion: ZIP entry count (`maxEntries`), per-document decoded UTF-8 byte size including the OPF package (`maxDocumentBytes`), and total decoded spine UTF-8 byte size (`maxTotalBytes`). Defaults: 4096 entries, 16 MiB per document, 64 MiB total. These are `Buffer.byteLength(value, "utf8")` boundaries, not JavaScript UTF-16 character counts or compressed ZIP sizes.
 - Every breach is a stable coded error — `EPUB_TOO_MANY_ENTRIES`, `EPUB_DOCUMENT_TOO_LARGE`, `EPUB_TOTAL_TOO_LARGE` — never a hang or unbounded memory growth.
 - Limits are injectable for tests via `new GenericAdapter({ epub: Partial<EpubLimits> })`; `DEFAULT_EPUB_LIMITS` is exported from `@writing-mcp/adapter-generic`. No other interface changes.
 
@@ -256,6 +264,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - The stdio server shuts down gracefully and deterministically: SIGINT, SIGTERM, and stdin EOF (client disconnect) all route through one shutdown chain — close the MCP server (transport) before closing the `WritingService` — then exit with code 0. A 5-second grace guard forces termination, so a long synchronous SQLite operation that cannot be cancelled can never keep the process alive indefinitely.
 - stdout is reserved for JSON-RPC messages only: lifecycle and shutdown diagnostics go to stderr (`[writing-mcp][lifecycle]` prefix); every stdout line must parse as a JSON-RPC message.
 - `createStdioRuntime(service, options?)` exposes the `{ server, shutdown }` pair so the shutdown chain is testable in process; `shutdown` is idempotent.
+
+### M1 process lifecycle hardening amendment (2026-08-21)
+
+- This amendment supersedes the earlier unconditional “then exit with code 0” wording. SIGINT, SIGTERM, transport close from stdin EOF, and repeated triggers enter one memoized termination promise. Runtime shutdown itself also returns one memoized promise and always attempts `server.close()` before `service.close()`, collecting failures only after both attempts.
+- Normal completion clears the fallback and lets Node exit naturally; it does not call `process.exit(0)`. A shutdown failure is reported only through stderr, sets a nonzero process exit status, and still completes the shared termination chain.
+- `process.exit(1)` is reserved for the 5-second last-resort timer when shutdown remains unsettled. Repeated triggers cannot create extra close sequences or fallback timers, and stdout remains JSON-RPC-only.
 
 ### M4 context source registry amendment (2026-08-17)
 
