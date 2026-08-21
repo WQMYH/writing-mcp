@@ -3,7 +3,7 @@ import { derivePrfTerms, PRODUCTION_PRF_CONFIGURATION, validatePrfConfiguration 
 
 describe("deterministic PRF term derivation", () => {
   test("freezes the train-selected production configuration", () => {
-    expect(PRODUCTION_PRF_CONFIGURATION).toEqual({ topK: 5, termCount: 6, weight: 0.35 });
+    expect(PRODUCTION_PRF_CONFIGURATION).toEqual({ topK: 12, termCount: 8, weight: 0.35 });
   });
 
   test("filters original terms, aliases, stopwords, singletons, and one-span terms", () => {
@@ -11,7 +11,7 @@ describe("deterministic PRF term derivation", () => {
     const terms = derivePrfTerms([
       { heading: "One", excerpt: "lost crown beacon archive common the unique" },
       { heading: "Two", excerpt: "lost crown beacon archive common the" },
-    ], ["lost", "crown"], new Set(["beacon"]), { topK: 5, termCount: 4, weight: 0.35 }, 100, (term) => frequencies.get(term) ?? 0);
+    ], ["lost", "crown"], new Set(["beacon"]), { topK: 5, termCount: 4, weight: 0.35 }, 100, (terms) => new Map(terms.map((term) => [term, frequencies.get(term) ?? 0])));
     expect(terms.map((item) => item.term)).toEqual(["common", "archive"]);
   });
 
@@ -19,7 +19,7 @@ describe("deterministic PRF term derivation", () => {
     const terms = derivePrfTerms([
       { heading: "One", excerpt: "query beta alpha" },
       { heading: "Two", excerpt: "query beta alpha" },
-    ], ["query"], new Set(), { topK: 5, termCount: 4, weight: 0.15 }, 10, () => 2);
+    ], ["query"], new Set(), { topK: 5, termCount: 4, weight: 0.15 }, 10, (terms) => new Map(terms.map((term) => [term, 2])));
     expect(terms.map((item) => item.term)).toEqual(["alpha", "beta"]);
   });
 
@@ -27,20 +27,26 @@ describe("deterministic PRF term derivation", () => {
     const terms = derivePrfTerms([
       { heading: "One", excerpt: "query 双字 三字词 四字词汇" },
       { heading: "Two", excerpt: "query 双字 三字词 四字词汇" },
-    ], ["query"], new Set(), { topK: 5, termCount: 4, weight: 0.15 }, 10, () => 2);
+    ], ["query"], new Set(), { topK: 5, termCount: 4, weight: 0.15 }, 10, (terms) => new Map(terms.map((term) => [term, 2])));
     expect(terms.map((item) => item.term)).toContain("三字词");
-    expect(terms.map((item) => item.term)).not.toContain("双字");
+    expect(terms.map((item) => item.term)).toContain("双字");
     expect(terms.map((item) => item.term)).toContain("四字词汇");
   });
 
-  test("bounds the exact-IDF candidate pool before corpus frequency lookups", () => {
-    const vocabulary = Array.from({ length: 40 }, (_, index) => `term${String(index).padStart(3, "0")}`);
+  test("bounds and batches the corpus-frequency candidate pool", () => {
+    const vocabulary = Array.from({ length: 160 }, (_, index) => `term${String(index).padStart(3, "0")}`);
+    let batches = 0;
     let lookups = 0;
     derivePrfTerms([
       { heading: "One", excerpt: vocabulary.join(" ") },
       { heading: "Two", excerpt: vocabulary.join(" ") },
-    ], [], new Set(), { topK: 5, termCount: 4, weight: 0.15 }, 100, () => { lookups++; return 2; });
-    expect(lookups).toBe(32);
+    ], [], new Set(), { topK: 5, termCount: 4, weight: 0.15 }, 100, (terms) => {
+      batches++;
+      lookups += terms.length;
+      return new Map(terms.map((term) => [term, 2]));
+    });
+    expect(batches).toBe(1);
+    expect(lookups).toBe(128);
   });
 
   test("rejects values outside the frozen configuration grid", () => {

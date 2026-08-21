@@ -39,6 +39,19 @@ async function makePrfSearchService() {
   return { root, adapter, service, workRef: resolved.workRef };
 }
 
+async function makeTwoCharacterPrfSearchService() {
+  const root = await mkdtemp(join(tmpdir(), "writing-mcp-prf-cjk-"));
+  await writeFile(join(root, "one.md"), "# One\n王冠旁出现灯塔。");
+  await writeFile(join(root, "two.md"), "# Two\n王冠指向灯塔。");
+  await writeFile(join(root, "target.md"), "# Target\n灯塔开启密室。");
+  const adapter = new CountingGenericAdapter();
+  const service = new WritingService([adapter]);
+  const resolved = await service.resolve(root, "generic");
+  if (!resolved.workRef) throw new Error("two-character PRF fixture did not resolve");
+  await service.index(resolved.workRef, "rebuild");
+  return { root, service, workRef: resolved.workRef };
+}
+
 describe("evaluator-only search experiments", () => {
   test("does not let WRITING_MCP_ABLATE alter ordinary service results", async () => {
     const fixture = await makeSearchService();
@@ -101,10 +114,10 @@ describe("evaluator-only search experiments", () => {
       expect(narrow.diagnostics.some((item) => item.code === "PRF_EXPANDED")).toBe(true);
       const production = await fixture.service.explore(fixture.workRef, "search", "lost crown", 10, 0);
       const accepted = await fixture.service.evaluateSearch(fixture.workRef, "lost crown", 10, {
-        prf: { topK: 5, termCount: 6, weight: 0.35 },
+        prf: { topK: 12, termCount: 8, weight: 0.35 },
       });
       const acceptedAgain = await fixture.service.evaluateSearch(fixture.workRef, "lost crown", 10, {
-        prf: { topK: 5, termCount: 6, weight: 0.35 },
+        prf: { topK: 12, termCount: 8, weight: 0.35 },
       });
       expect(production.results).toEqual(accepted.results);
       expect(production.results).not.toEqual(baseline.results);
@@ -126,4 +139,20 @@ describe("evaluator-only search experiments", () => {
       await rm(fixture.root, { recursive: true, force: true });
     }
   });
+
+  test("widens candidates through a repeated two-character Chinese term", async () => {
+    const fixture = await makeTwoCharacterPrfSearchService();
+    try {
+      const baseline = await fixture.service.evaluateSearch(fixture.workRef, "王冠", 10, {});
+      const expanded = await fixture.service.evaluateSearch(fixture.workRef, "王冠", 10, {
+        prf: { topK: 5, termCount: 4, weight: 0.35 },
+      });
+      expect(baseline.results.some((item) => item.title === "Target")).toBe(false);
+      expect(expanded.results.some((item) => item.title === "Target")).toBe(true);
+    } finally {
+      fixture.service.close();
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
 });

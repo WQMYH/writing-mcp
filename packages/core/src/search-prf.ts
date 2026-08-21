@@ -3,7 +3,7 @@ import type { PrfConfiguration } from "./types.js";
 const TOP_K = new Set([5, 8, 12]);
 const TERM_COUNTS = new Set([4, 6, 8]);
 const WEIGHTS = new Set([0.15, 0.25, 0.35]);
-export const PRODUCTION_PRF_CONFIGURATION: PrfConfiguration = { topK: 5, termCount: 6, weight: 0.35 };
+export const PRODUCTION_PRF_CONFIGURATION: PrfConfiguration = { topK: 12, termCount: 8, weight: 0.35 };
 const STOPWORDS = new Set([
   "and", "are", "for", "from", "into", "is", "that", "the", "this", "was", "were", "with",
   "一个", "一种", "以及", "但是", "因为", "所以", "他们", "她们", "它们", "没有", "可以",
@@ -50,7 +50,7 @@ export function derivePrfTerms(
   persistedAliases: ReadonlySet<string>,
   configuration: PrfConfiguration,
   totalSpans: number,
-  documentFrequency: (term: string) => number,
+  documentFrequencies: (terms: readonly string[]) => ReadonlyMap<string, number>,
 ): WeightedPrfTerm[] {
   validatePrfConfiguration(configuration);
   const excluded = new Set([...originalTerms, ...persistedAliases].map((term) => term.normalize("NFKC").toLowerCase()));
@@ -64,12 +64,14 @@ export function derivePrfTerms(
       candidates.set(term, current);
     }
   }
-  return [...candidates]
-    .filter(([term, value]) => [...term].length >= 3 && value.occurrences >= 2)
+  const rankedCandidates = [...candidates]
+    .filter(([term, value]) => [...term].length >= 2 && value.occurrences >= 2)
     .sort((left, right) => right[1].cooccurrence - left[1].cooccurrence || (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0))
-    .slice(0, 32)
+    .slice(0, 128);
+  const frequencies = documentFrequencies(rankedCandidates.map(([term]) => term));
+  return rankedCandidates
     .map(([term, value]) => {
-      const frequency = Math.max(0, documentFrequency(term));
+      const frequency = Math.max(0, frequencies.get(term) ?? 0);
       const idf = Math.log((Math.max(0, totalSpans) + 1) / (frequency + 1)) + 1;
       return { term, weight: value.cooccurrence * idf };
     })

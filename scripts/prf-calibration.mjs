@@ -55,17 +55,17 @@ try {
   const trainBaseline = await measure(train, 50);
   const candidates = [];
   for (const configuration of grid) candidates.push({ configuration, metrics: await measure(train, 50, configuration) });
+  const noRegression = (candidate, baseline) => closeEnough(candidate.recallAt5, baseline.recallAt5) && closeEnough(candidate.recallAt10, baseline.recallAt10) && closeEnough(candidate.mrr, baseline.mrr) && closeEnough(candidate.recallAt50, baseline.recallAt50) && closeEnough(candidate.requiredRecallAt50, baseline.requiredRecallAt50);
   candidates.sort((left, right) => right.metrics.recallAt5 - left.metrics.recallAt5 || right.metrics.mrr - left.metrics.mrr || left.configuration.topK - right.configuration.topK || left.configuration.termCount - right.configuration.termCount || left.configuration.weight - right.configuration.weight);
-  const selected = candidates[0];
-  if (!selected) throw new Error("Frozen PRF grid produced no candidate configurations");
+  const selected = candidates.find((candidate) => noRegression(candidate.metrics, trainBaseline));
+  if (!selected) throw new Error("Frozen PRF grid produced no train no-regression candidate");
   const holdoutBaseline = await measure(holdout, 50);
   const holdoutSelected = await measure(holdout, 50, selected.configuration);
   const privateBaseline = await measure(annotations.facts, 20);
   const privateSelected = await measure(annotations.facts, 20, selected.configuration);
-  const noRegression = (candidate, baseline) => closeEnough(candidate.recallAt5, baseline.recallAt5) && closeEnough(candidate.mrr, baseline.mrr) && closeEnough(candidate.recallAt50, baseline.recallAt50) && closeEnough(candidate.requiredRecallAt50, baseline.requiredRecallAt50);
   const gates = [
-    { name: "train recall@5/MRR/recall@50/required@50 do not regress", pass: noRegression(selected.metrics, trainBaseline) },
-    { name: "holdout recall@5/MRR/recall@50/required@50 do not regress", pass: noRegression(holdoutSelected, holdoutBaseline) },
+    { name: "train recall@5/recall@10/MRR/recall@50/required@50 do not regress", pass: noRegression(selected.metrics, trainBaseline) },
+    { name: "holdout recall@5/recall@10/MRR/recall@50/required@50 do not regress", pass: noRegression(holdoutSelected, holdoutBaseline) },
     { name: "private top-20 recall >= 0.90", pass: privateSelected.recallAt20 >= 0.9 },
     { name: "private top-20 required recall == 1.00", pass: privateSelected.requiredRecallAt20 === 1 },
   ];

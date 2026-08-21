@@ -89,7 +89,7 @@ describe("AUD-013 context assembly uses semantic layers instead of positions", (
     try {
       await store.index("rebuild");
       const packet = await store.context("shared query", 1_000_000);
-      expect(packet.blocks).toHaveLength(30);
+      expect(packet.blocks).toHaveLength(12);
     } finally { store.close(); await rm(root, { recursive: true, force: true }); }
   });
 
