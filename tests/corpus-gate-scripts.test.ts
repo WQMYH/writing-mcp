@@ -43,7 +43,9 @@ describe("corpus performance gate scripts", () => {
       expect(empty.status).toBe(1);
       expect(empty.stderr).toContain("non-empty explore and context arrays");
       await writeFile(tasks, JSON.stringify({ explore: [{ operation: "search", query: "铜钥匙" }], context: [{ query: "铜钥匙", budgetTokens: 50 }] }));
-      const result = run(["scripts/run-corpus-benchmark.mjs", corpus, tasks], { ...process.env, WRITING_MCP_CORPUS_MAX_INDEX_PER_MILLION_MS: "1000000000" });
+      const isolatedEnv = { ...process.env, WRITING_MCP_CORPUS_MAX_INDEX_PER_MILLION_MS: "1000000000" };
+      delete isolatedEnv.WRITING_MCP_PRIVATE_REPORT_DIR;
+      const result = run(["scripts/run-corpus-benchmark.mjs", corpus, tasks], isolatedEnv);
       expect(result.status, result.stderr).toBe(0);
       await expect(readFile(join(root, ".writing-index", "benchmarks", "token-evaluation-materials.json"), "utf8")).resolves.toContain("token-evaluation-materials-v1");
     } finally { await rm(root, { recursive: true, force: true }); }
