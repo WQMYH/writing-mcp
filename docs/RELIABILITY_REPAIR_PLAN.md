@@ -11,7 +11,7 @@
 - 私有书稿、标注、索引、Token 材料和本地报告不得提交。
 - `verify`、`gold:gate`、`gold:check` 及所有 `verify:*` 命令不得修改已跟踪文件；只有 `gold:update` 可以更新黄金快照。
 - 所有公共工具继续经过统一诊断 wrapper；公共 schema、错误码或响应语义变更必须同步 M0 contract amendment。
-- 每个任务完成后运行任务级测试；提交前至少运行 `pnpm check && pnpm test && pnpm benchmark`。最终运行完整 public/private 门禁。
+- 每个任务完成后运行任务级测试；提交前运行 `pnpm verify`。涉及私有召回、PRF 或长篇语料时追加对应 private gate，最终按 Task 7 运行完整 public/private 门禁。
 - 100% 证据覆盖只表示证据定位存在；Token 指标必须标明估算范围，不得冒充外部 tokenizer 结论。
 
 ## Task 1：适配器级 SourceSnapshot 与双指纹 freshness

@@ -106,7 +106,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - Corpus 阈值门禁已在 4,789,903 字符《语料B》上重跑并通过：索引 11.87s/百万字符、Explore P95 438.28ms、Context P95 407.80ms；报告与 Token 材料仅留本机。
 - **重构窗口按触碰面分流（2026-08-18）**：装配侧窗口已开（M4 冻结后）——context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已落地，sources/budget/layer 可与完整重排并行）；检索侧窗口待**完整重排落地后**——（1）store.ts 图构建/检索 SQL 抽离；（2）移除 oxlintrc.json 对 store.ts 的 ignorePatterns 忽略项；（3）评估 Biome 格式化（若执行：quoteStyle single / semicolons asNeeded / lineWidth 120）。
 - M4 剩余：PRF 与真实长语料重测已关闭；仍待外部 tokenizer 对本地材料复核。`mixed-cjk-v1` 继续只是 excerpt-only 启发式估算，不升级为精确 Token 结论。
-- M4 审议：已完成的来源/约束装配、excerpt-only accountingScope、server response-size 与 Task 5 运行时硬化保留；A1 使用 adapter-owned `SourceSnapshot`、一致读取重试、及 `loadedFingerprint`/`indexedFingerprint` 双指纹状态语义。真实长语料数字未在本轮重测，不把历史数字当作当前验收。
+- M4 审议：已完成的来源/约束装配、excerpt-only accountingScope、server response-size 与 Task 5 运行时硬化保留；A1 使用 adapter-owned `SourceSnapshot`、一致读取重试、及 `loadedFingerprint`/`indexedFingerprint` 双指纹状态语义。真实长语料已由本轮 `verify:private` 重测，结果见上方 Corpus 门禁；后续不得沿用脱离 revision 的历史数字。
 
 > 更早阶段（Step 3 / AUD-005～035）的逐条落地叙事已于 2026-08-17 移除：事实由「可追溯提交清单」与 commit message 承载，审阅结论由下节表格承载，不在此重复。
 
