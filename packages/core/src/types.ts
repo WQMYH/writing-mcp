@@ -42,7 +42,8 @@ export type ExploreOperation = "search" | "entity" | "neighborhood" | "timeline"
 /** Evaluator-only, call-scoped perturbations. These options are never read
  * from process state and are not part of the MCP-facing search contract. */
 export type SearchExperimentFactor = "coverage" | "alias" | "proximity" | "heading" | "bm25Term" | "ftsMerge" | "trust";
-export interface SearchExperimentOptions { disabledFactors?: SearchExperimentFactor[] }
+export interface PrfConfiguration { topK: 5 | 8 | 12; termCount: 4 | 6 | 8; weight: 0.15 | 0.25 | 0.35 }
+export interface SearchExperimentOptions { disabledFactors?: SearchExperimentFactor[]; prf?: PrfConfiguration }
 export interface EvidenceLocator { relativePath: string; startLine: number; endLine: number }
 export interface Evidence { documentRef: string; relativePath: string; startLine: number; endLine: number; excerpt: string; evidenceHash: string; revision: number; locators?: EvidenceLocator[] }
 export interface PathEvidence { edgeRef: string; edgeKind: string; direction: "outgoing" | "incoming"; sourceRef: string; targetRef: string; sourceKind: SourceKind; confidence: number; evidence: Evidence }

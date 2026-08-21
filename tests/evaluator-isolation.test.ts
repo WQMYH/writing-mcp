@@ -26,6 +26,19 @@ async function makeSearchService() {
   return { root, adapter, service, workRef: resolved.workRef };
 }
 
+async function makePrfSearchService() {
+  const root = await mkdtemp(join(tmpdir(), "writing-mcp-prf-"));
+  await writeFile(join(root, "one.md"), "# One\nlost crown beacon is observed from the north.\n");
+  await writeFile(join(root, "two.md"), "# Two\nlost crown beacon is observed from the south.\n");
+  await writeFile(join(root, "target.md"), "# Target\nthe beacon opens the sealed archive.\n");
+  const adapter = new CountingGenericAdapter();
+  const service = new WritingService([adapter]);
+  const resolved = await service.resolve(root, "generic");
+  if (!resolved.workRef) throw new Error("PRF fixture did not resolve");
+  await service.index(resolved.workRef, "rebuild");
+  return { root, adapter, service, workRef: resolved.workRef };
+}
+
 describe("evaluator-only search experiments", () => {
   test("does not let WRITING_MCP_ABLATE alter ordinary service results", async () => {
     const fixture = await makeSearchService();
@@ -65,6 +78,49 @@ describe("evaluator-only search experiments", () => {
       await fixture.service.evaluateSearch(fixture.workRef, "安娜", 10, { disabledFactors: ["coverage"] });
       await fixture.service.evaluateSearch(fixture.workRef, "安娜", 10, { disabledFactors: ["alias"] });
       expect(fixture.adapter.loadCount).toBe(loadsAfterIndex);
+    } finally {
+      fixture.service.close();
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps the evaluator baseline separate and matches the accepted production PRF configuration", async () => {
+    const fixture = await makePrfSearchService();
+    try {
+      const baseline = await fixture.service.evaluateSearch(fixture.workRef, "lost crown", 10, {});
+      const expanded = await fixture.service.evaluateSearch(fixture.workRef, "lost crown", 10, {
+        prf: { topK: 5, termCount: 4, weight: 0.35 },
+      });
+      expect(baseline.results.some((item) => item.title === "Target")).toBe(false);
+      expect(expanded.results.some((item) => item.title === "Target")).toBe(true);
+      expect(expanded.diagnostics.some((item) => item.code === "PRF_EXPANDED")).toBe(true);
+      const narrow = await fixture.service.evaluateSearch(fixture.workRef, "lost crown", 1, {
+        prf: { topK: 5, termCount: 4, weight: 0.35 },
+      });
+      expect(narrow.results).toHaveLength(1);
+      expect(narrow.diagnostics.some((item) => item.code === "PRF_EXPANDED")).toBe(true);
+      const production = await fixture.service.explore(fixture.workRef, "search", "lost crown", 10, 0);
+      const accepted = await fixture.service.evaluateSearch(fixture.workRef, "lost crown", 10, {
+        prf: { topK: 8, termCount: 4, weight: 0.35 },
+      });
+      const acceptedAgain = await fixture.service.evaluateSearch(fixture.workRef, "lost crown", 10, {
+        prf: { topK: 8, termCount: 4, weight: 0.35 },
+      });
+      expect(production.results).toEqual(accepted.results);
+      expect(production.results).not.toEqual(baseline.results);
+      expect(acceptedAgain.results).toEqual(accepted.results);
+    } finally {
+      fixture.service.close();
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects evaluator PRF settings outside the frozen calibration grid", async () => {
+    const fixture = await makePrfSearchService();
+    try {
+      await expect(fixture.service.evaluateSearch(fixture.workRef, "lost crown", 10, {
+        prf: { topK: 6, termCount: 4, weight: 0.35 },
+      })).rejects.toMatchObject({ code: "INVALID_SEARCH_EXPERIMENT" });
     } finally {
       fixture.service.close();
       await rm(fixture.root, { recursive: true, force: true });

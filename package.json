@@ -18,6 +18,7 @@
     "gold:gate": "pnpm build && node scripts/gold-gate.mjs",
     "gold:check": "pnpm build && node scripts/gold-check.mjs",
     "gold:update": "pnpm build && node scripts/gold-update.mjs",
+    "prf:calibrate": "pnpm build && node scripts/prf-calibration.mjs",
     "private:measure": "pnpm build && node scripts/run-private-acceptance.mjs --report-only",
     "corpus:gate": "pnpm build && node scripts/run-corpus-benchmark.mjs",
     "verify:private:pre-prf": "pnpm verify && pnpm private:measure && pnpm gold:gate && pnpm gold:check && pnpm corpus:gate",
