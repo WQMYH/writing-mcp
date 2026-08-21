@@ -17,6 +17,9 @@ describe("corpus performance gate scripts", () => {
       expect(result.status, result.stderr).toBe(0);
       const report = JSON.parse(await readFile(join(reports, "corpus-benchmark-report.json"), "utf8"));
       expect(report.measurement).toEqual({ warmupRunsPerTask: 1, measuredRunsPerTask: 3, percentile: 0.95 });
+      expect(report.explore.samples).toHaveLength(3);
+      expect(report.context.samples).toHaveLength(3);
+      expect(report.context.samples[0]).toEqual(expect.objectContaining({ run: 1, task: 1, elapsedMs: expect.any(Number) }));
       const materialPath = join(reports, "token-evaluation-materials.json");
       const first = JSON.parse(await readFile(materialPath, "utf8"));
       expect(first.schemaVersion).toBe("token-evaluation-materials-v1");

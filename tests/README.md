@@ -28,7 +28,7 @@
 | `search-prf.test.ts` | Task 6 PRF 纯逻辑：冻结生产配置 `12/8/0.35`、原词/别名/停用词/单字/单 span 过滤、双字/三字/四字候选、bytewise tie-break、128 预频率池与单批调用、非法网格拒绝 |
 | `evaluator-isolation.test.ts` | evaluator-only 搜索隔离：环境变量不影响生产查询、调用级 ablation/PRF 不重建索引且不污染普通路径、生产配置与显式评测一致、非法网格拒绝、重复双字中文词可扩展真实候选 |
 | `gold-script-isolation.test.ts` | 黄金脚本写隔离：只有 `gold:update` 可写显式仓库外受控快照，gate/check/legacy gate 全部只读；默认仓库快照仍受 clean-HEAD 保护 |
-| `corpus-gate-scripts.test.ts` | corpus 门禁脚本：显式/默认报告目录、暖查询预热/测量轮廓、完整 token-evaluation-materials、外部 tokenizer `not_evaluated`、阈值失败与输出目录隔离 |
+| `corpus-gate-scripts.test.ts` | corpus 门禁脚本：显式/默认报告目录、暖查询预热/测量轮廓、匿名逐样本耗时、完整 token-evaluation-materials、外部 tokenizer `not_evaluated`、阈值失败与输出目录隔离 |
 | `private-script-mode.test.ts` | 私有验收 report-only 与 enforce 模式边界，已知 required miss 只能在前置测量阶段记录，PRF 完成后 enforce 为硬门禁 |
 | `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见、超大 query 拒绝 |
 | `source-directory-observable.test.ts` | AUD-012 来源目录可观测：explore stats 的 contextSources（byLayer L1/L2/L3 + byKind）复用 AUD-013 注册表 |
