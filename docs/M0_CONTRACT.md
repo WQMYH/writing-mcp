@@ -1,4 +1,4 @@
-# M0 Contract v1.2
+# M0 Contract v1.3
 
 This document freezes the public and storage decisions for the MVP. Changes require a schema version bump or an ADR.
 
@@ -47,6 +47,15 @@ Moving a work or document intentionally changes its reference. Editing content w
 - LIKE and document candidates are ordered by stable source/span keys before `LIMIT`; final ties use ordinal bytewise string comparison rather than host locale.
 - `timeline` is an independent deterministic projection, not full-text search: it returns entities carrying temporal attributes (`valid_from_chapter`, `valid_to_chapter`, or `narrative_time`) plus `precedes` sequence relations, ordered by chapter position, then `valid_to_chapter` position, then `narrative_time`, then reference. An optional query filters the projection by name substring. Results report `TIMELINE_PROJECTION`; an empty projection reports `NO_RESULTS`.
 - Chapter-tense filtering against a target chapter anchor is deferred until the target-chapter input exists (AUD-012); no new public parameter is introduced by this amendment.
+
+### M3 deterministic PRF candidate-expansion amendment (2026-08-21)
+
+- Search may perform one deterministic pseudo-relevance-feedback (PRF) expansion after the existing first-pass ranking. PRF is a retrieval candidate mechanism owned by the MCP knowledge-access layer: it neither interprets authorial intent nor generates, reviews, revises, or writes creative content. It does not change any MCP input/output schema.
+- The only releasable algorithm is a single-round, two-pass search. The first pass uses the frozen baseline ranking. Candidate expansion terms are extracted from the headings and excerpts of the first-pass top spans, then the second pass uses those terms only to widen candidate recall; original query terms remain the dominant scoring signal.
+- The accepted production configuration must be selected from the frozen grid: first-pass top-k `{5, 8, 12}`, expansion-term count `{4, 6, 8}`, and bounded expansion weight `{0.15, 0.25, 0.35}`. Terms from the original query, persisted aliases, stopwords, and single-character terms are excluded; an expansion term must occur in at least two selected spans. Remaining terms are ordered by rank-weighted co-occurrence multiplied by corpus IDF, with ordinal bytewise tie-breaking.
+- Configuration selection uses the training partition only, ordered by recall@5, then MRR, then lower complexity (`topK`, term count, and weight in ascending order). Holdout data validates the selected configuration but never participates in selection. Production behavior is enabled only after the selected configuration passes every frozen public, private, performance, determinism, and no-regression gate; otherwise baseline search remains active.
+- Runtime search may read only the indexed corpus, persisted aliases, and statistics derived from that corpus. It must never read evaluator labels such as `expectedTerms`, `expectedChapters`, `evidenceQuotes`, expected/gold refs, required flags, or train/holdout membership. Evaluator-only experiment parameters remain outside MCP schemas, Zod definitions, tool descriptions, and normal `explore`/`context` calls.
+- PRF does not modify the property graph, index revision, evidence chain, result shape, stable references, response caps, or source-trust rules. Every returned result still carries source evidence from the underlying indexed span, and identical revision and parameters produce identical ordering.
 
 ### M4 requiredRefs amendment (2026-08-16)
 
