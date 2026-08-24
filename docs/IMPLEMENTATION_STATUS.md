@@ -3,7 +3,7 @@
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
 > 检查点时间：2026-08-24（Task 7 检索性能/召回复核）
-> 当前状态：可靠性 Task 1～6 已完成；PRF 生产配置为 `topK=12/termCount=8/weight=0.35`。代码检查点 `8f539cd` 的完整内容通过 `pnpm verify` 与 `pnpm verify:private`：41 个测试文件、196 项测试、lint 0、公共基准 30/30、coverage lines 95.01%；私有 top-20 为 41/42、required 16/16、证据覆盖 100%，黄金 train/holdout 无回退。4,789,903 字符《语料B》门禁为索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；生产搜索使用 revision-scoped 有界暖缓存，评测入口不使用该缓存。外部 tokenizer 仍为 `not_evaluated`，M4 不得据启发式估算宣称精确 Token 收益。
+> 当前状态：可靠性 Task 1～7 已完成并完成整分支复审，未发现未关闭的 Critical/Important；PRF 生产配置为 `topK=12/termCount=8/weight=0.35`。代码检查点 `8f539cd` 的完整内容通过 `pnpm verify` 与 `pnpm verify:private`：41 个测试文件、196 项测试、lint 0、公共基准 30/30、coverage lines 95.01%；私有 top-20 为 41/42、required 16/16、证据覆盖 100%，黄金 train/holdout 无回退。4,789,903 字符《语料B》门禁为索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；生产搜索使用 revision-scoped 有界暖缓存，评测入口不使用该缓存。外部 tokenizer 仍为 `not_evaluated`，M4 不得据启发式估算宣称精确 Token 收益。
 
 ## 恢复入口
 
@@ -101,6 +101,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 ## 下一步
 
+- 可靠性修复 Task 7 已关闭：完整 public/private 门禁、契约/状态/v2/测试清单/运行 skill 一致性核对及整分支 Critical/Important 复审均已完成；分支已推送，等待用户决定合并、PR 或保留。
 - 批次 C（AUD-026～032 + AUD-035 第一/二阶段）已全部完成并审阅归档。
 - AUD-035 第三阶段（Biome 格式化）已由用户决策延后：store.ts 即将被 M3/M4 修改，现在做巨型函数展开与全量格式化必然返工；正确时机是完整重排落地后（检索侧冻结）的重构窗口，届时再评估格式化是否必要。
 - Corpus 阈值门禁已在 4,789,903 字符《语料B》上重跑并通过：索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；报告与 Token 材料仅留本机。该口径按契约先预热每个冻结任务一次，随后测量 revision-scoped 生产缓存路径。
