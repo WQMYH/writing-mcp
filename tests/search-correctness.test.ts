@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { stableId, WritingStore, type ParsedWork, type SourceDocument } from "@writing-mcp/core";
 
 const makeWork=(rootPath:string):ParsedWork=>{
@@ -109,5 +109,36 @@ describe("M3 deterministic query analysis",()=>{
       expect(result.metrics.omittedEstimate).toBe(result.metrics.candidateCount-result.results.length);
       expect(result.metrics.returnedCount+result.metrics.omittedEstimate).toBe(result.metrics.candidateCount);
     }finally{store.close();await rm(root,{recursive:true,force:true});}
+  });
+
+  test("retains short original-term evidence when long-term FTS fills the candidate pool",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"writing-mcp-short-original-candidate-")),workRef=stableId("work","short-original-candidate",root);
+    const target:SourceDocument={documentRef:stableId("doc",workRef,"target.md"),relativePath:"target.md",absolutePath:"target.md",title:"酒吧证据",kind:"chapter",content:"# 酒吧证据\n溪海在酒吧介绍了自己的男朋友。",chapterNumber:1,sourceMtimeMs:1,sourceSize:24};
+    const distractors:SourceDocument[]=Array.from({length:240},(_,index)=>({documentRef:stableId("doc",workRef,`distractor-${index}.md`),relativePath:`distractor-${index}.md`,absolutePath:`distractor-${index}.md`,title:`普通片段 ${index}`,kind:"chapter",content:`# 普通片段 ${index}\n林溪海经过这里。`,chapterNumber:index+2,sourceMtimeMs:1,sourceSize:24}));
+    const store=new WritingStore({workRef,title:"ShortOriginalCandidate",rootPath:root,adapter:"generic",capabilities:[],documents:[target,...distractors]});
+    try{
+      await store.index("rebuild");
+      const result=await store.explore("search","林溪海 酒吧",20,0);
+      expect(result.results.map(item=>item.title)).toContain("酒吧证据");
+    }finally{store.close();await rm(root,{recursive:true,force:true});}
+  });
+
+  test("reuses production search rows for an identical warm query at the same revision",async()=>{
+    const root=await mkdtemp(join(tmpdir(),"writing-mcp-warm-search-cache-")),store=new WritingStore(makeWork(root));
+    const prepare=vi.spyOn(DatabaseSync.prototype,"prepare");
+    try{
+      await store.index("rebuild");
+      prepare.mockClear();
+      await store.explore("search","语笙化名林夜 北塔",20,0);
+      const afterFirst=prepare.mock.calls.filter(([sql])=>String(sql).includes("spans_fts MATCH")).length;
+      expect(afterFirst).toBeGreaterThan(0);
+      await store.explore("search","语笙化名林夜 北塔",20,0);
+      const afterSecond=prepare.mock.calls.filter(([sql])=>String(sql).includes("spans_fts MATCH")).length;
+      expect(afterSecond).toBe(afterFirst);
+      await store.index("rebuild");
+      prepare.mockClear();
+      await store.explore("search","语笙化名林夜 北塔",20,0);
+      expect(prepare.mock.calls.filter(([sql])=>String(sql).includes("spans_fts MATCH")).length).toBeGreaterThan(0);
+    }finally{prepare.mockRestore();store.close();await rm(root,{recursive:true,force:true});}
   });
 });
