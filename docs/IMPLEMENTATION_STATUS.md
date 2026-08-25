@@ -4,6 +4,7 @@
 >
 > 检查点时间：2026-08-28（公开前隐私审计与历史重写收尾）
 > 当前状态：可靠性 Task 1～7 已完成并完成整分支复审，未发现未关闭的 Critical/Important；PRF 生产配置为 `topK=12/termCount=8/weight=0.35`。代码检查点 `310a84c` 的完整内容通过 `pnpm verify` 与 `pnpm verify:private`：41 个测试文件、196 项测试、lint 0、公共基准 30/30、coverage lines 95.01%；私有 top-20 为 41/42、required 16/16、证据覆盖 100%，黄金 train/holdout 无回退。4,789,903 字符《语料B》门禁为索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；生产搜索使用 revision-scoped 有界暖缓存，评测入口不使用该缓存。外部 tokenizer 仍为 `not_evaluated`，M4 不得据启发式估算宣称精确 Token 收益。隐私门禁已建立并完成首轮清洗：仓库历史经重写去除了私有语料书名与硬编码路径（全部提交 ID 变更，文档引用已重映射），`privacy:gate`（history scope）纳入 `pnpm verify` 链首；worktree 126 文件 / history 691 对象扫描 0 命中，全新 clone 复验 PASS。远端对齐已完成：`main` 经用户显式确认后强推至 `827513b`，`fix/reliability-hardening` 本地与远端同为 `3b6fb36`（无需动）；推送后全新 clone 的 history gate 为 **689 对象 / 0 命中 PASS**，服务端真相确认零隐私残留（旧远端对象由 GitHub 服务端 GC 回收）。
+> M5 客户端文档纵向切片已完成 rebase 后公共验证链逐项复核（`privacy:gate`、check、lint、43 个测试文件 / 203 项测试、公共基准 30/30、coverage lines 95.01%）；当前执行器的单次输出窗口不足以保留完整 `pnpm verify` 的一次性退出记录。
 
 ## 恢复入口
 
@@ -74,7 +75,7 @@ pnpm start
 | M2 | ✅ 基础门禁完成 | SQLite/FTS5、schema v4、语义 snapshot、truthful status、revision/事务、原子替换、作品级串行/写锁、恢复、work/document 作用域身份、规范定义晋升、多 mention/关系证据、源顺序图 | 后续只随 M3/M4 查询语义做受控增强 |
 | M3 | 主体完成 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限、0～3 跳 BFS、timeline、词汇表、source-trust、A1 freshness、确定性两遍 PRF 与 revision-scoped 有界暖缓存；真实长语料性能门禁通过 | 后续仅做受控检索质量增强与重构，不再以未验证的“完整重排”作为完成声明 |
 | M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、AUD-005/AUD-012/AUD-013 的约束与来源装配；`accountingScope: evidence_excerpts_only` 已冻结；Context 内部池 12 且真实长语料 P95 通过；A1、server 响应字节、EPUB/诊断/lifecycle 均完成 | 外部 tokenizer 复核尚未完成；token-evaluation-materials 只提供复核材料，不给出精确 Token 结论 |
-| M5 | 待开始（已有纵向切片） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归 | 真实 InkOS、更多 EPUB 2/3 变体、客户端安装与故障文档 |
+| M5 | 进行中（客户端文档纵向切片已完成公共验证链逐项复核） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归；`CLIENT_SETUP.md` 覆盖 Node 24、pnpm/build、Qoder/Codex stdio 配置、首次调用路由、七类故障、诊断隐私与 v1 边界 | 真实 InkOS、更多 EPUB 2/3 变体、实际客户端安装/连通性验收 |
 
 Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、007～010 的当前门禁；Step 3 已完成中文问句、别名/歧义、稳定排序、输入上限、FTS 降级与检索诊断（提交 `fadc0b9`），并完成 AUD-018 时间上限（提交 `6595cdd`）；AUD-021 源指纹复用修复（`service.index()` 增加指纹记录，修复 `ensureFresh` 在 `previous === undefined` 时跳过增量更新的逻辑缺陷，55/55 测试全部通过）。AUD-005（REVIEW_2026-08-16 P0，提前于 Step 3 剩余项处理）：`requiredRefs` 脱离 search top-50 候选池按 entity/span/document 三级直接解析，池外必选 ref 进 blocks 并计入预算最小值，不存在 ref 以 `not_found` 进 omitted，预算不足触发 `budget_unsatisfiable`；`ContextPacket` 形状与状态词汇未变（M0_CONTRACT 新增 M4 requiredRefs amendment）。M0.1、M1 其余问题和 M3～M5 尚未完成，现有成果不能据此宣称 Writing MCP v1 已完成。
 
@@ -82,7 +83,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
-- 42 个测试文件 / 201 项测试，覆盖：通用链路、MCP 协议与诊断、诊断 retention/协作锁、server/core 响应字节上限与 recorder ordering、统一进程关闭链、检索正确性、短原词候选保留、revision-scoped 暖查询复用与索引失效、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、两遍 PRF/双字候选/批量频率上限、公开前隐私门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
+- 43 个测试文件 / 203 项测试，覆盖：通用链路、MCP 协议与诊断、M5 客户端文档契约、诊断 retention/协作锁、server/core 响应字节上限与 recorder ordering、统一进程关闭链、检索正确性、短原词候选保留、revision-scoped 暖查询复用与索引失效、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、两遍 PRF/双字候选/批量频率上限、公开前隐私门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
 - 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制

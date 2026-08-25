@@ -20,6 +20,7 @@
 | `index-lifecycle.test.ts` | 索引生命周期：不兼容 schema 只读报告/显式重建、失败事务保留上一 revision、未解析引用入库、status stale 语义、源顺序 snapshot、中断恢复、writer lock、增量影响范围、实体变化刷新引用 |
 | `inkos-fixture.test.ts` | InkOS：静态最小 fixture 的稳定作品引用、原生文档类型、章节编号 |
 | `mcp-stdio.test.ts` | MCP stdio：枚举五工具、顺序调用 resolve/index/explore/context/diagnose、诊断 hook、结构化错误信封 |
+| `client-setup-docs.test.ts` | M5 文档回归：v1 stdio 前置条件、Qoder JSON/Codex TOML 占位配置、resolve→status→inspect 路由、七类故障与诊断隐私边界 |
 | `mvp.test.ts` | 通用链路：resolve→rebuild→中文搜索→context→无变化索引→entity/neighborhood→单章增量；适配器优先级；并发串行 |
 | `path-security.test.ts` | 授权 roots 缺失/越界、symlink/junction 越界、service 层强制 roots |
 | `resolve-matrix.test.ts` | 作品识别矩阵：空目录、不支持扩展名、多书歧义、同目录直接文件隔离、InkOS 新旧结构 |

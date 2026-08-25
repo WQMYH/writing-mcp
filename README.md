@@ -35,13 +35,17 @@ Example client configuration:
 ```json
 {
   "mcpServers": {
-    "writing": {
+    "writing-mcp": {
+      "type": "stdio",
       "command": "node",
-      "args": ["E:/Programming/AI/Agents/Writing/writing-mcp/packages/mcp-server/dist/index.js"],
+      "args": ["<repo-root>/packages/mcp-server/dist/index.js"],
+      "cwd": "<repo-root>",
       "env": {
-        "WRITING_MCP_ROOTS": "E:/WritingProjects"
+        "WRITING_MCP_ROOTS": "<authorized-writing-root>"
       }
     }
   }
 }
 ```
+
+For the supported v1 stdio setup, use placeholder roots rather than personal paths, follow `writing_resolve` → `writing_index(status)` → `writing_diagnose(inspect)`, and consult the seven failure diagnostics and privacy boundary in [docs/CLIENT_SETUP.md](docs/CLIENT_SETUP.md). The document includes both Qoder JSON and Codex TOML examples.
