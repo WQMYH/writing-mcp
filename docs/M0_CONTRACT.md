@@ -1,4 +1,4 @@
-# M0 Contract v1.2
+# M0 Contract v1.4
 
 This document freezes the public and storage decisions for the MVP. Changes require a schema version bump or an ADR.
 
@@ -40,13 +40,24 @@ Moving a work or document intentionally changes its reference. Editing content w
 
 - Search and context queries are limited to 2048 characters; deterministic analysis emits at most 48 unique terms.
 - `requiredRefs` is limited to 128 values of at most 256 characters; `budgetTokens` is limited to 1 through 1,000,000.
-- Serialized `writing_explore` payloads are capped at 200,000 bytes by default (injectable per store). A response that would exceed the cap is deterministically trimmed to fit, sets `truncated: true`, and reports `RESPONSE_TRUNCATED`; it never returns an over-limit payload.
+- Core `writing_explore` keeps a defensive 200,000 UTF-8-byte pre-trim (injectable per store). It is not the wire-contract enforcer and does not treat its partial `{results, ambiguous}` JSON as the complete MCP result; the server-boundary limits and tool reducers are frozen by the response-size amendment below.
 - Unsegmented Chinese questions use deterministic normalization and transparent question-phrase removal before bounded CJK n-gram analysis. This does not invoke a model or infer user intent.
 - Search returns `QUERY_ANALYZED`, `NO_MATCHING_TERMS`, `NO_RESULTS`, and `FTS_DEGRADED` diagnostics instead of silently turning analysis or FTS failures into ordinary empty success.
 - Entity lookup uses persisted aliases. Duplicate canonical identities, alternative source definitions, and unresolved bracket references are returned through `ambiguous`; `AMBIGUOUS_ENTITY` prevents neighborhood expansion from choosing a candidate automatically.
 - LIKE and document candidates are ordered by stable source/span keys before `LIMIT`; final ties use ordinal bytewise string comparison rather than host locale.
 - `timeline` is an independent deterministic projection, not full-text search: it returns entities carrying temporal attributes (`valid_from_chapter`, `valid_to_chapter`, or `narrative_time`) plus `precedes` sequence relations, ordered by chapter position, then `valid_to_chapter` position, then `narrative_time`, then reference. An optional query filters the projection by name substring. Results report `TIMELINE_PROJECTION`; an empty projection reports `NO_RESULTS`.
 - Chapter-tense filtering against a target chapter anchor is deferred until the target-chapter input exists (AUD-012); no new public parameter is introduced by this amendment.
+
+### M3 deterministic PRF candidate-expansion amendment (2026-08-21)
+
+- Search may perform one deterministic pseudo-relevance-feedback (PRF) expansion after the existing first-pass ranking. PRF is a retrieval candidate mechanism owned by the MCP knowledge-access layer: it neither interprets authorial intent nor generates, reviews, revises, or writes creative content. It does not change any MCP input/output schema.
+- The only releasable algorithm is a single-round, two-pass search. The first pass uses the frozen baseline ranking. Candidate expansion terms are extracted from the headings and excerpts of the first-pass top spans, then the second pass uses those terms only to widen candidate recall; original query terms remain the dominant scoring signal.
+- The accepted production configuration must be selected from the frozen grid: first-pass top-k `{5, 8, 12}`, expansion-term count `{4, 6, 8}`, and bounded expansion weight `{0.15, 0.25, 0.35}`. Terms from the original query, persisted aliases, stopwords, and single-character terms are excluded; an expansion term must occur in at least two selected spans. Candidates are first ordered by rank-weighted co-occurrence with ordinal bytewise ties and capped at 128 before frequency weighting. Three-character terms use batched exact document frequency from the schema-qualified FTS5 trigram vocabulary; other lengths use the conservative `df = totalSpans` lower-bound IDF to avoid corpus scans. Final terms are ordered by rank-weighted co-occurrence × that deterministic IDF value.
+- Configuration selection uses the training partition only. Candidates that regress train recall@5, recall@10, MRR, recall@50, or required recall@50 are ineligible; remaining candidates are ordered by recall@5, then MRR, then lower complexity (`topK`, term count, and weight in ascending order). Holdout data validates the selected configuration but never participates in selection. The accepted production configuration is `topK=12`, `termCount=8`, `weight=0.35`. Production behavior is enabled only after it passes every frozen public, private, performance, determinism, and no-regression gate; otherwise baseline search remains active.
+- Two-character original and expansion terms use bounded deterministic LIKE supplements; terms of three or more characters use FTS candidates with deterministic LIKE fallback. The short-term supplement uses the same `64..256` pass-sized bound as expansion retrieval and never overwrites an existing FTS row, so BM25 data survives candidate merging. `writing_context` uses a separate internal search pool of 12 results before layer/dedup/budget assembly; this is an internal performance bound and does not change the public `writing_context` schema or `requiredRefs` direct-resolution guarantee.
+- Production search may reuse up to 128 final row sets from a revision-scoped in-memory cache keyed by valid index revision, exact query, result limit, and PRF configuration. Evaluator-only searches bypass this cache. Every successful incremental/rebuild operation and store close clears it; cached rows preserve the same evidence, diagnostics, ordering, and response limits as an uncached search.
+- Runtime search may read only the indexed corpus, persisted aliases, and statistics derived from that corpus. It must never read evaluator labels such as `expectedTerms`, `expectedChapters`, `evidenceQuotes`, expected/gold refs, required flags, or train/holdout membership. Evaluator-only experiment parameters remain outside MCP schemas, Zod definitions, tool descriptions, and normal `explore`/`context` calls.
+- PRF does not modify the property graph, index revision, evidence chain, result shape, stable references, response caps, or source-trust rules. Every returned result still carries source evidence from the underlying indexed span, and identical revision and parameters produce identical ordering.
 
 ### M4 requiredRefs amendment (2026-08-16)
 
@@ -67,7 +78,7 @@ Moving a work or document intentionally changes its reference. Editing content w
 - Omitted reasons always reflect the true omission cause. In `budget_unsatisfiable` only required candidates (pool hits and direct-resolved `requiredRefs`) carry `required_minimum_exceeds_budget`; excluded, folded, pinned, and unresolved entries keep their own reasons `excluded`, `duplicate_evidence`, `budget_limit`, and `not_found`.
 - The `writing_context` tool description states the real precedence rule: `requiredRefs` win over `excludeRefs`, and `excludeRefs` win over `entityRefs`/`documentRefs` pins.
 - No packet shape, status vocabulary, or estimator changes.
-- Open TODO (AUD-012 remainder, M4 scope): the "来源目录" (source catalog) observability is complete — stats exposure implemented (2026-08-18, `b83ee6b`; see the M4 source directory observable amendment) and the diagnose-report summary implemented (see the M4 status fast path and diagnose summary amendment); AUD-014 packet billing boundary and tokenizer profile remain deferred to post-v1 (2026-08-18 decision).
+- Superseded by the 2026-08-21 context accounting-scope amendment: source-catalog observability is complete, and `mixed-cjk-v1` remains an explicit estimate rather than a model-token claim.
 
 ### M3 graph vocabulary freeze amendment (2026-08-16)
 
@@ -75,6 +86,14 @@ Moving a work or document intentionally changes its reference. Editing content w
 - Indexing only produces entity and edge kinds inside the frozen sets; adapters only declare capabilities inside the frozen set. Unimplemented relations are never advertised as existing capabilities.
 - Extending any frozen set requires a new M0 contract amendment first.
 - The wire format is unchanged: `capabilities` remains an array of strings in every response, and `EntityKind` gains `OutlineNode`, which indexing already produced before this amendment.
+
+### M3 `mentions` vocabulary alignment amendment (2026-08-21)
+
+- `mentions` is added to the frozen public `EdgeKind` and `EDGE_KINDS` vocabulary. It already existed in schema-v4 derived data; this additive amendment aligns the public vocabulary with that persisted relationship rather than introducing a schema migration.
+- A native `[[alias]]` reference resolves through the persisted alias table only when that normalized alias has exactly one canonical owner, then creates a `Document → Entity` `mentions` edge. A multi-owner alias writes `unresolved_mentions` with stable reason `AMBIGUOUS_ALIAS`; it never silently selects an owner or creates a deterministic-looking fact. Its edge evidence retains the source span, document locator, source kind, confidence, and index revision. This direction is distinct from the deterministic `Entity → Document` `appears_in` edge.
+- Native alias evidence covers the trimmed alias capture only, not the surrounding `[[` / `]]` delimiters: offsets and evidence hash are computed from that exact captured substring and match between `mentions` and `edge_evidence`.
+- Bounded `neighborhood` traversal (but not `entity`) may seed either a stable entity reference or a stable document reference, and exposes the same `mentions` edge as incoming or outgoing path evidence from the corresponding endpoint.
+- The native grammar remains double-bracket `[[alias]]` only. This amendment adds no single-bracket grammar, source-file write path, Agent judgment, or inference beyond deterministic alias resolution.
 
 ### M3 timeline target-chapter and reserved context inputs amendment (2026-08-16)
 
@@ -165,6 +184,14 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Stack traces and paths outside the requested source are not returned.
 - `budget_unsatisfiable` remains a successful business result, not an MCP execution error.
 
+### M0 response-size amendment (2026-08-21)
+
+- The compact JSON serialization of `structuredContent.result` is at most 200,000 UTF-8 bytes. This limit does not describe the whole JSON-RPC frame. The returned `PostCallDiagnostic` is independently limited to 8,192 UTF-8 bytes, and Markdown fallback text is independently limited to 16,384 UTF-8 bytes.
+- The server validates business data, reserves a schema-valid full 8,192-byte synthetic diagnostic, then deterministically reduces business data before persistence. The recorder receives only the final reduced success data, or the final bounded error detail on failure. The synthetic reserve is never returned or persisted. The real diagnostic drops optional fields first, then bounded execution details/free text, while preserving required identity/outcome/persistence fields.
+- `writing_explore` drops `ambiguous` tail entries before result tails, sets `truncated`, recomputes `returnedCount`, adds only newly dropped entries to `omittedEstimate`, and exposes one `RESPONSE_TRUNCATED` diagnostic. `writing_context` never drops required blocks; it removes optional L3→L2→L1→L0 tails, records one `response_limit` omission per removed ref, and recomputes `usedTokens`. Required-only context that cannot fit fails with `RESPONSE_TOO_LARGE` rather than disguising the response cap as a token-budget result.
+- `writing_resolve` removes stable candidate tails without removing the selected candidate or changing `resolved`/`ambiguous`/`unsupported` truthfulness. `writing_diagnose` may remove `recentEvents` tails and mark truncation, but never rewrites capture artifacts. `writing_index` has no semantic reducer. Any tool unable to preserve a schema-valid result within the limit returns stable `RESPONSE_TOO_LARGE` with recovery guidance.
+- Markdown fallback is a concise summary from the same reduced data and bounded diagnostic; it is not a pretty-printed copy of the structured payload. Dynamic fields are normalized to one line and CommonMark control characters are escaped, so returned values cannot forge headings, lists, links, or quotes. Every UTF-8 truncation ends on a complete code point. Core search/evaluator pre-trim uses `Buffer.byteLength(..., "utf8")` only as a protective optimization, follows the same ambiguous-tail-before-result-tail order, and adds every newly dropped item to `omittedEstimate`; the MCP server remains the final contract boundary.
+
 ### M0.1 diagnostic amendment (2026-08-14)
 
 - The public tool set is `writing_resolve`, `writing_index`, `writing_explore`, `writing_context`, and `writing_diagnose`.
@@ -176,7 +203,7 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Capture reports observe MCP calls only. They do not claim access to agent reasoning, non-MCP tools, or user actions not submitted to this server.
 - Default capture policy stores metadata, hashes, stable references, counts, errors, timings, revisions, evidence references, truncation, and token metrics. It does not store source text, returned excerpts, absolute paths, stack traces, SQL, keys, or tokens.
 - `writing_diagnose` may write disposable diagnostic artifacts but cannot modify source works or index semantics and cannot automatically invoke index repair.
-- Stable diagnostic errors include `INVALID_DIAGNOSTIC_REQUEST`, `DIAGNOSTIC_RUN_NOT_FOUND`, `DIAGNOSTIC_RUN_CLOSED`, and `DIAGNOSTIC_STORAGE_LIMIT`.
+- Stable diagnostic errors include `INVALID_DIAGNOSTIC_REQUEST`, `DIAGNOSTIC_RUN_NOT_FOUND`, and `DIAGNOSTIC_RUN_CLOSED`. The former hard-cap error `DIAGNOSTIC_STORAGE_LIMIT` is superseded by the 2026-08-21 retention amendment below.
 
 ### M0.1 capture bounded-refs amendment (2026-08-16)
 
@@ -189,6 +216,14 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Every append to the general `diagnostics.jsonl` history runs inside a per-directory serial queue together with its rotation check; concurrent records can no longer interleave a rotation rewrite with appends, lose events, or produce interleaved lines.
 - Rotation limits (1,000 events / 5 MiB by default) remain unchanged in production and are injectable for tests; rotation still retains the newest half of events.
 - A general-history write failure still never replaces a successful business result: persistence degrades to `failed` with a `persistenceError` code in the returned diagnostic.
+
+### M0.1 diagnostic retention amendment (2026-08-21)
+
+- Diagnostic retention keeps a per-directory estimate and performs a real recursive scan on first use, after exactly 64 recorder-owned writes, after at least 1 MiB of estimated additions, or when the estimate crosses the 100 MiB target. Same-process maintenance for one directory is serialized, so concurrent first use coalesces rather than multiplying scans.
+- Cleanup uses a non-blocking cooperative cross-process lock. A live owner defers cleanup and is disclosed as `DIAGNOSTIC_CLEANUP_DEFERRED`; dead, malformed, or truncated locks are recoverable without displacing a replacement live owner. Scan/delete disappearance races are tolerated.
+- Candidates are ordered by mtime and then NFC-normalized Unicode code-point filename. Old per-call reports are removed before complete closed-capture groups. Active captures, `diagnostics.jsonl`, cleanup locks, and the artifact being returned by the current call are protected.
+- 100 MiB is an eventual-convergence target, not an instantaneous hard cap: concurrent writers and protected/active artifacts may cause a temporary or irreducible overshoot. The recorder never claims otherwise and does not make a successful business result fail merely because another process currently owns cleanup.
+- This amendment retires `DIAGNOSTIC_STORAGE_LIMIT`: `start_capture` runs the same cooperative maintenance path instead of performing an unconditional full-directory scan and rejecting at an inaccurately hard boundary.
 
 ### M0.1 protocol error boundary amendment (2026-08-17)
 
@@ -213,7 +248,7 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 
 ### M1 EPUB resource limits amendment (2026-08-17)
 
-- EPUB ingestion enforces deterministic resource limits before and during ZIP expansion: ZIP entry count (`maxEntries`), per-document decoded size including the OPF package (`maxDocumentBytes`), and total decoded spine size (`maxTotalBytes`). Defaults: 4096 entries, 16 MiB per document, 64 MiB total.
+- EPUB ingestion enforces deterministic resource limits before and during ZIP expansion: ZIP entry count (`maxEntries`), per-document decoded UTF-8 byte size including the OPF package (`maxDocumentBytes`), and total decoded spine UTF-8 byte size (`maxTotalBytes`). Defaults: 4096 entries, 16 MiB per document, 64 MiB total. These are `Buffer.byteLength(value, "utf8")` boundaries, not JavaScript UTF-16 character counts or compressed ZIP sizes.
 - Every breach is a stable coded error — `EPUB_TOO_MANY_ENTRIES`, `EPUB_DOCUMENT_TOO_LARGE`, `EPUB_TOTAL_TOO_LARGE` — never a hang or unbounded memory growth.
 - Limits are injectable for tests via `new GenericAdapter({ epub: Partial<EpubLimits> })`; `DEFAULT_EPUB_LIMITS` is exported from `@writing-mcp/adapter-generic`. No other interface changes.
 
@@ -221,6 +256,13 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 
 - Every adapter read is bracketed by source fingerprint checks (names + mtime + size of all files under the work root): if the fingerprint differs after the read, the service retries the read exactly once, then fails with stable code `SOURCE_CHANGED_DURING_READ`. A snapshot is never built from mixed-time source state; the client should retry the operation.
 - Text ingestion is bounded deterministically: per-file `maxDocumentBytes` (breach: `SOURCE_FILE_TOO_LARGE`) and per-work cumulative `maxTotalBytes` (breach: `SOURCE_TOTAL_TOO_LARGE`), defaults 16 MiB / 64 MiB. Injectable via `new GenericAdapter({ text: Partial<TextLimits> })`; `DEFAULT_TEXT_LIMITS` is exported. EPUB sizes remain governed by the EPUB resource limits amendment.
+
+### M1 SourceSnapshot freshness amendment (2026-08-21)
+
+- Each adapter owns the exact enumeration of files it reads. A `SourceSnapshot` stores its real root plus deterministically sorted entries of normalized relative path, internal absolute path, byte size, and nanosecond mtime; its SHA-256 fingerprint is over structured full-path entry data, so equal basenames in different directories remain distinct. The Generic and InkOS adapters both validate every manifest entry's realpath and metadata immediately before reading it.
+- The service uses one adapter snapshot for the read and takes a second adapter snapshot afterwards. A source mismatch retries the full operation once, then returns `SOURCE_CHANGED_DURING_READ`; it does not use an independent recursive scan, silently ignore source read/stat errors, or recompute a follow-up fingerprint after validation. EPUB manifests contain only the outer EPUB file, which is read once into the ZIP parser buffer.
+- Per-work active state separates `loaded` (the parsed work held by the current store) from `indexed` (the source snapshot proven represented by a valid index). Only a successful incremental/rebuild or a fresh status advances `indexed`; stale, missing, and incompatible status may advance `loaded` only. Explore and context re-index whenever `indexed` differs from the current snapshot, while an unchanged indexed snapshot takes the fast path. A failed status/index operation closes the new store and retains the prior usable store and both freshness values.
+- This is metadata freshness, not content-hash freshness. An in-place replacement that preserves both mtime and size can remain undetected until a later source change or process restart; no stronger detection is claimed. Tool shapes and derived-index schema are unchanged.
 
 ### M1 span hard cap amendment (2026-08-17)
 
@@ -234,13 +276,25 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - stdout is reserved for JSON-RPC messages only: lifecycle and shutdown diagnostics go to stderr (`[writing-mcp][lifecycle]` prefix); every stdout line must parse as a JSON-RPC message.
 - `createStdioRuntime(service, options?)` exposes the `{ server, shutdown }` pair so the shutdown chain is testable in process; `shutdown` is idempotent.
 
+### M1 process lifecycle hardening amendment (2026-08-21)
+
+- This amendment supersedes the earlier unconditional “then exit with code 0” wording. SIGINT, SIGTERM, transport close from stdin EOF, and repeated triggers enter one memoized termination promise. Runtime shutdown itself also returns one memoized promise and always attempts `server.close()` before `service.close()`, collecting failures only after both attempts.
+- Normal completion clears the fallback and lets Node exit naturally; it does not call `process.exit(0)`. A shutdown failure is reported only through stderr, sets a nonzero process exit status, and still completes the shared termination chain.
+- `process.exit(1)` is reserved for the 5-second last-resort timer when shutdown remains unsettled. Repeated triggers cannot create extra close sequences or fallback timers, and stdout remains JSON-RPC-only.
+
 ### M4 context source registry amendment (2026-08-17)
 
 - Context assembly assigns layers through a frozen source provider registry instead of candidate positions: Character/Fact/Foreshadow → L1, Chapter/Event/OutlineNode → L2, Location/Item and unknown kinds → L3; required blocks (pool-hit and direct-resolved `requiredRefs`) are promoted to L0 (task goals and mandatory constraints).
 - Context candidates come from search rows whose `kind` is the lowercase document kind, so document kinds normalize to their entity counterparts before lookup (character→Character, state→Fact, foreshadow→Foreshadow, chapter→Chapter, outline→OutlineNode); `document` and unrecognized kinds stay L3. Without this normalization every block would silently fall back to L3.
 - Candidates sharing an evidence excerpt hash are folded: the first occurrence survives under required-first, deterministic score order, and the folded refs appear in `omitted` with reason `duplicate_evidence`.
 - Budget filling proceeds L0→L3 (layer rank, then score descending, then registry priority, then ref), implementing trim-from-L3 toward L0. Existing omitted reasons (`budget_limit`, `not_found`, `required_minimum_exceeds_budget`) and the `ContextPacket` shape are unchanged.
-- Registry fields `minTokens`/`preferredTokens`/`maxTokens` remain reserved and are deliberately undeclared; token accounting stays `mixed-cjk-v1` with `estimated: true` indefinitely (AUD-014 deferred to post-v1 per 2026-08-18 decision; see IDEAS file AUD-014 Tokenizer 决策记录).
+- Registry fields `minTokens`/`preferredTokens`/`maxTokens` remain reserved and are deliberately undeclared. Token accounting remains `mixed-cjk-v1` with `estimated: true`; its public excerpt-only scope is frozen by the 2026-08-21 accounting-scope amendment and is not an exact model-token claim.
+
+### M4 `ContextPacket` accounting-scope amendment (2026-08-21)
+
+- Every successful `writing_context` packet, including `budget_unsatisfiable`, carries required `accountingScope: "evidence_excerpts_only"`. The field is additive to the packet shape and is emitted by core, the MCP data schema, and the registered tool output schema.
+- `usedTokens` remains exactly the sum of returned block `tokens`; each value is the `mixed-cjk-v1` estimate of that block's `evidence.excerpt` only. It excludes refs, headings, locators, omitted rows, diagnostics, JSON framing, and the Markdown fallback.
+- This scope is material for external tokenizer evaluation: callers can compare the actual returned excerpt material with an external tokenizer without mistaking the built-in estimate for exact model tokens. No tokenizer-accuracy claim, model call, or additional source content accounting is introduced.
 
 ### M4 source directory observable amendment (2026-08-18)
 
@@ -257,6 +311,13 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - No schema, error-code, freshness-vocabulary, or `IndexStats` shape changes; `contextSources` is additive and optional.
 
 ## Benchmark gate
+
+### Reliability gate amendment (Task 2, 2026-08-21)
+
+- `verify` is public/CI-safe and is read-only with respect to tracked files. `gold:gate` measures candidate gold-span gates and `gold:check` rejects only metric regressions against the committed snapshot; both are read-only.
+- `gold:update` is the sole baseline writer. It writes the snapshot atomically and records the measured committed code hash; it is never included in a verify chain.
+- Gold measurement and private acceptance require `WRITING_MCP_PRIVATE_ACCEPTANCE`; `private:measure` reports threshold misses without failing them, while `verify:private` is the hard top-20/required-recall acceptance chain. Corpus performance is independent: it requires `WRITING_MCP_PRIVATE_CORPUS` and `WRITING_MCP_CORPUS_TASKS` (and accepts `WRITING_MCP_PRIVATE_REPORT_DIR`).
+- Corpus performance and external token evidence require explicit local inputs and local report locations. Explore/Context thresholds are warm-query gates: the runner executes every frozen task once without timing, then records three measured runs per task and reports nearest-rank P95 across all measured samples. The local report must disclose this profile and anonymous `{run, task, elapsedMs}` samples without copying query text. Until the public field is added, benchmark token accounting is explicitly `evidence_excerpts_only`; external token status is `not_evaluated` and no 95% external-token claim is made.
 
 - Dataset: `benchmarks/m0.json`, exactly 30 machine-readable tasks.
 - Fact/token baseline: `benchmarks/baseline.json`; runner: `scripts/run-benchmark.mjs`.

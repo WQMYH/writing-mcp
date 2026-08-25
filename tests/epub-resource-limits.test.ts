@@ -21,6 +21,20 @@ async function epubWith(chapters: Array<{ id: string; body: string }>, opfVersio
   return zip.generateAsync({ type: "nodebuffer" });
 }
 
+async function loadWithLimits(path: string, data: Buffer, limits: { maxDocumentBytes?: number; maxTotalBytes?: number }) {
+  await writeFile(path, data);
+  const adapter = new GenericAdapter({ epub: limits });
+  return adapter.load((await adapter.discover(path))[0]!);
+}
+
+async function decodedParts(data: Buffer): Promise<{ opf: string; spine: string[] }> {
+  const zip = await JSZip.loadAsync(data);
+  return {
+    opf: await zip.file("content.opf")!.async("string"),
+    spine: await Promise.all(["c1.xhtml", "c2.xhtml"].map(name => zip.file(name)?.async("string")).filter((value): value is Promise<string> => value !== undefined)),
+  };
+}
+
 describe("EPUB resource limits (AUD-028)", () => {
   test("rejects packages with too many ZIP entries", async () => {
     const dir = await mkdtemp(join(tmpdir(), "writing-mcp-epub-entries-")), path = join(dir, "many.epub");
@@ -67,6 +81,39 @@ describe("EPUB resource limits (AUD-028)", () => {
     try {
       const work = await adapter.load((await adapter.discover(path))[0]!);
       expect(work.documents.filter(d => d.kind === "chapter")).toHaveLength(2);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  test("enforces the decoded OPF limit in UTF-8 bytes at the exact boundary", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "writing-mcp-epub-opf-bytes-")), path = join(dir, "opf.epub");
+    const data = await epubWith([{ id: "c1", body: "第一章 正文。" }]);
+    const { opf } = await decodedParts(data);
+    const exactBytes = Buffer.byteLength(opf, "utf8");
+    try {
+      await expect(loadWithLimits(path, data, { maxDocumentBytes: exactBytes })).resolves.toMatchObject({ documents: expect.any(Array) });
+      await expect(loadWithLimits(path, data, { maxDocumentBytes: exactBytes - 1 })).rejects.toMatchObject({ code: "EPUB_DOCUMENT_TOO_LARGE" });
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  test("enforces each decoded spine document limit in UTF-8 bytes at the exact boundary", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "writing-mcp-epub-spine-bytes-")), path = join(dir, "spine.epub");
+    const data = await epubWith([{ id: "c1", body: "第一章 " + "甲".repeat(200) }]);
+    const { spine } = await decodedParts(data);
+    const exactBytes = Buffer.byteLength(spine[0]!, "utf8");
+    try {
+      await expect(loadWithLimits(path, data, { maxDocumentBytes: exactBytes })).resolves.toMatchObject({ documents: expect.any(Array) });
+      await expect(loadWithLimits(path, data, { maxDocumentBytes: exactBytes - 1 })).rejects.toMatchObject({ code: "EPUB_DOCUMENT_TOO_LARGE" });
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  test("sums decoded spine UTF-8 bytes at the exact total boundary", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "writing-mcp-epub-total-bytes-")), path = join(dir, "total-bytes.epub");
+    const data = await epubWith([{ id: "c1", body: "第一章 " + "甲".repeat(40) }, { id: "c2", body: "第二章 " + "乙".repeat(40) }]);
+    const { spine } = await decodedParts(data);
+    const exactBytes = spine.reduce((total, html) => total + Buffer.byteLength(html, "utf8"), 0);
+    try {
+      await expect(loadWithLimits(path, data, { maxDocumentBytes: 10_000, maxTotalBytes: exactBytes })).resolves.toMatchObject({ documents: expect.any(Array) });
+      await expect(loadWithLimits(path, data, { maxDocumentBytes: 10_000, maxTotalBytes: exactBytes - 1 })).rejects.toMatchObject({ code: "EPUB_TOTAL_TOO_LARGE" });
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
 });

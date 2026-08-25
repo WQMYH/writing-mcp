@@ -2,7 +2,7 @@
 
 > 文档定位：这是 `docs/IMPLEMENTATION_STATUS.md`「当前测试覆盖」一节的**详细清单宿主**。状态文档只保留概述与指向本文件的抽取路径；本文件随测试文件一起维护。
 >
-> 运行：`pnpm build && pnpm test`（vitest）。基准门禁：`pnpm benchmark`。lint 门禁：`pnpm lint`（oxlint，0 警告；`store.ts` 暂因 minified-file 启发式被忽略，AUD-035 拆分后移除）。覆盖率棘轮门禁：`pnpm coverage`（阈值见 `vitest.config.ts`）。私有语料验收：`pnpm benchmark:private`（需 `WRITING_MCP_PRIVATE_ACCEPTANCE`）。
+> 运行：`pnpm build && pnpm test`（vitest）。基准门禁：`pnpm benchmark`。lint 门禁：`pnpm lint`（oxlint，0 警告；`store.ts` 暂因 minified-file 启发式被忽略，AUD-035 拆分后移除）。覆盖率棘轮门禁：`pnpm coverage`（阈值见 `vitest.config.ts`）。Gold/private acceptance 使用 `WRITING_MCP_PRIVATE_ACCEPTANCE`；corpus gate 使用 `WRITING_MCP_PRIVATE_CORPUS` 与 `WRITING_MCP_CORPUS_TASKS`，可选 `WRITING_MCP_PRIVATE_REPORT_DIR`。公开 `verify` 不读取任何私有环境变量。
 
 ## 测试文件 → 主题映射
 
@@ -10,9 +10,10 @@
 |---|---|
 | `baseline.test.ts` | M0 基线：整书 166 Token、10/10 事实召回、证据覆盖 100%、61.24% 降幅 |
 | `benchmark.test.ts` | 30 个机器可读基准任务的确定性门禁 |
-| `diagnostics.test.ts` | 诊断链：脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用、不可持久化降级、AUD-023 开发捕获有界命中 ref/score/locator 哈希（不存正文）、AUD-024 general JSONL 串行轮转/并发不丢不乱/写失败降级 |
+| `diagnostics.test.ts` | 诊断链：脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用、不可持久化降级、AUD-023 开发捕获有界命中 ref/score/locator 哈希（不存正文）、AUD-024 general JSONL 串行轮转/并发不丢不乱/写失败降级、Task 5B 当前返回 artifact 保护/清理延迟披露/capture truncate 写入计数 |
+| `diagnostic-retention.test.ts` | Task 5B 诊断保留：默认 64 次写入/1 MiB 扫描门槛、同目录扫描合并、稳定 mtime→Unicode code-point 文件排序、报告优先/closed capture 组清理、active capture 保护、协作锁延迟/死进程与畸形锁回收、ENOENT 与替换锁竞态 |
 | `epub.test.ts` | EPUB：正常双章节 spine、OPF 属性顺序变化、元数据标题、封面过滤、跨 spine 续章、单作品多 EPUB 引用隔离、损坏 ZIP/缺 container/缺 OPF/无可读 spine 四类失败 |
-| `epub-resource-limits.test.ts` | AUD-028 EPUB 资源上限：entry 数超限 `EPUB_TOO_MANY_ENTRIES`、单文档超限 `EPUB_DOCUMENT_TOO_LARGE`、总解码量超限 `EPUB_TOTAL_TOO_LARGE`（均可经构造器注入）、EPUB 2.0 包在默认上限下正常加载 |
+| `epub-resource-limits.test.ts` | AUD-028/Task 5A EPUB 资源上限：entry 数超限 `EPUB_TOO_MANY_ENTRIES`、OPF/单 spine/累计 spine 按解码 UTF-8 bytes 的中文多字节精确边界、总量超限 `EPUB_TOTAL_TOO_LARGE`（均可经构造器注入）、EPUB 2.0 包在默认上限下正常加载 |
 | `explore-bfs.test.ts` | 0~3 跳 BFS、fan-out/全局上限、逐边 pathEvidence、截断 |
 | `generic-txt.test.ts` | TXT：GBK/GB18030 解码、章节切分、章节编号重置推断新卷、原始文件行号偏移 |
 | `graph-identity-evidence.test.ts` | schema v4 图：重复 Chapter 标题独立身份、按源 ordinal 排序、同名实体全部定义、规范来源晋升、多次 mention、多 span 关系证据 |
@@ -22,25 +23,32 @@
 | `mvp.test.ts` | 通用链路：resolve→rebuild→中文搜索→context→无变化索引→entity/neighborhood→单章增量；适配器优先级；并发串行 |
 | `path-security.test.ts` | 授权 roots 缺失/越界、symlink/junction 越界、service 层强制 roots |
 | `resolve-matrix.test.ts` | 作品识别矩阵：空目录、不支持扩展名、多书歧义、同目录直接文件隔离、InkOS 新旧结构 |
-| `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限、响应字节上限（RESPONSE_TRUNCATED） |
+| `response-limits.test.ts` | Task 4 server 最终响应门禁：中文 UTF-8 byte accounting、8,192-byte 诊断预留、explore/context/resolve/diagnose/index 确定性 reducer、完整 L3→L2→L1→optional L0 次序、budget-unsatisfiable required 事实保护、真实 WritingStore→server omission 守恒、recorder 只见最终 data/error、动态 Markdown 防 CR/LF/控制字符伪造与 16,384-byte 上限、输出 schema 保真 |
+| `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限、长词 FTS 满池时的短原词候选、revision-scoped 暖查询复用与 rebuild 失效、core UTF-8 响应预裁剪（ambiguous tail 先于 results、omittedEstimate 守恒、evaluator 同口径） |
+| `search-prf.test.ts` | Task 6 PRF 纯逻辑：冻结生产配置 `12/8/0.35`、原词/别名/停用词/单字/单 span 过滤、双字/三字/四字候选、bytewise tie-break、128 预频率池与单批调用、非法网格拒绝 |
+| `evaluator-isolation.test.ts` | evaluator-only 搜索隔离：环境变量不影响生产查询、调用级 ablation/PRF 不重建索引且不污染普通路径、生产配置与显式评测一致、非法网格拒绝、重复双字中文词可扩展真实候选 |
+| `gold-script-isolation.test.ts` | 黄金脚本写隔离：只有 `gold:update` 可写显式仓库外受控快照，gate/check/legacy gate 全部只读；默认仓库快照仍受 clean-HEAD 保护 |
+| `corpus-gate-scripts.test.ts` | corpus 门禁脚本：显式/默认报告目录、暖查询预热/测量轮廓、匿名逐样本耗时、完整 token-evaluation-materials、外部 tokenizer `not_evaluated`、阈值失败与输出目录隔离 |
+| `private-script-mode.test.ts` | 私有验收 report-only 与 enforce 模式边界，已知 required miss 只能在前置测量阶段记录，PRF 完成后 enforce 为硬门禁 |
 | `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见、超大 query 拒绝 |
 | `source-directory-observable.test.ts` | AUD-012 来源目录可观测：explore stats 的 contextSources（byLayer L1/L2/L3 + byKind）复用 AUD-013 注册表 |
 | `status-fast-path.test.ts` | status mtime/size 快速路径：指纹未变时重复 status 零 adapter.load（计数适配器）且结果与全路径语义一致、源编辑击穿快速路径报 stale、status 返回 contextSources |
-| `context-required-refs.test.ts` | AUD-005 requiredRefs 直接解析：池外 span/entity 强制命中、不存在 ref 进 omitted（not_found）、直解 ref 触发 budget_unsatisfiable、池内去重与优先 |
-| `context-source-registry.test.ts` | AUD-013 来源提供器注册表：ENTITY_KINDS 全覆盖的语义分层映射、小写文档类型归一（character/state/foreshadow→L1，chapter/outline→L2，document/未知→L3）、required 晋升 L0、evidenceHash 折叠去重（required 前置保护、duplicate_evidence 进 omitted）、预算压力下自 L3 向低层裁剪、真实路径 L1 归属与不得整体落 L3 护栏 |
+| `context-required-refs.test.ts` | AUD-005 requiredRefs 直接解析：池外 span/entity 强制命中、不存在 ref 进 omitted（not_found）、直解 ref 触发 budget_unsatisfiable、池内去重与优先；所有 ContextPacket 路径声明 excerpt-only accountingScope，usedTokens 等于返回块 tokens 之和 |
+| `context-source-registry.test.ts` | AUD-013 来源提供器注册表：ENTITY_KINDS 全覆盖的语义分层映射、小写文档类型归一、required 晋升 L0、evidenceHash 去重、L3→低层预算裁剪、真实路径 L1 归属；Task 6 后 Context 内部搜索池固定为 12，requiredRefs 仍走独立直解 |
 | `bfs-batching.test.ts` | AUD-020 批量化护栏：宽图每节点 fan-out 确定性截断与重复运行一致、宽图 BFS 在确定性耗时预算内完成 |
 | `timeline.test.ts` | AUD-015 timeline 独立投影：章节+precedes 时序按章节位置排序、名称过滤、未知章节锚点稳定殿后、无时态数据 NO_RESULTS |
-| `graph-vocabulary.test.ts` | AUD-022 词汇表冻结：索引实体 kind 含 OutlineNode 且不超出 ENTITY_KINDS、边 kind 不超出 EDGE_KINDS、InkOS/generic 能力声明不超出 WORK_CAPABILITIES |
+| `graph-vocabulary.test.ts` | AUD-022 词汇表冻结：索引实体 kind 含 OutlineNode 且不超出 ENTITY_KINDS、边 kind（含原生 `mentions`）不超出 EDGE_KINDS、唯一持久化别名 `[[alias]]` 生成 Document→Entity 边并从双端 BFS 保留精确 alias-capture 证据，多 owner alias 保持 `AMBIGUOUS_ALIAS` 未解析、InkOS/generic 能力声明不超出 WORK_CAPABILITIES |
 | `timeline-tense-filter.test.ts` | AUD-012 章节时态过滤：targetChapter 锚点只保留当时态有效的实体/边（无界 from/to 视为书首/书尾）、锚点外章节排除、与名称过滤组合、重复运行确定性 |
-| `context-reserved-params.test.ts` | AUD-012 约束接口 MCP 契约（stdio）：explore schema 暴露 targetChapter 且锚定 timeline 排除锚点外章节实体；context schema 暴露四约束参数、taskType 值域开放（无 enum）且保留非驱动；描述声明 requiredRefs 胜出 excludeRefs 的优先级；exclude/pin 经 MCP 生效；未知 taskType 被接受且输出不变 |
+| `context-reserved-params.test.ts` | AUD-012/Task 3 约束接口 MCP 契约（stdio）：explore schema 暴露 targetChapter 且锚定 timeline 排除锚点外章节实体；context schema 暴露四约束参数、taskType 值域开放（无 enum）且保留非驱动；输出 schema/描述冻结 excerpt-only accountingScope 与外部 Token 复核语义；描述声明 requiredRefs 胜出 excludeRefs 的优先级；exclude/pin 经 MCP 生效；未知 taskType 被接受且输出不变 |
 | `context-constraint-wiring.test.ts` | AUD-012 约束接口接线（store 级）：excludeRefs 过滤与 excluded 报告、requiredRefs 胜出 excludeRefs、entityRefs/documentRefs 直解入 blocks 及层归属、targetChapter 锚定层内排序（同章→前距→后距）且无锚点时不生效、taskType 值域开放且任意值输出恒等、共享数据库句柄不被 context 误关、四份 ref 列表均受 CONTEXT_REFS_TOO_LARGE 校验、budget_unsatisfiable 保留各类真实 omitted 原因（excluded/not_found 不冒充预算原因） |
 | `search-source-trust.test.ts` | AUD-012 残留（M3 期）source-trust 排序因子：命中查询词的 deterministic 行获 +0.25 信任加分，反超原始分更高的 alias-only heuristic 行，重复运行确定性 |
 | `protocol-boundary.test.ts` | AUD-025 协议错误边界：数据 schema 单一真相源、输出失配记 failure 并返回 OUTPUT_SCHEMA_MISMATCH 一致信封、正常路径无协议错误、SDK 输入拒绝裸文本且无诊断记录、协议层未知消息经 onerror 上报 |
 | `generic-work-boundary.test.ts` | AUD-026 通用作品边界：双 EPUB 目录产生两个候选并返回 ambiguous、EPUB 候选与直接解析文件同 workRef/rootPath、capabilities 由实际输入决定（纯文本目录不含 epub）、纯文本目录仍为单一作品 |
 | `txt-numbering.test.ts` | AUD-027 章节编号语法：罗马数字章节不再被 Number("iv") 丢弃、中文数字支持到九百九十九（百位合成）、罗马数字重置推断新卷、非法罗马数字确定性跳过并入上一章、Markdown 中文数字章名识别为 chapter |
 | `snapshot-consistency.test.ts` | AUD-029 snapshot 一致性：读取期间源持续变化拒绝 `SOURCE_CHANGED_DURING_READ`（有界重试后仍不一致）、一次性写入稳定后有界重试成功、单文件超限 `SOURCE_FILE_TOO_LARGE`、作品总量超限 `SOURCE_TOTAL_TOO_LARGE`、默认上限正常加载 |
+| `source-snapshot-reliability.test.ts` | Task 1 SourceSnapshot：完整相对路径避免重名碰撞、超过 12 层的精确枚举、单文件与增删指纹变化、越界 symlink 拒绝、status stale 后 explore 先增量索引、未变化快路径，以及失败增量不推进 freshness 并可恢复查询 |
 | `span-hard-split.test.ts` | AUD-030 span 硬上限与边界规则：超长单行硬切为共享同一源行的有界 chunk、locator 不含被裁空行、相邻 span 连续平铺无重叠无遗漏且内容可重组、硬切后后续 span 行号连续、heading 边界 locator 精确 |
-| `lifecycle.test.ts` | AUD-032 进程生命周期：SIGTERM/SIGINT 在时限内终止进程（POSIX 优雅 exit 0 / Windows 信号终止）、stdin EOF 优雅退出 exit 0、完整会话 stdout 只输出 JSON-RPC 且干净退出、进程内 shutdown 链先关 server 再关 service 幂等且零 stdout 写入 |
+| `lifecycle.test.ts` | AUD-032/Task 5C 进程生命周期：SIGTERM/SIGINT 在时限内终止进程（POSIX 优雅 exit 0 / Windows 信号终止）、stdin EOF 优雅退出 exit 0、完整会话 stdout 只输出 JSON-RPC；runtime/termination promise 身份幂等、server→service 失败后置、5 秒悬挂兜底/成功取消、错误报告失败仍完成且零 stdout 写入 |
 
 ## 评测脚本（非 CI，本地评测用）
 
@@ -49,11 +57,12 @@
 | `scripts/gold-hit.mjs` | 黄金 span 命中口径唯一宿主（2026-08-20 拍板）：fact 命中 ⟺ 前 k 个返回 span 中 ref ∈ goldRefs(fact)（goldRefs = 解析期全量 span 中逐字包含任一 evidenceQuote 者）；含 holdout 切分（前3+后2章）与章节诊断，所有评测面共用，禁止第二套判定 |
 | `scripts/evaluate-reranking.mjs` | 完整重排评测（gold-span 口径）：读取私有标注数据（《语料A》42 facts），一次查询 limit=50 后按 k=5/10/50 真截断计 recall + MRR；仪表自检（单调性 + 阴性对照 + 冒烟）；goldSpanCount=0 归 annotation_anomalies 桶不进分母，required 落入该桶告警；支持 train/holdout/all 切分 |
 | `scripts/run-private-acceptance.mjs` | 私有验收（gold-span 口径，命中判定经 gold-hit.mjs）：top-20 命中 + probe-100 rank + quoteExposure 诊断 + 性能门禁 |
-| `scripts/ablation-test.mjs` | 因子 ablation（2026-08-20 重写，gold-span 口径）：经 `WRITING_MCP_ABLATE` 运行时开关逐变体禁用（coverage/alias/proximity/heading/bm25 项/FTS 候选合并/trust，bm25 两操作分离），train-only 测 recall@5/10/50 + MRR，§251 阈值裁决 KEEP/REMOVABLE；报告落盘 `reports/ablation-gold-span.json`（gitignored） |
-| `scripts/gate-gold-evidence.mjs` | 黄金证据门禁 + 基线快照（§266）：train/holdout 双切分跑 gold-span 仪表，门禁 recall@50≥0.9 + required@50=1.0，失败 exit 1；快照落盘 `reports/gold-evidence-baseline.json`（已提交，纯数字无私有内容） |
+| `scripts/ablation-test.mjs` | 因子 ablation（gold-span 口径）：通过 `WritingService.evaluateSearch` 的显式、调用级 `disabledFactors` 注入逐变体评测（coverage/alias/proximity/heading/bm25/FTS/trust），单次索引复用；train-only 测 recall@5/10/50 + MRR，报告落盘 `reports/ablation-gold-span.json`（gitignored） |
+| `scripts/gold-measurement.mjs`、`gold-gate.mjs`、`gold-check.mjs`、`gold-update.mjs` | 共享确定性 gold-span 测量；gate/check 只读，update 原子更新已提交快照并记录代码 hash |
 | `scripts/attribute-misses.mjs` | miss 三层归因（数据层→机制层）：L1 查询词条可达性 / L2 候选可达性（LIKE 匹配数 vs candidateLimit）/ L3 公式因子分解；镜像 store 私有逻辑，需与 store.ts 手工同步 |
 | `scripts/load-corpus.mjs` | 语料加载：扫描目录、统计文件数量/大小/字符数、检测编码格式 |
-| `scripts/run-corpus-benchmark.mjs` | 语料基准：索引计时、Explore 查询延迟、Context 装配、内存监控、P95 延迟计算 |
+| `scripts/run-corpus-benchmark.mjs` | 显式 corpus/tasks/report-dir 的私有语料门禁：每个任务预热一次、测量三次，报告每百万字符索引、Explore/Context 暖查询 nearest-rank P95，以及本地 token-evaluation-materials.json（仅 evidence excerpts，外部 tokenizer 未评估） |
+| `scripts/prf-calibration.mjs` | 冻结 27 组 PRF 网格；train 先执行 recall@5/@10/MRR/@50/required@50 不回退资格筛选，再按 recall@5→MRR→低复杂度选择；holdout 只验证，另执行私有 top-20/required 门禁 |
 
 ## 覆盖清单（按能力域）
 
@@ -68,8 +77,10 @@
 - 诊断链：默认元数据脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用、不可持久化降级。
 - AUD-023：开发捕获事件保存有界 `outputHits`（命中 ref/kind/sourceKind/score + locator 哈希、omitted 原因、候选 workRef，各列上限 100），正文/标题/路径不入捕获；通用 JSONL 与逐调用报告仍只保存数量。
 - AUD-024：general JSONL 的轮转检查与追加在同一按目录串行队列内执行，注入小容量上限验证轮转保留最新半数、并发 20 条记录不丢不乱且保持提交顺序、写失败降级为 persistence=failed 不替换业务结果。
+- Task 5B：诊断目录保留以 64 次写入、1 MiB 估算新增或估算超过 100 MiB 时的扫描为准；同目录维护合并，跨进程清理由协作锁串行并允许如实延后，清理按稳定 mtime→Unicode code-point 相对路径顺序先报告后 closed capture 组，且不会在返回前删除当前报告或 capture artifact。
 - AUD-025：输出 data schema 是注册信封与 wrapper 自校验的单一真相源；wrapper 记录前自校验失配抛出 `OUTPUT_SCHEMA_MISMATCH`（记 failure + isError 一致信封 + 专用 recovery）；正常 in-process 调用无协议错误；SDK 输入拒绝返回裸 isError 文本、不产生诊断记录且不写 stderr；协议层未知消息类型经注入的 onerror 上报。
-- AUD-032：SIGINT/SIGTERM/stdin EOF 统一走同一优雅关闭链（先关 MCP server 再关 service）并确定性退出（exit 0，5 秒 grace guard 兜底强制终止，同步 SQLite 长操作不可取消也不能挂住进程）；stdout 专属 JSON-RPC——会话全程与关闭过程每一行 stdout 均可解析为 JSON-RPC 消息，生命周期诊断只走 stderr；`createStdioRuntime` 暴露的 shutdown 幂等且在进程内测试中零 stdout 写入。
+- Task 4：server 先按 schema 验证业务 data，以完整 8,192-byte 合成诊断预留测量 `structuredContent.result`，按工具保真裁剪后才写 recorder；成功/失败最终结构 ≤200,000 UTF-8 bytes、返回诊断 ≤8,192 bytes、摘要式 Markdown ≤16,384 bytes，无法容纳 required/不可裁字段时稳定返回 `RESPONSE_TOO_LARGE`。
+- AUD-032：SIGINT/SIGTERM/stdin EOF 统一进入同一 memoized termination promise（先关 MCP server 再关 service）；正常完成清除 5 秒兜底并自然退出，关闭失败在两次尝试后通过 stderr/非零状态披露，只有悬挂才调用强制退出。stdout 专属 JSON-RPC；`createStdioRuntime.shutdown()` 对重复/并发调用返回同一个 Promise。
 
 ### 检索正确性（M3）
 

@@ -14,6 +14,15 @@
     "check": "tsc -b --pretty false",
     "lint": "oxlint -c oxlintrc.json --deny-warnings packages tests scripts",
     "coverage": "vitest run --coverage",
+    "verify": "pnpm check && pnpm lint && pnpm test && pnpm benchmark && pnpm coverage",
+    "gold:gate": "pnpm build && node scripts/gold-gate.mjs",
+    "gold:check": "pnpm build && node scripts/gold-check.mjs",
+    "gold:update": "pnpm build && node scripts/gold-update.mjs",
+    "prf:calibrate": "pnpm build && node scripts/prf-calibration.mjs",
+    "private:measure": "pnpm build && node scripts/run-private-acceptance.mjs --report-only",
+    "corpus:gate": "pnpm build && node scripts/run-corpus-benchmark.mjs",
+    "verify:private:pre-prf": "pnpm verify && pnpm private:measure && pnpm gold:gate && pnpm gold:check && pnpm corpus:gate",
+    "verify:private": "pnpm verify:private:pre-prf && pnpm build && node scripts/run-private-acceptance.mjs --enforce",
     "start": "node packages/mcp-server/dist/index.js"
   },
   "devDependencies": {

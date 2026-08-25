@@ -29,6 +29,10 @@ describe("AUD-005 requiredRefs resolve outside the search candidate pool",()=>{
       expect(block!.required).toBe(true);
       expect(block!.evidence.excerpt).toContain("银铃铛");
       expect(packet.usedTokens).toBeGreaterThanOrEqual(block!.tokens);
+      // Break caught: callers could mistake the built-in excerpt estimate for
+      // whole-packet or exact model-token accounting.
+      expect(packet.accountingScope).toBe("evidence_excerpts_only");
+      expect(packet.usedTokens).toBe(packet.blocks.reduce((total,entry)=>total+entry.tokens,0));
     }finally{store.close();await rm(root,{recursive:true,force:true});}
   });
 
@@ -68,6 +72,9 @@ describe("AUD-005 requiredRefs resolve outside the search candidate pool",()=>{
       const packet=await store.context("铜钥匙",1,[betaSpanRef]);
       expect(packet.status).toBe("budget_unsatisfiable");
       expect(packet.omitted.some(item=>item.ref===betaSpanRef&&item.reason==="required_minimum_exceeds_budget")).toBe(true);
+      // The required packet-shape field must not disappear from an early
+      // business-result return path.
+      expect(packet.accountingScope).toBe("evidence_excerpts_only");
     }finally{store.close();await rm(root,{recursive:true,force:true});}
   });
 

@@ -1,0 +1,11 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { measureGoldEvidence, goldSnapshot } from "./gold-measurement.mjs";
+const measurement = await measureGoldEvidence(process.env.WRITING_MCP_PRIVATE_ACCEPTANCE);
+const baselinePath = process.env.WRITING_MCP_GOLD_BASELINE_PATH ?? new URL("../reports/gold-evidence-baseline.json", import.meta.url);
+const baseline = JSON.parse(await readFile(typeof baselinePath === "string" ? resolve(baselinePath) : baselinePath, "utf8"));
+const candidate = goldSnapshot(measurement, null);
+const fields = ["recallAt5", "recallAt10", "recallAt50", "mrr", "requiredRecallAt50"];
+const regressions = ["train", "holdout"].flatMap((split) => fields.filter((field) => candidate[split][field] < baseline[split][field]).map((field) => `${split}.${field}`));
+console.log(JSON.stringify({ candidate, regressions }, null, 2));
+if (regressions.length) process.exitCode = 1;

@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 .writing-index/
+.superpowers/
 *.tsbuildinfo
 reports/*
 # Exception: the gold-evidence baseline snapshot is metrics only (no corpus

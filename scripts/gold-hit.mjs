@@ -91,9 +91,9 @@ export function cnToInt(text){
   let total=0,current=0;
   for(const char of text){
     if(char in digits)current=digits[char];
-    else if(char==="十")total+=(current||1)*10,current=0;
-    else if(char==="百")total+=(current||1)*100,current=0;
-    else if(char==="千")total+=(current||1)*1000,current=0;
+    else if(char==="十"){total+=(current||1)*10;current=0;}
+    else if(char==="百"){total+=(current||1)*100;current=0;}
+    else if(char==="千"){total+=(current||1)*1000;current=0;}
     else return null;
   }
   return total+current;

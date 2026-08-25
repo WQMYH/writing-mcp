@@ -1,7 +1,7 @@
 export type AdapterKind = "inkos" | "generic";
 export type DocumentKind = "chapter" | "outline" | "character" | "state" | "foreshadow" | "document";
 export type EntityKind = "Character" | "Location" | "Item" | "Event" | "Fact" | "Foreshadow" | "Chapter" | "OutlineNode";
-export type EdgeKind = "contains" | "appears_in" | "precedes";
+export type EdgeKind = "contains" | "mentions" | "appears_in" | "precedes";
 export type WorkCapability = "documents" | "full_text" | "epub" | "chapters" | "characters" | "outline" | "state" | "foreshadow";
 export type SourceKind = "native" | "deterministic" | "heuristic";
 
@@ -10,7 +10,7 @@ export type SourceKind = "native" | "deterministic" | "heuristic";
 // capabilities. Extending any list requires an M0 contract amendment, and
 // unimplemented relations are never advertised as existing capabilities.
 export const ENTITY_KINDS: readonly EntityKind[] = ["Character", "Location", "Item", "Event", "Fact", "Foreshadow", "Chapter", "OutlineNode"];
-export const EDGE_KINDS: readonly EdgeKind[] = ["contains", "appears_in", "precedes"];
+export const EDGE_KINDS: readonly EdgeKind[] = ["contains", "mentions", "appears_in", "precedes"];
 export const WORK_CAPABILITIES: readonly WorkCapability[] = ["documents", "full_text", "epub", "chapters", "characters", "outline", "state", "foreshadow"];
 
 export interface Diagnostic { code: string; message: string; path?: string }
@@ -28,14 +28,22 @@ export interface SourceDocument {
 }
 export interface SourceSegment { relativePath: string; startLine: number; endLine: number; documentStartLine: number; documentEndLine: number }
 export interface ParsedWork extends WorkCandidate { documents: SourceDocument[] }
+export interface SourceSnapshotEntry { relativePath: string; absolutePath: string; size: number; mtimeNs: string }
+export interface SourceSnapshot { rootPath: string; entries: readonly SourceSnapshotEntry[]; fingerprint: string }
 export interface WorkAdapter {
   readonly kind: AdapterKind;
   discover(sourcePath: string): Promise<WorkCandidate[]>;
-  load(candidate: WorkCandidate): Promise<ParsedWork>;
+  snapshot(candidate: WorkCandidate): Promise<SourceSnapshot>;
+  load(candidate: WorkCandidate, snapshot?: SourceSnapshot): Promise<ParsedWork>;
 }
 export interface IndexStats { added: number; updated: number; deleted: number; skipped: number; documents: number; spans: number; entities: number; edges: number }
 export interface IndexResult { workRef: string; revision: number; schemaVersion: number; freshness: "fresh" | "stale" | "missing" | "incompatible"; stats: IndexStats; contextSources?: { byLayer: Record<string, number>; byKind: Record<string, number> }; diagnostics: Diagnostic[]; elapsedMs: number }
 export type ExploreOperation = "search" | "entity" | "neighborhood" | "timeline" | "document" | "stats";
+/** Evaluator-only, call-scoped perturbations. These options are never read
+ * from process state and are not part of the MCP-facing search contract. */
+export type SearchExperimentFactor = "coverage" | "alias" | "proximity" | "heading" | "bm25Term" | "ftsMerge" | "trust";
+export interface PrfConfiguration { topK: 5 | 8 | 12; termCount: 4 | 6 | 8; weight: 0.15 | 0.25 | 0.35 }
+export interface SearchExperimentOptions { disabledFactors?: SearchExperimentFactor[]; prf?: PrfConfiguration }
 export interface EvidenceLocator { relativePath: string; startLine: number; endLine: number }
 export interface Evidence { documentRef: string; relativePath: string; startLine: number; endLine: number; excerpt: string; evidenceHash: string; revision: number; locators?: EvidenceLocator[] }
 export interface PathEvidence { edgeRef: string; edgeKind: string; direction: "outgoing" | "incoming"; sourceRef: string; targetRef: string; sourceKind: SourceKind; confidence: number; evidence: Evidence }
@@ -50,4 +58,4 @@ export type ContextLayer = "L0" | "L1" | "L2" | "L3";
 export type TaskType = "continue_chapter" | "draft_chapter" | "revise" | "answer" | "custom" | (string & {});
 export interface ContextOptions { excludeRefs?: string[]; entityRefs?: string[]; documentRefs?: string[]; targetChapter?: number; taskType?: TaskType }
 export interface ContextBlock extends ExploreItem { layer: ContextLayer; tokens: number; required: boolean }
-export interface ContextPacket { status: "complete" | "truncated" | "budget_unsatisfiable"; workRef: string; revision: number; budgetTokens: number; usedTokens: number; estimated: boolean; estimator: string; blocks: ContextBlock[]; omitted: Array<{ ref: string; reason: string; tokens: number }>; diagnostics: Diagnostic[] }
+export interface ContextPacket { status: "complete" | "truncated" | "budget_unsatisfiable"; workRef: string; revision: number; budgetTokens: number; usedTokens: number; estimated: boolean; estimator: string; accountingScope: "evidence_excerpts_only"; blocks: ContextBlock[]; omitted: Array<{ ref: string; reason: string; tokens: number }>; diagnostics: Diagnostic[] }

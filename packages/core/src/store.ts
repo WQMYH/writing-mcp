@@ -5,13 +5,22 @@ import { createHash, randomUUID } from "node:crypto";
 import { splitDocument, estimateTokens } from "./text.js";
 import { stableId } from "./ids.js";
 import { contextSourceProfile, dedupByEvidence, layerRank } from "./context-assembly.js";
-import type { ContextBlock, ContextOptions, ContextPacket, EntityKind, ExploreItem, ExploreOperation, ExploreResult, IndexResult, ParsedWork } from "./types.js";
+import { derivePrfTerms, PRODUCTION_PRF_CONFIGURATION, validatePrfConfiguration, type WeightedPrfTerm } from "./search-prf.js";
+import type { ContextBlock, ContextOptions, ContextPacket, EntityKind, ExploreItem, ExploreOperation, ExploreResult, IndexResult, ParsedWork, SearchExperimentOptions } from "./types.js";
 
 const SCHEMA_VERSION = 4;
 const SOFTWARE_VERSION = "0.1.0";
 const MAX_RESPONSE_BYTES = 200_000;
+const CONTEXT_SEARCH_LIMIT = 12;
 const json = (value: unknown) => JSON.stringify(value);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+function pretrimExploreCollections(results:ExploreItem[],ambiguous:ExploreItem[],cap:number):{results:ExploreItem[];ambiguous:ExploreItem[];dropped:number}{
+  let keptResults=[...results],keptAmbiguous=[...ambiguous],dropped=0;
+  const exceeds=()=>Buffer.byteLength(JSON.stringify({results:keptResults,ambiguous:keptAmbiguous}),"utf8")>cap;
+  while(exceeds()&&keptAmbiguous.length){keptAmbiguous=keptAmbiguous.slice(0,-1);dropped++;}
+  while(exceeds()&&keptResults.length){keptResults=keptResults.slice(0,-1);dropped++;}
+  return{results:keptResults,ambiguous:keptAmbiguous,dropped};
+}
 const asNumber = (value: unknown) => typeof value === "bigint" ? Number(value) : Number(value ?? 0);
 const compareText = (left:string,right:string) => left < right ? -1 : left > right ? 1 : 0;
 
@@ -37,6 +46,10 @@ export class WritingStore {
   private db?: DatabaseSync;
   private indexPath?: string;
   private schemaVersionOnDisk=0;
+  private readonly prfDocumentFrequencyCache=new Map<string,number>();
+  private readonly prfTermCache=new Map<string,readonly WeightedPrfTerm[]>();
+  private readonly productionSearchCache=new Map<string,{rows:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}>();
+  private prfVocabularyReady=false;
   constructor(private readonly work: ParsedWork,private readonly forcedIndexPath?:string,private readonly directRebuild=false,private readonly maxResponseBytes=MAX_RESPONSE_BYTES) {}
 
   private async prepareIndexLocation(): Promise<void> {
@@ -235,10 +248,11 @@ export class WritingStore {
       const interrupted = await this.interruptedStatus(started);
       if (interrupted) return interrupted;
     }
-    if (mode !== "status" && !this.directRebuild) {
-      return this.withWriteLock(() => this.indexUnlocked(mode));
-    }
-    return this.indexUnlocked(mode);
+    const result=mode!=="status"&&!this.directRebuild
+      ?await this.withWriteLock(() => this.indexUnlocked(mode))
+      :await this.indexUnlocked(mode);
+    if(mode!=="status"&&result.freshness==="fresh")this.clearSearchCaches();
+    return result;
   }
 
   private async indexUnlocked(mode: "status" | "incremental" | "rebuild"): Promise<IndexResult> {
@@ -401,7 +415,15 @@ export class WritingStore {
 
   private refreshReferencesForRows(db:DatabaseSync,rows:Array<Record<string,unknown>>,revision:number){
     const entities=db.prepare("SELECT entity_ref,name,normalized_name,valid_from_chapter,valid_to_chapter FROM entities").all() as Array<Record<string,unknown>>;
-    const byName=new Map(entities.map(entity=>[String(entity.normalized_name),entity]));
+    // Native [[...]] references resolve through the persisted alias table as
+    // well as canonical names. Multi-owner aliases stay unresolved rather than
+    // becoming a deterministic-looking false fact.
+    const aliasesByName=new Map<string,Array<Record<string,unknown>>>();
+    for(const entity of db.prepare("SELECT a.normalized_alias,e.entity_ref,e.name,e.normalized_name,e.valid_from_chapter,e.valid_to_chapter FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref ORDER BY a.normalized_alias,e.entity_ref").all() as Array<Record<string,unknown>>){
+      const alias=String(entity.normalized_alias);
+      const owners=aliasesByName.get(alias);
+      if(owners)owners.push(entity);else aliasesByName.set(alias,[entity]);
+    }
     for(const row of rows){
       const spanRef=String(row.span_ref),documentRef=String(row.document_ref),content=String(row.content);
       db.prepare("DELETE FROM mentions WHERE span_ref=?").run(spanRef);
@@ -420,13 +442,13 @@ export class WritingStore {
         }
       }
       for(const match of content.matchAll(/\[\[([^[\]\n]{1,100})\]\]/g)){
-        const text=match[1]!.trim(),entity=byName.get(text.toLowerCase());
-        if(!entity){db.prepare("INSERT OR IGNORE INTO unresolved_mentions VALUES(?,?,?,?,?)").run(stableId("unresolved",spanRef,text,String(match.index)),text,spanRef,"NO_MATCHING_ENTITY",revision);continue;}
-        const entityRef=String(entity.entity_ref),offset=match.index??0,from=entity.valid_from_chapter==null?null:String(entity.valid_from_chapter),to=entity.valid_to_chapter==null?null:String(entity.valid_to_chapter);
-        const end=offset+text.length,evidenceHash=hash(content.slice(offset,end)),edgeRef=stableId("edge",documentRef,entityRef,"mentions"),identityHash=hash(`${documentRef}\0${entityRef}\0mentions`);
-        db.prepare("INSERT OR IGNORE INTO mentions VALUES(?,?,?,?,?,?,?,?,?)").run(stableId("mention",spanRef,entityRef,String(offset),"native"),entityRef,spanRef,offset,end,"native",1,evidenceHash,revision);
+        const captured=match[1]!,text=captured.trim(),owners=aliasesByName.get(text.toLowerCase())??[];
+        if(owners.length!==1){const reason=owners.length?"AMBIGUOUS_ALIAS":"NO_MATCHING_ENTITY";db.prepare("INSERT OR IGNORE INTO unresolved_mentions VALUES(?,?,?,?,?)").run(stableId("unresolved",spanRef,text,String(match.index)),text,spanRef,reason,revision);continue;}
+        const entity=owners[0]!,entityRef=String(entity.entity_ref),tokenStart=(match.index??0)+2+(captured.length-captured.trimStart().length),from=entity.valid_from_chapter==null?null:String(entity.valid_from_chapter),to=entity.valid_to_chapter==null?null:String(entity.valid_to_chapter);
+        const tokenEnd=tokenStart+text.length,evidenceHash=hash(content.slice(tokenStart,tokenEnd)),edgeRef=stableId("edge",documentRef,entityRef,"mentions"),identityHash=hash(`${documentRef}\0${entityRef}\0mentions`);
+        db.prepare("INSERT OR IGNORE INTO mentions VALUES(?,?,?,?,?,?,?,?,?)").run(stableId("mention",spanRef,entityRef,String(tokenStart),"native"),entityRef,spanRef,tokenStart,tokenEnd,"native",1,evidenceHash,revision);
         db.prepare("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(edgeRef,documentRef,entityRef,"mentions","native",1,spanRef,identityHash,evidenceHash,from,to,null,"{}",revision);
-        db.prepare("INSERT OR REPLACE INTO edge_evidence VALUES(?,?,?,?,?,?,?,?,?)").run(stableId("edge-evidence",edgeRef,spanRef,String(offset),"native"),edgeRef,spanRef,offset,end,evidenceHash,"native",1,revision);
+        db.prepare("INSERT OR REPLACE INTO edge_evidence VALUES(?,?,?,?,?,?,?,?,?)").run(stableId("edge-evidence",edgeRef,spanRef,String(tokenStart),"native"),edgeRef,spanRef,tokenStart,tokenEnd,evidenceHash,"native",1,revision);
       }
     }
     db.prepare("DELETE FROM edges WHERE kind!='contains' AND kind!='precedes' AND edge_ref NOT IN (SELECT DISTINCT edge_ref FROM edge_evidence)").run();
@@ -459,23 +481,26 @@ export class WritingStore {
 
   async explore(operation:ExploreOperation,query="",limit=20,maxHops=2,targetChapter?:number):Promise<ExploreResult>{if(query.length>2048)throw codedError("QUERY_TOO_LARGE","Query exceeds the 2048-character deterministic limit");const started=performance.now(),db=await this.open();const revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);limit=Math.max(1,Math.min(100,Math.trunc(limit)));maxHops=Math.max(0,Math.min(3,maxHops));let rows:Array<Record<string,unknown>>=[],ambiguousRows:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
     if(operation==="stats"){const c={...this.counts(db),contextSources:this.contextSourceCounts(db)};rows=[{span_ref:"stats",heading:"Index statistics",content:json(c),relative_path:".writing-index",start_line:1,end_line:1,score:1,kind:"stats"}];}
-    else if(operation==="entity"||operation==="neighborhood"){const lookup=this.entityRows(db,query,limit);rows=lookup.rows;ambiguousRows=lookup.ambiguous;diagnostics=lookup.diagnostics;}
+    else if(operation==="entity"||operation==="neighborhood"){const lookup=this.entityRows(db,query,limit,operation==="neighborhood");rows=lookup.rows;ambiguousRows=lookup.ambiguous;diagnostics=lookup.diagnostics;}
     else if(operation==="document"){rows=db.prepare("SELECT s.span_ref,s.heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,1 score,d.kind FROM spans s JOIN documents d ON d.document_ref=s.document_ref WHERE d.relative_path LIKE ? OR d.title LIKE ? ORDER BY d.source_ordinal,s.ordinal,s.span_ref LIMIT ?").all(`%${query}%`,`%${query}%`,limit) as Array<Record<string,unknown>>;}
     else if(operation==="timeline"){const timeline=this.timelineRows(db,query,limit,targetChapter);rows=timeline.rows;diagnostics=timeline.diagnostics;}
-    else {const searched=this.searchRows(db,query,limit);rows=searched.rows;diagnostics=searched.diagnostics;}
+    else {const searched=this.searchRows(db,query,limit,undefined,PRODUCTION_PRF_CONFIGURATION);rows=searched.rows;diagnostics=searched.diagnostics;}
     const locatorsBySpan=this.locatorMap(db,rows.map(row=>String(row.span_ref)));
     let results=rows.map(row=>this.item({...row,revision,locators:locatorsBySpan.get(String(row.span_ref))}));let visitedNodes=results.length,maxActualHops=0,omittedEstimate=0,truncated=false;
     if(operation==="neighborhood"&&results.length&&!diagnostics.some(item=>item.code==="AMBIGUOUS_ENTITY")){const expanded=this.expandNeighborhood(db,results,limit,maxHops);results=expanded.results;visitedNodes=expanded.visitedNodes;maxActualHops=expanded.maxActualHops;omittedEstimate=expanded.omittedEstimate;truncated=expanded.truncated;}
     const candidateCount=results.length,returned=results.slice(0,limit);truncated ||= candidateCount>limit;omittedEstimate+=Math.max(0,candidateCount-limit);
     const ambiguous=ambiguousRows.slice(0,limit).map(row=>this.item({...row,locators:this.locatorMap(db,[String(row.span_ref)]).get(String(row.span_ref))}));
     const cap=this.maxResponseBytes;
-    if(JSON.stringify({results:returned,ambiguous}).length>cap){
-      const trimmed:ExploreItem[]=[];let used=0;
-      for(const item of returned){const bytes=JSON.stringify(item).length;if(used+bytes<=cap){trimmed.push(item);used+=bytes;}}
-      const responseDiagnostics=[...diagnostics,{code:"RESPONSE_TRUNCATED",message:`Serialized response exceeded the ${cap}-byte deterministic limit; ${returned.length-trimmed.length} result(s) were dropped`}];
-      return {workRef:this.work.workRef,revision,freshness:"fresh",operation,results:trimmed,ambiguous:[],truncated:true,metrics:{candidateCount,returnedCount:trimmed.length,visitedNodes,maxActualHops,omittedEstimate,elapsedMs:performance.now()-started},diagnostics:responseDiagnostics};
+    if(Buffer.byteLength(JSON.stringify({results:returned,ambiguous}),"utf8")>cap){
+      const trimmed=pretrimExploreCollections(returned,ambiguous,cap);
+      const responseDiagnostics=[...diagnostics,{code:"RESPONSE_TRUNCATED",message:`Serialized response exceeded the ${cap}-byte deterministic limit; ${trimmed.dropped} item(s) were dropped`}];
+      return {workRef:this.work.workRef,revision,freshness:"fresh",operation,results:trimmed.results,ambiguous:trimmed.ambiguous,truncated:true,metrics:{candidateCount,returnedCount:trimmed.results.length,visitedNodes,maxActualHops,omittedEstimate:omittedEstimate+trimmed.dropped,elapsedMs:performance.now()-started},diagnostics:responseDiagnostics};
     }
     return {workRef:this.work.workRef,revision,freshness:"fresh",operation,results:returned,ambiguous,truncated,metrics:{candidateCount,returnedCount:returned.length,visitedNodes,maxActualHops,omittedEstimate,elapsedMs:performance.now()-started},diagnostics};}
+  /** Evaluator-only entry point. Production explore never accepts experiment options. */
+  async evaluateSearch(query:string,limit:number,options:SearchExperimentOptions):Promise<ExploreResult>{if(query.length>2048)throw codedError("QUERY_TOO_LARGE","Query exceeds the 2048-character deterministic limit");const started=performance.now(),db=await this.open(),revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);limit=Math.max(1,Math.min(100,Math.trunc(limit)));const searched=this.searchRows(db,query,limit,options),locatorsBySpan=this.locatorMap(db,searched.rows.map(row=>String(row.span_ref))),results=searched.rows.map(row=>this.item({...row,revision,locators:locatorsBySpan.get(String(row.span_ref))})),cap=this.maxResponseBytes;
+    if(Buffer.byteLength(JSON.stringify({results,ambiguous:[]}),"utf8")>cap){const trimmed=pretrimExploreCollections(results,[],cap);return{workRef:this.work.workRef,revision,freshness:"fresh",operation:"search",results:trimmed.results,ambiguous:trimmed.ambiguous,truncated:true,metrics:{candidateCount:results.length,returnedCount:trimmed.results.length,visitedNodes:results.length,maxActualHops:0,omittedEstimate:trimmed.dropped,elapsedMs:performance.now()-started},diagnostics:[...searched.diagnostics,{code:"RESPONSE_TRUNCATED",message:`Serialized response exceeded the ${cap}-byte deterministic limit; ${trimmed.dropped} item(s) were dropped`} ]};}
+    return{workRef:this.work.workRef,revision,freshness:"fresh",operation:"search",results,ambiguous:[],truncated:false,metrics:{candidateCount:results.length,returnedCount:results.length,visitedNodes:results.length,maxActualHops:0,omittedEstimate:0,elapsedMs:performance.now()-started},diagnostics:searched.diagnostics};}
   private item(r:Record<string,unknown>):ExploreItem{const sourceKind=String(r.source_kind??"deterministic"),excerpt=String(r.content).slice(0,900),locators=Array.isArray(r.locators)?r.locators as ExploreItem["evidence"]["locators"]:undefined;return {ref:String(r.ref??r.span_ref),kind:String(r.kind??"span"),title:String(r.heading),score:Number(r.score??0),sourceKind:sourceKind==="native"||sourceKind==="heuristic"?sourceKind:"deterministic",confidence:Number(r.confidence??1),evidence:{documentRef:String(r.document_ref??r.span_ref),relativePath:String(r.relative_path),startLine:asNumber(r.start_line),endLine:asNumber(r.end_line),excerpt,evidenceHash:hash(excerpt),revision:asNumber(r.revision),...(locators?.length?{locators}:{})}};}
 
   private spanLocators(db:DatabaseSync,spanRef:string){return (db.prepare("SELECT relative_path,start_line,end_line FROM span_locators WHERE span_ref=? ORDER BY ordinal").all(spanRef) as Array<Record<string,unknown>>).map(row=>({relativePath:String(row.relative_path),startLine:asNumber(row.start_line),endLine:asNumber(row.end_line)}));}
@@ -507,7 +532,14 @@ export class WritingStore {
     return{rows:merged.slice(0,limit),diagnostics};
   }
 
-  private entityRows(db:DatabaseSync,query:string,limit:number):{rows:Array<Record<string,unknown>>;ambiguous:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}{
+  private entityRows(db:DatabaseSync,query:string,limit:number,allowStableNeighborhoodSeed=false):{rows:Array<Record<string,unknown>>;ambiguous:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}{
+    const directEntity=allowStableNeighborhoodSeed?db.prepare("SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.entity_ref=?").get(query) as Record<string,unknown>|undefined:undefined;
+    if(directEntity)return{rows:[directEntity],ambiguous:[],diagnostics:[]};
+    // Graph documents are valid neighborhood seeds too. They are not named
+    // entities, so resolve the stable documentRef directly rather than asking
+    // callers to infer a surrogate Chapter entity.
+    const directDocument=allowStableNeighborhoodSeed?db.prepare("SELECT d.document_ref ref,s.span_ref,d.kind,d.title heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,'native' source_kind,1 confidence,(SELECT revision FROM index_revisions WHERE status='valid' ORDER BY revision DESC LIMIT 1) revision FROM documents d JOIN spans s ON s.document_ref=d.document_ref WHERE d.document_ref=? ORDER BY s.ordinal LIMIT 1").get(query) as Record<string,unknown>|undefined:undefined;
+    if(directDocument)return{rows:[directDocument],ambiguous:[],diagnostics:[]};
     const normalized=query.normalize("NFKC").trim().toLowerCase(),pattern=`%${normalized.replaceAll("%","\\%").replaceAll("_","\\_")}%`;
     if(!normalized)return{rows:[],ambiguous:[],diagnostics:[{code:"NO_MATCHING_TERMS",message:"The entity query contains no searchable name"}]};
     const rows=db.prepare(`SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE a.normalized_alias LIKE ? ESCAPE '\\' ORDER BY CASE WHEN a.normalized_alias=? THEN 0 ELSE 1 END,e.normalized_name,e.entity_ref LIMIT ?`).all(pattern,normalized,limit) as Array<Record<string,unknown>>;
@@ -525,16 +557,50 @@ export class WritingStore {
     return{rows,ambiguous,diagnostics};
   }
 
-  private searchRows(db:DatabaseSync,query:string,limit:number):{rows:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}{
-    const terms=this.analyzeQuery(query);if(!terms.length)return{rows:[],diagnostics:[{code:"NO_MATCHING_TERMS",message:"The query contains no searchable deterministic terms"}]};const ablate=new Set((process.env.WRITING_MCP_ABLATE??"").split(",").map(flag=>flag.trim()).filter(Boolean));const aliasTerms=ablate.has("no_alias")?[]:[...new Set(terms.flatMap(term=>/^[\u3400-\u9fff]{2,3}$/.test(term)?[`阿${term.at(-1)}`,`小${term.at(-1)}`,`老${term.at(-1)}`,...(term.length===3?[term.slice(1)]:[])]:[]).filter(alias=>!terms.includes(alias)))],searchTerms=[...terms,...aliasTerms];
-    const base="SELECT s.span_ref,s.heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,d.kind FROM spans s JOIN documents d ON d.document_ref=s.document_ref",candidates=new Map<string,Record<string,unknown>>(),candidateLimit=Math.min(512,Math.max(64,limit*12));
-    const escaped=searchTerms.map(term=>`%${term.replaceAll("\\","\\\\").replaceAll("%","\\%").replaceAll("_","\\_")}%`),where=searchTerms.map(()=>"(s.heading LIKE ? ESCAPE '\\' OR s.content LIKE ? ESCAPE '\\')").join(" OR ");
-    for(const row of db.prepare(`${base} WHERE ${where} ORDER BY d.source_ordinal,s.ordinal,s.span_ref LIMIT ?`).all(...escaped.flatMap(value=>[value,value]),candidateLimit) as Array<Record<string,unknown>>)candidates.set(String(row.span_ref),row);
+  private searchRows(db:DatabaseSync,query:string,limit:number,experiment?:SearchExperimentOptions,prf=experiment?.prf):{rows:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}{
+    const terms=this.analyzeQuery(query);
+    if(!terms.length)return{rows:[],diagnostics:[{code:"NO_MATCHING_TERMS",message:"The query contains no searchable deterministic terms"}]};
+    if(prf)validatePrfConfiguration(prf);
+    const cacheKey=experiment===undefined?`${this.validRevision(db)}\0${query}\0${limit}\0${prf?`${prf.topK}/${prf.termCount}/${prf.weight}`:"baseline"}`:undefined;
+    const cached=cacheKey?this.productionSearchCache.get(cacheKey):undefined;
+    if(cached)return{rows:cached.rows.map(row=>({...row})),diagnostics:cached.diagnostics.map(item=>({...item}))};
+    const finish=(rows:Array<Record<string,unknown>>,diagnostics:ExploreResult["diagnostics"])=>{
+      if(cacheKey){this.productionSearchCache.set(cacheKey,{rows:rows.map(row=>({...row})),diagnostics:diagnostics.map(item=>({...item}))});if(this.productionSearchCache.size>128)this.productionSearchCache.delete(this.productionSearchCache.keys().next().value!);}
+      return{rows,diagnostics};
+    };
+    const disabled=new Set(experiment?.disabledFactors??[]),aliasTerms=disabled.has("alias")?[]:[...new Set(terms.flatMap(term=>/^[\u3400-\u9fff]{2,3}$/.test(term)?[`阿${term.at(-1)}`,`小${term.at(-1)}`,`老${term.at(-1)}`,...(term.length===3?[term.slice(1)]:[])]:[]).filter(alias=>!terms.includes(alias)))];
+    let ftsFailureCode:string|undefined;
+    const runPass=(expansionTerms:ReadonlyArray<{term:string;weight:number}>=[],passLimit=limit)=>{
+      const originalSearchTerms=[...terms,...aliasTerms],base="SELECT s.span_ref,s.heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,d.kind FROM spans s JOIN documents d ON d.document_ref=s.document_ref",candidates=new Map<string,Record<string,unknown>>(),candidateLimit=Math.min(512,Math.max(64,passLimit*12));
+      const addLikeCandidates=(searchTerms:readonly string[],rowLimit=candidateLimit)=>{if(!searchTerms.length)return;const escaped=searchTerms.map(term=>`%${term.replaceAll("\\","\\\\").replaceAll("%","\\%").replaceAll("_","\\_")}%`),where=searchTerms.map(()=>"(s.heading LIKE ? ESCAPE '\\' OR s.content LIKE ? ESCAPE '\\')").join(" OR ");for(const row of db.prepare(`${base} WHERE ${where} ORDER BY d.source_ordinal,s.ordinal,s.span_ref LIMIT ?`).all(...escaped.flatMap(value=>[value,value]),rowLimit) as Array<Record<string,unknown>>){const ref=String(row.span_ref);if(!candidates.has(ref))candidates.set(ref,row);}};
+      const expansionSearchTerms=expansionTerms.map(item=>item.term),shortExpansionTerms=expansionSearchTerms.filter(term=>[...term].length===2),indexedExpansionTerms=expansionSearchTerms.filter(term=>[...term].length>=3),indexedOriginalTerms=terms.filter(term=>[...term].length>=3),likeOriginalTerms=originalSearchTerms.filter(term=>[...term].length<3),expansionCandidateLimit=Math.min(256,Math.max(64,passLimit*4));
+      if(indexedExpansionTerms.length&&!disabled.has("ftsMerge"))try{const fts=indexedExpansionTerms.map(term=>`"${term.replaceAll('"','')}"`).join(" OR ");for(const row of db.prepare("SELECT s.span_ref,s.heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,d.kind FROM spans_fts JOIN spans s USING(span_ref) JOIN documents d ON d.document_ref=s.document_ref WHERE spans_fts MATCH ? ORDER BY bm25(spans_fts),d.source_ordinal,s.ordinal,s.span_ref LIMIT ?").all(fts,expansionCandidateLimit) as Array<Record<string,unknown>>)candidates.set(String(row.span_ref),row);}catch(error){ftsFailureCode??=errorCode(error)??"unknown";addLikeCandidates(indexedExpansionTerms,expansionCandidateLimit);}else if(indexedExpansionTerms.length)addLikeCandidates(indexedExpansionTerms,expansionCandidateLimit);
+      if(!disabled.has("ftsMerge")&&indexedOriginalTerms.length)try{const fts=indexedOriginalTerms.map(term=>`"${term.replaceAll('"','')}"`).join(" OR ");for(const row of db.prepare("SELECT s.span_ref,s.heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,d.kind,-bm25(spans_fts) bm25_score FROM spans_fts JOIN spans s USING(span_ref) JOIN documents d ON d.document_ref=s.document_ref WHERE spans_fts MATCH ? ORDER BY bm25(spans_fts),d.source_ordinal,s.ordinal,s.span_ref LIMIT ?").all(fts,candidateLimit) as Array<Record<string,unknown>>)candidates.set(String(row.span_ref),row);}catch(error){ftsFailureCode??=errorCode(error)??"unknown";addLikeCandidates(indexedOriginalTerms);}else if(indexedOriginalTerms.length)addLikeCandidates(indexedOriginalTerms);
+      addLikeCandidates(likeOriginalTerms,expansionCandidateLimit);
+      if(!indexedOriginalTerms.length||candidates.size<candidateLimit)addLikeCandidates(shortExpansionTerms,expansionCandidateLimit);
+      const expansionMaximum=expansionTerms.reduce((maximum,item)=>Math.max(maximum,item.weight),0);
+      return [...candidates.values()].map((row):Record<string,unknown>=>{const heading=String(row.heading),content=String(row.content),matched=terms.filter(term=>heading.includes(term)||content.includes(term)),aliasMatched=aliasTerms.filter(term=>heading.includes(term)||content.includes(term)),expansionMatched=expansionTerms.filter(item=>heading.includes(item.term)||content.includes(item.term)),excerpt=this.bestEvidenceWindow(content,[...matched,...aliasMatched,...expansionMatched.map(item=>item.term)]),coverage=disabled.has("coverage")?0:Math.min(1,matched.reduce((sum,term)=>sum+[...term].length,0)/12),aliasBoost=disabled.has("alias")?0:Math.min(.75,aliasMatched.length*.5),headingMatches=disabled.has("heading")?0:matched.filter(term=>heading.includes(term)).length,proximity=disabled.has("proximity")?0:this.termProximity(content,[...matched,...aliasMatched]),trustBonus=disabled.has("trust")?0:matched.length?.25:0,expansionBoost=prf&&expansionMaximum?prf.weight*expansionMatched.reduce((maximum,item)=>Math.max(maximum,item.weight),0)/expansionMaximum:0;return{...row,content:excerpt,source_kind:matched.length?"deterministic":"heuristic",score:coverage*4+aliasBoost+proximity+headingMatches*.5+(disabled.has("bm25Term")?0:Math.min(1,Number(row.bm25_score??0)/10))+trustBonus+expansionBoost};}).sort((left,right)=>Number(right.score)-Number(left.score)||compareText(String(left.relative_path),String(right.relative_path))||asNumber(left.start_line)-asNumber(right.start_line)||compareText(String(left.span_ref),String(right.span_ref))).slice(0,passLimit);
+    };
     const diagnostics:ExploreResult["diagnostics"]=[{code:"QUERY_ANALYZED",message:`Deterministic query analysis produced ${terms.length} term(s)`}];
-    const ftsTerms=terms.filter(term=>[...term].length>=3);if(!ablate.has("no_fts_merge")&&ftsTerms.length)try{const fts=ftsTerms.map(term=>`"${term.replaceAll('"','')}"`).join(" OR ");for(const row of db.prepare("SELECT s.span_ref,s.heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,d.kind,-bm25(spans_fts) bm25_score FROM spans_fts JOIN spans s USING(span_ref) JOIN documents d ON d.document_ref=s.document_ref WHERE spans_fts MATCH ? ORDER BY bm25(spans_fts),d.source_ordinal,s.ordinal,s.span_ref LIMIT ?").all(fts,candidateLimit) as Array<Record<string,unknown>>)candidates.set(String(row.span_ref),row);}catch(error){diagnostics.push({code:"FTS_DEGRADED",message:`FTS lookup failed; deterministic LIKE candidates were retained (${errorCode(error)??"unknown"})`});}
-    const candidateRows=[...candidates.values()],rows=candidateRows.map((row):Record<string,unknown>=>{const heading=String(row.heading),content=String(row.content),matched=terms.filter(term=>heading.includes(term)||content.includes(term)),aliasMatched=aliasTerms.filter(term=>heading.includes(term)||content.includes(term)),excerpt=this.bestEvidenceWindow(content,[...matched,...aliasMatched]),coverage=ablate.has("no_coverage")?0:Math.min(1,matched.reduce((sum,term)=>sum+[...term].length,0)/12),aliasBoost=ablate.has("no_alias")?0:Math.min(.75,aliasMatched.length*.5),headingMatches=ablate.has("no_heading")?0:matched.filter(term=>heading.includes(term)).length,proximity=ablate.has("no_proximity")?0:this.termProximity(content,[...matched,...aliasMatched]),trustBonus=ablate.has("no_trust")?0:matched.length?.25:0;return{...row,content:excerpt,source_kind:matched.length?"deterministic":"heuristic",score:coverage*4+aliasBoost+proximity+headingMatches*.5+(ablate.has("no_bm25_term")?0:Math.min(1,Number(row.bm25_score??0)/10))+trustBonus};}).sort((left,right)=>Number(right.score)-Number(left.score)||compareText(String(left.relative_path),String(right.relative_path))||asNumber(left.start_line)-asNumber(right.start_line)||compareText(String(left.span_ref),String(right.span_ref))).slice(0,limit);
+    const baseline=runPass([],prf?Math.max(limit,prf.topK):limit);
+    if(ftsFailureCode)diagnostics.push({code:"FTS_DEGRADED",message:`FTS lookup failed; deterministic LIKE candidates were retained (${ftsFailureCode})`});
+    if(!prf){if(!baseline.length)diagnostics.push({code:"NO_RESULTS",message:"No indexed evidence matched the analyzed query terms"});return finish(baseline,diagnostics);}
+    const persistedAliases=new Set((db.prepare("SELECT DISTINCT normalized_alias FROM aliases ORDER BY normalized_alias").all() as Array<Record<string,unknown>>).map(row=>String(row.normalized_alias)));
+    const totalSpans=asNumber((db.prepare("SELECT COUNT(*) count FROM spans").get() as Record<string,unknown>).count),revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions WHERE status='valid'").get() as Record<string,unknown>).revision);
+    const documentFrequencies=(requestedTerms:readonly string[])=>{
+      const frequencies=new Map<string,number>(),missing=requestedTerms.filter(term=>{const cached=this.prfDocumentFrequencyCache.get(`${revision}\0${term}`);if(cached===undefined)return true;frequencies.set(term,cached);return false;}),approximateTerms=missing.filter(term=>[...term].length!==3),indexedTerms=missing.filter(term=>[...term].length===3);
+      for(const term of approximateTerms)frequencies.set(term,totalSpans);
+      if(indexedTerms.length)try{if(!this.prfVocabularyReady){db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS temp.prf_spans_vocab USING fts5vocab(main, spans_fts, 'row')");this.prfVocabularyReady=true;}const rows=db.prepare(`SELECT term,doc FROM temp.prf_spans_vocab WHERE term IN (${indexedTerms.map(()=>"?").join(",")}) ORDER BY term`).all(...indexedTerms) as Array<Record<string,unknown>>,found=new Map(rows.map(row=>[String(row.term),asNumber(row.doc)]));for(const term of indexedTerms)frequencies.set(term,found.get(term)??0);}catch{for(const term of indexedTerms){const pattern=`%${term.replaceAll("\\","\\\\").replaceAll("%","\\%").replaceAll("_","\\_")}%`;frequencies.set(term,asNumber((db.prepare("SELECT COUNT(*) count FROM spans WHERE heading LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\'").get(pattern,pattern) as Record<string,unknown>).count));}}
+      for(const [term,count] of frequencies){this.prfDocumentFrequencyCache.set(`${revision}\0${term}`,count);if(this.prfDocumentFrequencyCache.size>4096)this.prfDocumentFrequencyCache.delete(this.prfDocumentFrequencyCache.keys().next().value!);}
+      return frequencies;
+    };
+    const termCacheKey=`${revision}\0${query}\0${limit}\0${[...disabled].sort(compareText).join(",")}\0${prf.topK}`;
+    let cachedTerms=this.prfTermCache.get(termCacheKey);if(!cachedTerms){cachedTerms=derivePrfTerms(baseline.map(row=>({heading:String(row.heading),excerpt:String(row.content)})),terms,persistedAliases,{...prf,termCount:8},totalSpans,documentFrequencies);this.prfTermCache.set(termCacheKey,cachedTerms);if(this.prfTermCache.size>256)this.prfTermCache.delete(this.prfTermCache.keys().next().value!);}
+    const expansionTerms=cachedTerms.slice(0,prf.termCount);
+    if(!expansionTerms.length){diagnostics.push({code:"PRF_NO_EXPANSION",message:"No deterministic expansion term met the two-span requirement"});if(!baseline.length)diagnostics.push({code:"NO_RESULTS",message:"No indexed evidence matched the analyzed query terms"});return finish(baseline,diagnostics);}
+    const rows=runPass(expansionTerms,limit);if(ftsFailureCode&&!diagnostics.some(item=>item.code==="FTS_DEGRADED"))diagnostics.push({code:"FTS_DEGRADED",message:`FTS lookup failed; deterministic LIKE candidates were retained (${ftsFailureCode})`});diagnostics.push({code:"PRF_EXPANDED",message:`Deterministic two-pass search added ${expansionTerms.length} bounded expansion term(s): ${expansionTerms.map(item=>item.term).join(", ")}`});
     if(!rows.length)diagnostics.push({code:"NO_RESULTS",message:"No indexed evidence matched the analyzed query terms"});
-    return{rows,diagnostics};
+    return finish(rows,diagnostics);
   }
 
   private analyzeQuery(query:string):string[]{
@@ -585,7 +651,7 @@ export class WritingStore {
     }
     return{results:results.sort((a,b)=>b.score-a.score||a.ref.localeCompare(b.ref)).slice(0,Math.max(limit,1)+globalLimit),visitedNodes:visited.size,maxActualHops,omittedEstimate,truncated};
   }
-  async context(query:string,budgetTokens:number,requiredRefs:string[]=[],options:ContextOptions={}):Promise<ContextPacket>{const refLists=[requiredRefs,options.excludeRefs??[],options.entityRefs??[],options.documentRefs??[]];for(const list of refLists)if(list.length>128||list.some(ref=>ref.length>256))throw codedError("CONTEXT_REFS_TOO_LARGE","a ref list exceeds 128 items or a 256-character reference");if(!Number.isFinite(budgetTokens)||budgetTokens<1||budgetTokens>1_000_000)throw codedError("BUDGET_OUT_OF_RANGE","budgetTokens must be between 1 and 1000000");const excludeRefs=options.excludeRefs??[],entityRefs=options.entityRefs??[],documentRefs=options.documentRefs??[],targetChapter=options.targetChapter;const explored=await this.explore("search",query,50,2);const requiredSet=new Set(requiredRefs),excludedSet=new Set(excludeRefs);const excluded:Array<{ref:string;tokens:number}>=[],candidates:ContextBlock[]=[];for(const r of explored.results){const required=requiredSet.has(r.ref),profile=contextSourceProfile(r.kind,required),block={...r,layer:profile.layer,tokens:estimateTokens(r.evidence.excerpt),required};if(!required&&excludedSet.has(r.ref)){excluded.push({ref:block.ref,tokens:block.tokens});continue;}candidates.push(block);}
+  async context(query:string,budgetTokens:number,requiredRefs:string[]=[],options:ContextOptions={}):Promise<ContextPacket>{const refLists=[requiredRefs,options.excludeRefs??[],options.entityRefs??[],options.documentRefs??[]];for(const list of refLists)if(list.length>128||list.some(ref=>ref.length>256))throw codedError("CONTEXT_REFS_TOO_LARGE","a ref list exceeds 128 items or a 256-character reference");if(!Number.isFinite(budgetTokens)||budgetTokens<1||budgetTokens>1_000_000)throw codedError("BUDGET_OUT_OF_RANGE","budgetTokens must be between 1 and 1000000");const excludeRefs=options.excludeRefs??[],entityRefs=options.entityRefs??[],documentRefs=options.documentRefs??[],targetChapter=options.targetChapter;const explored=await this.explore("search",query,CONTEXT_SEARCH_LIMIT,2);const requiredSet=new Set(requiredRefs),excludedSet=new Set(excludeRefs);const excluded:Array<{ref:string;tokens:number}>=[],candidates:ContextBlock[]=[];for(const r of explored.results){const required=requiredSet.has(r.ref),profile=contextSourceProfile(r.kind,required),block={...r,layer:profile.layer,tokens:estimateTokens(r.evidence.excerpt),required};if(!required&&excludedSet.has(r.ref)){excluded.push({ref:block.ref,tokens:block.tokens});continue;}candidates.push(block);}
     const{kept,duplicates}=dedupByEvidence([...candidates.filter(c=>c.required),...candidates.filter(c=>!c.required)]);const poolRefs=new Set(kept.map(c=>c.ref)),direct:ContextBlock[]=[],pinned:ContextBlock[]=[],unresolved:string[]=[];const db=await this.open();for(const ref of [...new Set(requiredRefs)]){if(poolRefs.has(ref))continue;const node=this.nodeItem(db,ref,1);if(node)direct.push({...node,layer:"L0",tokens:estimateTokens(node.evidence.excerpt),required:true});else unresolved.push(ref);}
     // AUD-012 pinned boundaries (2026-08-18 review): pinned refs resolve directly
     // and are NOT folded by evidence dedup (explicit requests survive, like
@@ -595,6 +661,7 @@ export class WritingStore {
     const chapterByDoc=new Map<string,number>();if(targetChapter!=null){const docRefs=[...new Set([...kept,...direct,...pinned].map(c=>c.evidence.documentRef))];if(docRefs.length){const placeholders=docRefs.map(()=>"?").join(",");for(const row of db.prepare(`SELECT document_ref,chapter_number FROM documents WHERE document_ref IN (${placeholders})`).all(...docRefs) as Array<Record<string,unknown>>)if(row.chapter_number!=null)chapterByDoc.set(String(row.document_ref),asNumber(row.chapter_number));}}
     const anchorKey=(c:ContextBlock):[number,number]=>{if(targetChapter==null)return[0,0];const n=chapterByDoc.get(c.evidence.documentRef);if(n==null)return[3,0];if(n===targetChapter)return[0,0];return n<targetChapter?[1,targetChapter-n]:[2,n-targetChapter];};
     const pinnedRefs=new Set(pinned.map(c=>c.ref)),byFill=(a:ContextBlock,b:ContextBlock)=>layerRank(a.layer)-layerRank(b.layer)||(pinnedRefs.has(a.ref)?0:1)-(pinnedRefs.has(b.ref)?0:1)||anchorKey(a)[0]-anchorKey(b)[0]||anchorKey(a)[1]-anchorKey(b)[1]||b.score-a.score||contextSourceProfile(a.kind,false).priority-contextSourceProfile(b.kind,false).priority||compareText(a.ref,b.ref);
-    const required=[...kept.filter(c=>c.required),...direct],min=required.reduce((n,c)=>n+c.tokens,0);if(min>budgetTokens)return{status:"budget_unsatisfiable",workRef:this.work.workRef,revision:explored.revision,budgetTokens,usedTokens:0,estimated:true,estimator:"mixed-cjk-v1",blocks:[],omitted:[...kept.map(c=>({ref:c.ref,reason:"required_minimum_exceeds_budget",tokens:c.tokens})),...direct.map(c=>({ref:c.ref,reason:"required_minimum_exceeds_budget",tokens:c.tokens})),...pinned.map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...duplicates.map(c=>({ref:c.ref,reason:"duplicate_evidence",tokens:c.tokens})),...excluded.map(c=>({ref:c.ref,reason:"excluded",tokens:c.tokens})),...unresolved.map(ref=>({ref,reason:"not_found",tokens:0}))],diagnostics:[]};const optional=[...pinned,...kept.filter(c=>!c.required)].sort(byFill);const blocks:ContextBlock[]=[];let used=0;for(const c of [...required,...optional]){if(blocks.some(b=>b.ref===c.ref))continue;if(used+c.tokens<=budgetTokens){blocks.push(c);used+=c.tokens;}}const omitted=[...excluded.map(c=>({ref:c.ref,reason:"excluded",tokens:c.tokens})),...duplicates.map(c=>({ref:c.ref,reason:"duplicate_evidence",tokens:c.tokens})),...[...pinned,...kept].filter(c=>!c.required&&!blocks.some(b=>b.ref===c.ref)).map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...direct.filter(c=>!blocks.some(b=>b.ref===c.ref)).map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...unresolved.map(ref=>({ref,reason:"not_found",tokens:0}))];return{status:omitted.length?"truncated":"complete",workRef:this.work.workRef,revision:explored.revision,budgetTokens,usedTokens:used,estimated:true,estimator:"mixed-cjk-v1",blocks,omitted,diagnostics:explored.diagnostics};}
-  close(){this.db?.close();this.db=undefined;}
+    const required=[...kept.filter(c=>c.required),...direct],min=required.reduce((n,c)=>n+c.tokens,0);if(min>budgetTokens)return{status:"budget_unsatisfiable",workRef:this.work.workRef,revision:explored.revision,budgetTokens,usedTokens:0,estimated:true,estimator:"mixed-cjk-v1",accountingScope:"evidence_excerpts_only",blocks:[],omitted:[...kept.map(c=>({ref:c.ref,reason:"required_minimum_exceeds_budget",tokens:c.tokens})),...direct.map(c=>({ref:c.ref,reason:"required_minimum_exceeds_budget",tokens:c.tokens})),...pinned.map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...duplicates.map(c=>({ref:c.ref,reason:"duplicate_evidence",tokens:c.tokens})),...excluded.map(c=>({ref:c.ref,reason:"excluded",tokens:c.tokens})),...unresolved.map(ref=>({ref,reason:"not_found",tokens:0}))],diagnostics:[]};const optional=[...pinned,...kept.filter(c=>!c.required)].sort(byFill);const blocks:ContextBlock[]=[];let used=0;for(const c of [...required,...optional]){if(blocks.some(b=>b.ref===c.ref))continue;if(used+c.tokens<=budgetTokens){blocks.push(c);used+=c.tokens;}}const omitted=[...excluded.map(c=>({ref:c.ref,reason:"excluded",tokens:c.tokens})),...duplicates.map(c=>({ref:c.ref,reason:"duplicate_evidence",tokens:c.tokens})),...[...pinned,...kept].filter(c=>!c.required&&!blocks.some(b=>b.ref===c.ref)).map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...direct.filter(c=>!blocks.some(b=>b.ref===c.ref)).map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...unresolved.map(ref=>({ref,reason:"not_found",tokens:0}))];return{status:omitted.length?"truncated":"complete",workRef:this.work.workRef,revision:explored.revision,budgetTokens,usedTokens:used,estimated:true,estimator:"mixed-cjk-v1",accountingScope:"evidence_excerpts_only",blocks,omitted,diagnostics:explored.diagnostics};}
+  private clearSearchCaches(){this.productionSearchCache.clear();this.prfDocumentFrequencyCache.clear();this.prfTermCache.clear();this.prfVocabularyReady=false;}
+  close(){this.db?.close();this.db=undefined;this.clearSearchCaches();}
 }

@@ -1,15 +1,12 @@
-import type { AdapterKind, ContextOptions, ContextPacket, ExploreOperation, ExploreResult, IndexResult, ParsedWork, ResolveResult, WorkAdapter, WorkCandidate } from "./types.js";
+import type { AdapterKind, ContextOptions, ContextPacket, ExploreOperation, ExploreResult, IndexResult, ParsedWork, ResolveResult, SearchExperimentOptions, SourceSnapshot, WorkAdapter, WorkCandidate } from "./types.js";
 import { WritingStore } from "./store.js";
 import { join } from "node:path";
-import { stat } from "node:fs/promises";
-import { readdir } from "node:fs/promises";
 
 const EXPLORE_TIME_LIMIT_MS = 30_000;
 
 export class WritingService {
-  private readonly works=new Map<string,WorkCandidate>(); private readonly stores=new Map<string,WritingStore>();
+  private readonly works=new Map<string,WorkCandidate>(); private readonly active=new Map<string,{store:WritingStore;loadedFingerprint?:string;indexedFingerprint?:string}>();
   private readonly queues=new Map<string,Promise<void>>();
-  private readonly fingerprints=new Map<string,string>();
   constructor(private readonly adapters:WorkAdapter[],private readonly authorizedRoots?:string[]){}
   async resolve(sourcePath:string,adapterHint?:AdapterKind):Promise<ResolveResult>{
     if(this.authorizedRoots){const {assertAuthorizedPath}=await import("./ids.js");sourcePath=await assertAuthorizedPath(sourcePath,this.authorizedRoots);}
@@ -19,7 +16,9 @@ export class WritingService {
     for(const c of candidates)this.works.set(c.workRef,c);
     return{status:candidates.length===1?"resolved":candidates.length>1?"ambiguous":"unsupported",workRef:candidates.length===1?candidates[0]!.workRef:undefined,candidates,diagnostics:candidates.length?[]:[{code:"UNSUPPORTED_SOURCE",message:"No supported writing work found",path:sourcePath}]};
   }
-  private async store(workRef:string){let store=this.stores.get(workRef);if(store)return store;const candidate=this.works.get(workRef);if(!candidate)throw Object.assign(new Error("Unknown workRef; call writing_resolve first"),{code:"WORK_REF_NOT_FOUND"});store=new WritingStore((await this.loadConsistent(candidate)).work);this.stores.set(workRef,store);return store;}
+  private async store(workRef:string){const active=this.active.get(workRef);if(active)return active.store;const candidate=this.candidate(workRef),loaded=await this.loadConsistent(candidate),store=new WritingStore(loaded.work);this.active.set(workRef,{store,loadedFingerprint:loaded.fingerprint});return store;}
+  private candidate(workRef:string):WorkCandidate{const candidate=this.works.get(workRef);if(!candidate)throw Object.assign(new Error("Unknown workRef; call writing_resolve first"),{code:"WORK_REF_NOT_FOUND"});return candidate;}
+  private adapter(candidate:WorkCandidate):WorkAdapter{const adapter=this.adapters.find(adapter=>adapter.kind===candidate.adapter);if(!adapter)throw Object.assign(new Error(`No adapter is registered for ${candidate.adapter}`),{code:"ADAPTER_NOT_FOUND"});return adapter;}
   private async serial<T>(workRef:string,action:()=>Promise<T>):Promise<T>{
     const previous=this.queues.get(workRef)??Promise.resolve();
     const current=previous.catch(()=>undefined).then(action);
@@ -28,80 +27,22 @@ export class WritingService {
     try{return await current;}finally{if(this.queues.get(workRef)===marker)this.queues.delete(workRef);}
   }
   private async indexUnlocked(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{
-    const candidate=this.works.get(workRef);
-    if(!candidate)throw Object.assign(new Error("Unknown workRef; call writing_resolve first"),{code:"WORK_REF_NOT_FOUND"});
-    // Mtime/size fast path (status only): the source fingerprint is the file
-    // name+mtime+size directory, so an unchanged fingerprint means adapter.load
-    // would produce an identical ParsedWork and the semantic snapshot verdict
-    // cannot change — reuse the existing store instead of re-reading every
-    // source file. Any file change falls through to the full semantic path;
-    // incremental/rebuild never use the fast path.
-    // Record fingerprint inside indexUnlocked to eliminate double-computation
-    // race (f3ddd1f review finding F1): the fingerprint is computed once and the
-    // verified value is recorded before return, never recomputed by index().
-    const existing=this.stores.get(workRef);
-    if(mode==="status"&&existing){
-      const fingerprint=await this.sourceFingerprint(candidate);
-      if(this.fingerprints.get(workRef)===fingerprint){
-        // Fast path hit: the recorded fingerprint already matches the one just
-        // computed, so there is nothing to record; reuse the store.
-        return existing.index(mode);
-      }
-    }
-    // loadConsistent verifies the fingerprint before/after the read and returns
-    // the verified value, so recording it here (rather than re-stating) closes
-    // the load-vs-record race window entirely.
-    const{work:loaded,fingerprint}=await this.loadConsistent(candidate);
-    const next=new WritingStore(loaded);
-    this.stores.get(workRef)?.close();
-    this.stores.set(workRef,next);
-    this.fingerprints.set(workRef,fingerprint);
-    return next.index(mode);
+    const candidate=this.candidate(workRef),previous=this.active.get(workRef);
+    if(mode==="status"&&previous){const snapshot=await this.snapshotConsistent(candidate);if(previous.loadedFingerprint===snapshot.fingerprint&&previous.indexedFingerprint===snapshot.fingerprint)return previous.store.index(mode);}
+    const loaded=await this.loadConsistent(candidate),next=new WritingStore(loaded.work);
+    try{const result=await next.index(mode),indexedFingerprint=mode==="status"&&result.freshness!=="fresh"?previous?.indexedFingerprint:loaded.fingerprint;this.active.set(workRef,{store:next,loadedFingerprint:loaded.fingerprint,indexedFingerprint});previous?.store.close();return result;}catch(error){next.close();throw error;}
   }
-  /**
-   * Lightweight source fingerprint: file names plus (mtimeMs,size) for every
-   * supported source file under the work root. Content edits touch mtime, so an
-   * unchanged fingerprint means the derived index needs no reload. EPUB/TXT/MD
-   * reading is deferred to adapter.load, which only runs when the fingerprint
-   * changes (AUD-021: explore/context must not re-read the whole work per call).
-   */
-  private async sourceFingerprint(candidate:WorkCandidate):Promise<string>{
-    const root=candidate.sourcePath??candidate.rootPath;
-    const entries:string[]=[];
-    const walk=async(dir:string,depth:number):Promise<void>=>{
-      if(depth>12)return;
-      let names:string[];
-      try{names=await readdir(dir,{withFileTypes:true}).then(list=>list.map(e=>e.name));}catch{return;}
-      for(const name of names){if(name.startsWith(".")||name==="node_modules")continue;const full=join(dir,name);let info;try{info=await stat(full);}catch{continue;}if(info.isDirectory()){entries.push(`d:${name}`);await walk(full,depth+1);}else if(info.isFile()){entries.push(`f:${name}:${Math.trunc(info.mtimeMs)}:${info.size}`);}}
-    };
-    await walk(root,0);
-    entries.sort();
-    return entries.join("|");
-  }
-  /** AUD-029: verify the source fingerprint before and after the adapter
-   * read; a mid-read change would otherwise mix states from different times
-   * into one snapshot. Retry once so a transient write can settle, then fail
-   * with a stable code instead of indexing mixed state. */
-  private async loadConsistent(candidate:WorkCandidate):Promise<{work:ParsedWork,fingerprint:string}>{
-    const adapter=this.adapters.find(a=>a.kind===candidate.adapter)!;
-    for(let attempt=0;attempt<2;attempt++){
-      const before=await this.sourceFingerprint(candidate);
-      const work=await adapter.load(candidate);
-      const after=await this.sourceFingerprint(candidate);
-      if(after===before)return{work,fingerprint:after};
-    }
+  private sourceChanged(error:unknown):boolean{const code=typeof error==="object"&&error&&"code" in error?String(error.code):undefined;return code==="SOURCE_SNAPSHOT_CHANGED"||code==="ENOENT"||code==="ENOTDIR";}
+  private async snapshotConsistent(candidate:WorkCandidate):Promise<SourceSnapshot>{const adapter=this.adapter(candidate);for(let attempt=0;attempt<2;attempt++){try{return await adapter.snapshot(candidate);}catch(error){if(!this.sourceChanged(error))throw error;}}throw Object.assign(new Error("Source files changed while the work was being read; retry the operation"),{code:"SOURCE_CHANGED_DURING_READ"});}
+  private async loadConsistent(candidate:WorkCandidate):Promise<{work:ParsedWork;fingerprint:string}>{
+    const adapter=this.adapter(candidate);for(let attempt=0;attempt<2;attempt++){try{const snapshot=await adapter.snapshot(candidate),work=await adapter.load(candidate,snapshot),after=await adapter.snapshot(candidate);if(after.fingerprint===snapshot.fingerprint)return{work,fingerprint:after.fingerprint};}catch(error){if(!this.sourceChanged(error))throw error;}}
     throw Object.assign(new Error("Source files changed while the work was being read; retry the operation"),{code:"SOURCE_CHANGED_DURING_READ"});
   }
   /** Reuse the existing store when the source fingerprint is unchanged; reload
    * only when files changed (AUD-021). The first query builds the store once. */
   private async ensureFresh(workRef:string):Promise<void>{
-    const candidate=this.works.get(workRef);
-    if(!candidate)throw Object.assign(new Error("Unknown workRef; call writing_resolve first"),{code:"WORK_REF_NOT_FOUND"});
-    const fingerprint=await this.sourceFingerprint(candidate);
-    const previous=this.fingerprints.get(workRef);
-    this.fingerprints.set(workRef,fingerprint);
-    if(!this.stores.has(workRef)){await this.indexUnlocked(workRef,"incremental");return;}
-    if(previous===undefined||previous===fingerprint)return;
+    const candidate=this.candidate(workRef),snapshot=await this.snapshotConsistent(candidate),active=this.active.get(workRef);
+    if(active?.indexedFingerprint===snapshot.fingerprint)return;
     await this.indexUnlocked(workRef,"incremental");
   }
   async index(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{return this.serial(workRef,async()=>this.indexUnlocked(workRef,mode));}
@@ -112,7 +53,9 @@ export class WritingService {
     if(elapsedMs>EXPLORE_TIME_LIMIT_MS)throw Object.assign(new Error(`Explore exceeded the ${EXPLORE_TIME_LIMIT_MS}ms deterministic time limit (took ${Math.trunc(elapsedMs)}ms)`),{code:"EXPLORE_TIME_LIMIT_EXCEEDED"});
     return result;
   }
+  /** Evaluator-only: options are scoped to this call and never stored. */
+  async evaluateSearch(workRef:string,query:string,limit:number,options:SearchExperimentOptions):Promise<ExploreResult>{return this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).evaluateSearch(query,limit,options);});}
   async context(workRef:string,query:string,budgetTokens:number,requiredRefs:string[]=[],options:ContextOptions={}):Promise<ContextPacket>{return this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).context(query,budgetTokens,requiredRefs,options);});}
   diagnosticDirectory(workRef?:string):string|undefined{const candidate=workRef?this.works.get(workRef):undefined;const root=candidate?.rootPath??this.authorizedRoots?.[0];if(!root)return undefined;const scope=candidate?workRef!.replaceAll(":","-"):"_server";return join(root,".writing-index",scope,"diagnostics");}
-  close():void{for(const store of this.stores.values())store.close();this.stores.clear();this.queues.clear();this.fingerprints.clear();}
+  close():void{for(const state of this.active.values())state.store.close();this.active.clear();this.queues.clear();}
 }

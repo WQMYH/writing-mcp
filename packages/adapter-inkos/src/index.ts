@@ -1,11 +1,14 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
+import { createHash } from "node:crypto";
 import {
   assertWithin,
   safeRealpath,
   stableId,
   type DocumentKind,
   type ParsedWork,
+  type SourceSnapshot,
+  type SourceSnapshotEntry,
   type SourceDocument,
   type WorkAdapter,
   type WorkCandidate,
@@ -37,6 +40,13 @@ const chapterNumber = (name: string): number | undefined => Number(name.match(/(
 function codedError(code: string, message: string): Error & { code: string } {
   return Object.assign(new Error(message), { code });
 }
+const normalizedRelative=(root:string,path:string)=>relative(root,path).replaceAll("\\", "/");
+const fingerprint=(entries:readonly SourceSnapshotEntry[])=>createHash("sha256").update(JSON.stringify(entries.map(entry=>[entry.relativePath,entry.absolutePath,entry.size,entry.mtimeNs]))).digest("hex");
+const snapshotMismatch=(message:string)=>Object.assign(new Error(message),{code:"SOURCE_SNAPSHOT_CHANGED"});
+const fixedKinds=new Map<string,DocumentKind>([
+  ["story/outline/story_frame.md","outline"],["story/story_bible.md","outline"],["story/outline/volume_map.md","outline"],["story/volume_outline.md","outline"],
+  ["story/current_state.md","state"],["story/pending_hooks.md","foreshadow"],["story/book_rules.md","document"],["story/character_matrix.md","character"],
+]);
 
 function roleResource(relativePath: string): { key: string; canonical: boolean } | null {
   const match = /^story\/roles\/(主要角色|次要角色|major|minor)\/([^/]+\.md)$/iu.exec(relativePath);
@@ -122,7 +132,7 @@ export class InkosAdapter implements WorkAdapter {
     }
   }
 
-  async load(candidate: WorkCandidate): Promise<ParsedWork> {
+  private async sourcePaths(candidate:WorkCandidate):Promise<Array<{path:string;kind:DocumentKind}>>{
     const paths: Array<{ path: string; kind: DocumentKind }> = [];
     const root = candidate.rootPath;
     for (const [rel, kind] of [
@@ -146,27 +156,23 @@ export class InkosAdapter implements WorkAdapter {
     }
     for (const path of await markdownFiles(join(root, "chapters"))) paths.push({ path, kind: "chapter" });
 
-    const realRoot = await safeRealpath(root);
-    const documents: SourceDocument[] = [];
-    for (const entry of paths) {
-      const real = await safeRealpath(entry.path);
-      assertWithin(realRoot, real);
-      const content = await readFile(real, "utf8");
-      const info = await stat(real);
-      const rel = relative(realRoot, real).replaceAll("\\", "/");
-      const title = content.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? basename(real, ".md");
-      documents.push({
-        documentRef: stableId("doc", candidate.workRef, rel),
-        relativePath: rel,
-        absolutePath: real,
-        title,
-        kind: entry.kind,
-        content,
-        chapterNumber: entry.kind === "chapter" ? chapterNumber(basename(real)) : undefined,
-        sourceMtimeMs: info.mtimeMs,
-        sourceSize: info.size,
-      });
+    return paths;
+  }
+
+  async snapshot(candidate:WorkCandidate):Promise<SourceSnapshot>{
+    const root=await safeRealpath(candidate.rootPath),paths=await this.sourcePaths(candidate);
+    const entries=await Promise.all(paths.map(async entry=>{const absolutePath=await safeRealpath(entry.path);assertWithin(root,absolutePath);const info=await stat(absolutePath,{bigint:true});if(!info.isFile())throw snapshotMismatch(`Snapshot entry is no longer a regular file: ${absolutePath}`);return{relativePath:normalizedRelative(root,absolutePath),absolutePath,size:Number(info.size),mtimeNs:info.mtimeNs.toString()};}));
+    entries.sort((left,right)=>left.relativePath.localeCompare(right.relativePath));return{rootPath:root,entries,fingerprint:fingerprint(entries)};
+  }
+
+  async load(candidate: WorkCandidate,snapshot?:SourceSnapshot): Promise<ParsedWork> {
+    const manifest=snapshot??await this.snapshot(candidate),root=await safeRealpath(manifest.rootPath);
+    const documents:SourceDocument[]=[];
+    for(const entry of manifest.entries){
+      const real=await safeRealpath(entry.absolutePath);assertWithin(root,real);const rel=normalizedRelative(root,real),kind=kindForRelativePath(rel);if(rel!==entry.relativePath||!kind)throw snapshotMismatch(`Snapshot path changed: ${entry.relativePath}`);const info=await stat(real,{bigint:true});if(!info.isFile()||Number(info.size)!==entry.size||info.mtimeNs.toString()!==entry.mtimeNs)throw snapshotMismatch(`Snapshot metadata changed: ${entry.relativePath}`);const content=await readFile(real,"utf8"),mtimeMs=Number(info.mtimeNs/1_000_000n),title=content.match(/^#\s+(.+)$/m)?.[1]?.trim()??basename(real,".md");
+      documents.push({documentRef:stableId("doc",candidate.workRef,rel),relativePath:rel,absolutePath:real,title,kind,content,chapterNumber:kind==="chapter"?chapterNumber(basename(real)):undefined,sourceMtimeMs:mtimeMs,sourceSize:Number(info.size)});
     }
     return { ...candidate, documents };
   }
 }
+function kindForRelativePath(relativePath:string):DocumentKind|undefined{return fixedKinds.get(relativePath)??(/^story\/roles\/.+\.md$/i.test(relativePath)?"character":/^chapters\/.+\.md$/i.test(relativePath)?"chapter":undefined);}

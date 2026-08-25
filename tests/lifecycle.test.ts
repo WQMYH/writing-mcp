@@ -4,11 +4,11 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test, vi } from "vitest";
 import { WritingService } from "../packages/core/src/service.js";
 import { GenericAdapter } from "../packages/adapter-generic/src/index.js";
 import { InkosAdapter } from "../packages/adapter-inkos/src/index.js";
-import { createStdioRuntime } from "../packages/mcp-server/src/server.js";
+import { createStdioRuntime, createTerminationCoordinator } from "../packages/mcp-server/src/server.js";
 
 // AUD-032: process lifecycle — deterministic graceful shutdown, no stdout pollution.
 // stdout is the JSON-RPC channel; every emitted line must parse as a protocol message.
@@ -47,6 +47,83 @@ const assertCleanStdout = (stdout: string) => {
 };
 
 describe("process lifecycle (AUD-032)", () => {
+  test("shares one termination promise, clears the fallback, and completes without forcing exit", async () => {
+    let releaseShutdown!: () => void;
+    const shutdownGate = new Promise<void>(resolve => { releaseShutdown = resolve; });
+    const shutdown = vi.fn(() => shutdownGate);
+    const clearTimer = vi.fn();
+    const forceExit = vi.fn();
+    const timer = { unref: vi.fn() } as unknown as ReturnType<typeof setTimeout>;
+    const coordinator = createTerminationCoordinator(shutdown, { setTimer: () => timer, clearTimer, forceExit });
+
+    const signal = coordinator.terminate();
+    const eof = coordinator.terminate();
+    expect(eof).toBe(signal);
+    expect(shutdown).toHaveBeenCalledTimes(0);
+    await Promise.resolve();
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    releaseShutdown();
+    await Promise.all([signal, coordinator.completion]);
+
+    expect(clearTimer).toHaveBeenCalledOnce();
+    expect(forceExit).not.toHaveBeenCalled();
+  });
+
+  test("uses the five-second fallback only while shutdown is hung", async () => {
+    let fallback!: () => void;
+    let releaseShutdown!: () => void;
+    const forceExit = vi.fn();
+    const shutdownGate = new Promise<void>(resolve => { releaseShutdown = resolve; });
+    const coordinator = createTerminationCoordinator(() => shutdownGate, {
+      setTimer: (callback, milliseconds) => {
+        expect(milliseconds).toBe(5_000);
+        fallback = callback;
+        return { unref: vi.fn() } as unknown as ReturnType<typeof setTimeout>;
+      },
+      clearTimer: vi.fn(),
+      forceExit,
+    });
+
+    const terminating = coordinator.terminate();
+    fallback();
+    expect(forceExit).toHaveBeenCalledWith(1);
+    releaseShutdown();
+    await terminating;
+  });
+
+  test("reports shutdown rejection and sets an exit code without forced exit", async () => {
+    const failure = new Error("close failed");
+    const onError = vi.fn();
+    const setExitCode = vi.fn();
+    const forceExit = vi.fn();
+    const clearTimer = vi.fn();
+    const timer = { unref: vi.fn() } as unknown as ReturnType<typeof setTimeout>;
+    const coordinator = createTerminationCoordinator(() => Promise.reject(failure), { setTimer: () => timer, clearTimer, forceExit, setExitCode, onError });
+
+    await Promise.all([coordinator.terminate(), coordinator.completion]);
+
+    expect(onError).toHaveBeenCalledWith(failure);
+    expect(setExitCode).toHaveBeenCalledWith(1);
+    expect(clearTimer).toHaveBeenCalledOnce();
+    expect(forceExit).not.toHaveBeenCalled();
+  });
+
+  test("still completes and sets failure status if lifecycle error reporting itself throws", async () => {
+    const setExitCode = vi.fn();
+    const timer = { unref: vi.fn() } as unknown as ReturnType<typeof setTimeout>;
+    const coordinator = createTerminationCoordinator(() => Promise.reject(new Error("close failed")), {
+      setTimer: () => timer,
+      clearTimer: vi.fn(),
+      forceExit: vi.fn(),
+      setExitCode,
+      onError: () => { throw new Error("stderr unavailable"); },
+    });
+
+    await expect(coordinator.terminate()).resolves.toBeUndefined();
+    await coordinator.completion;
+    expect(setExitCode).toHaveBeenCalledWith(1);
+  });
+
   test("SIGTERM terminates the server process within the deadline", async () => {
     const dir = await mkdtemp(join(tmpdir(), "writing-mcp-lifecycle-"));
     const child = spawnServer(dir);
@@ -120,8 +197,10 @@ describe("process lifecycle (AUD-032)", () => {
     await Promise.all([runtime.server.connect(serverSide), client.connect(clientSide)]);
     try {
       (process.stdout.write as unknown) = (chunk: unknown) => { writes.push(String(chunk)); return true; };
-      await runtime.shutdown();
-      await runtime.shutdown();
+      const first = runtime.shutdown();
+      const repeated = runtime.shutdown();
+      expect(repeated).toBe(first);
+      await Promise.all([first, repeated]);
     } finally {
       process.stdout.write = originalWrite;
     }
@@ -130,4 +209,19 @@ describe("process lifecycle (AUD-032)", () => {
     expect(service.close()).toBeUndefined();
     await rm(dir, { recursive: true, force: true });
   }, 20_000);
+
+  test("closes the service after a server-close failure and rejects only after both attempts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "writing-mcp-lifecycle-failure-"));
+    const service = new WritingService([new InkosAdapter(), new GenericAdapter()], [dir]);
+    const runtime = createStdioRuntime(service, { onerror: () => undefined });
+    const order: string[] = [];
+    runtime.server.close = vi.fn(async () => { order.push("server"); throw new Error("server-close-failed"); });
+    service.close = vi.fn(() => { order.push("service"); });
+    try {
+      await expect(runtime.shutdown()).rejects.toThrow("Writing MCP shutdown failed");
+      expect(order).toEqual(["server", "service"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

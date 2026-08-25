@@ -1,195 +1,50 @@
 #!/usr/bin/env node
-// Corpus performance benchmark: index a corpus and measure P95 latency.
-// Usage: node scripts/run-corpus-benchmark.mjs <corpus-directory> [output-file]
-// Output: JSON report (index time, explore P95, context P95, memory, index size)
-
-import { writeFile, stat, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { basename, dirname, join, resolve } from "node:path";
+import { performance } from "node:perf_hooks";
 import { WritingService } from "../packages/core/dist/index.js";
 import { GenericAdapter } from "../packages/adapter-generic/dist/index.js";
 
-const corpusDir = process.argv[2];
-const outputFile = process.argv[3] || "corpus-benchmark-report.json";
-
-if (!corpusDir) {
-  console.error("Usage: node scripts/run-corpus-benchmark.mjs <corpus-directory> [output-file]");
-  process.exit(1);
-}
-
-function measureMemory() {
-  const mem = process.memoryUsage();
-  return {
-    rssMB: (mem.rss / (1024 * 1024)).toFixed(1),
-    heapUsedMB: (mem.heapUsed / (1024 * 1024)).toFixed(1),
-    heapTotalMB: (mem.heapTotal / (1024 * 1024)).toFixed(1),
-    externalMB: (mem.external / (1024 * 1024)).toFixed(1),
-  };
-}
-
-async function measureIndexSize(indexPath) {
-  let totalSize = 0;
-  async function scan(dir) {
-    const entries = await readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        await scan(fullPath);
-      } else if (entry.isFile()) {
-        const info = await stat(fullPath);
-        totalSize += info.size;
-      }
-    }
-  }
-  await scan(indexPath);
-  return totalSize;
-}
-
-function percentile(arr, p) {
-  if (arr.length === 0) return 0;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const index = Math.ceil((p / 100) * sorted.length) - 1;
-  return sorted[Math.max(0, index)];
-}
-
-async function main() {
-  console.error(`=== Corpus Performance Benchmark ===`);
-  console.error(`Corpus: ${corpusDir}`);
-  console.error(`Output: ${outputFile}`);
-  console.error();
-
-  const report = {
-    corpus: corpusDir,
-    timestamp: new Date().toISOString(),
-    phases: {},
-  };
-
-  // Phase 1: Index
-  console.error("Phase 1: Indexing corpus...");
-  const memBefore = measureMemory();
-  const indexStart = performance.now();
-  
-  const service = new WritingService([new GenericAdapter()]);
-  
-  const resolveResult = await service.resolve(corpusDir);
-  const workRef = resolveResult.workRef;
-  console.error(`  Resolved workRef: ${workRef}`);
-  
-  const indexResult = await service.index(workRef, "rebuild");
-  const indexTime = performance.now() - indexStart;
-  const memAfterIndex = measureMemory();
-  const indexSize = await measureIndexSize(join(corpusDir, ".writing-index"));
-  
-  report.phases.index = {
-    timeMs: indexTime.toFixed(0),
-    timeSeconds: (indexTime / 1000).toFixed(2),
-    documents: indexResult.stats.documents,
-    spans: indexResult.stats.spans,
-    entities: indexResult.stats.entities,
-    edges: indexResult.stats.edges,
-    indexSizeBytes: indexSize,
-    indexSizeMB: (indexSize / (1024 * 1024)).toFixed(2),
-    memoryBefore: memBefore,
-    memoryAfter: memAfterIndex,
-  };
-  console.error(`  Index time: ${indexTime.toFixed(0)} ms (${(indexTime / 1000).toFixed(2)} s)`);
-  console.error(`  Documents: ${indexResult.stats.documents}, Spans: ${indexResult.stats.spans}`);
-  console.error(`  Entities: ${indexResult.stats.entities}, Edges: ${indexResult.stats.edges}`);
-  console.error(`  Index size: ${(indexSize / (1024 * 1024)).toFixed(2)} MB`);
-  console.error(`  Memory (heap): ${memBefore.heapUsedMB} MB → ${memAfterIndex.heapUsedMB} MB`);
-  console.error();
-
-  // Phase 2: Explore queries (search, entity, neighborhood, timeline)
-  console.error("Phase 2: Running explore queries...");
-  const exploreQueries = [
-    { operation: "search", query: "克莱恩", limit: 20 },
-    { operation: "search", query: "梅丽莎", limit: 20 },
-    { operation: "search", query: "占卜", limit: 20 },
-    { operation: "entity", query: "克莱恩·莫雷蒂", limit: 20 },
-    { operation: "neighborhood", query: "克莱恩", maxHops: 2, limit: 50 },
-    { operation: "timeline", query: "克莱恩", limit: 50 },
-  ];
-  
-  const exploreLatencies = [];
-  for (const q of exploreQueries) {
-    const start = performance.now();
-    const result = await service.explore(
-      workRef,
-      q.operation,
-      q.query,
-      q.limit,
-      q.maxHops || 2,
-      q.targetChapter
-    );
-    const latency = performance.now() - start;
-    exploreLatencies.push(latency);
-    console.error(`  ${q.operation}("${q.query}"): ${latency.toFixed(1)} ms, ${result.results.length} results`);
-  }
-  
-  report.phases.explore = {
-    queryCount: exploreQueries.length,
-    latenciesMs: exploreLatencies.map(l => l.toFixed(1)),
-    p50Ms: percentile(exploreLatencies, 50).toFixed(1),
-    p95Ms: percentile(exploreLatencies, 95).toFixed(1),
-    p99Ms: percentile(exploreLatencies, 99).toFixed(1),
-    maxMs: Math.max(...exploreLatencies).toFixed(1),
-  };
-  console.error(`  P50: ${report.phases.explore.p50Ms} ms, P95: ${report.phases.explore.p95Ms} ms, P99: ${report.phases.explore.p99Ms} ms`);
-  console.error();
-
-  // Phase 3: Context assembly
-  console.error("Phase 3: Running context assembly...");
-  const contextQueries = [
-    { query: "克莱恩的背景", budgetTokens: 4000 },
-    { query: "梅丽莎和克莱恩的关系", budgetTokens: 4000 },
-    { query: "占卜术的使用", budgetTokens: 4000 },
-  ];
-  
-  const contextLatencies = [];
-  const contextTokenCounts = [];
-  for (const q of contextQueries) {
-    const start = performance.now();
-    const result = await service.context(workRef, q.query, q.budgetTokens);
-    const latency = performance.now() - start;
-    contextLatencies.push(latency);
-    contextTokenCounts.push(result.usedTokens);
-    console.error(`  context("${q.query}"): ${latency.toFixed(1)} ms, ${result.usedTokens} tokens, ${result.blocks.length} blocks`);
-  }
-  
-  report.phases.context = {
-    queryCount: contextQueries.length,
-    latenciesMs: contextLatencies.map(l => l.toFixed(1)),
-    p50Ms: percentile(contextLatencies, 50).toFixed(1),
-    p95Ms: percentile(contextLatencies, 95).toFixed(1),
-    p99Ms: percentile(contextLatencies, 99).toFixed(1),
-    maxMs: Math.max(...contextLatencies).toFixed(1),
-    tokenCounts: contextTokenCounts,
-    avgTokens: (contextTokenCounts.reduce((a, b) => a + b, 0) / contextTokenCounts.length).toFixed(0),
-  };
-  console.error(`  P50: ${report.phases.context.p50Ms} ms, P95: ${report.phases.context.p95Ms} ms`);
-  console.error(`  Avg tokens: ${report.phases.context.avgTokens}`);
-  console.error();
-
-  // Phase 4: Memory final
-  console.error("Phase 4: Final memory measurement...");
-  const memFinal = measureMemory();
-  report.memory = {
-    before: memBefore,
-    afterIndex: memAfterIndex,
-    final: memFinal,
-  };
-  console.error(`  Final memory (heap): ${memFinal.heapUsedMB} MB`);
-  console.error();
-
-  // Write report
-  await writeFile(outputFile, JSON.stringify(report, null, 2));
-  console.error(`=== Report written to ${outputFile} ===`);
+const [corpusArg, tasksArg, reportArg] = process.argv.slice(2);
+const corpusPath = corpusArg ?? process.env.WRITING_MCP_PRIVATE_CORPUS;
+const tasksPath = tasksArg ?? process.env.WRITING_MCP_CORPUS_TASKS;
+if (!corpusPath) throw new Error("Set WRITING_MCP_PRIVATE_CORPUS or pass <corpus-path> to run-corpus-benchmark.mjs");
+if (!tasksPath) throw new Error("Set WRITING_MCP_CORPUS_TASKS or pass <tasks-json> to run-corpus-benchmark.mjs");
+const corpus = resolve(corpusPath), corpusStat = await stat(corpus);
+const defaultReportDirectory = join(corpusStat.isDirectory() ? corpus : dirname(corpus), ".writing-index", "benchmarks");
+const reportDirectory = resolve(reportArg ?? process.env.WRITING_MCP_PRIVATE_REPORT_DIR ?? defaultReportDirectory);
+const tasks = JSON.parse(await readFile(tasksPath, "utf8"));
+if (!Array.isArray(tasks.explore) || !Array.isArray(tasks.context) || !tasks.explore.length || !tasks.context.length) throw new Error("Corpus task JSON must contain non-empty explore and context arrays");
+const sha256 = (text) => createHash("sha256").update(text, "utf8").digest("hex");
+const stats = (values) => { const sorted = [...values].sort((a, b) => a - b); return sorted.length ? sorted[Math.ceil(sorted.length * .95) - 1] : 0; };
+const measuredRunsPerTask = 3;
+const maxIndexPerMillionMs = Number(process.env.WRITING_MCP_CORPUS_MAX_INDEX_PER_MILLION_MS ?? 60000), maxExploreP95Ms = Number(process.env.WRITING_MCP_CORPUS_MAX_EXPLORE_P95_MS ?? 1000), maxContextP95Ms = Number(process.env.WRITING_MCP_CORPUS_MAX_CONTEXT_P95_MS ?? 500);
+if (![maxIndexPerMillionMs, maxExploreP95Ms, maxContextP95Ms].every((value) => Number.isFinite(value) && value > 0)) throw new Error("Corpus gate thresholds must be finite numbers greater than zero");
+const delimiter = "\n\n--- writing-mcp-token-material-v1 ---\n\n";
+await mkdir(reportDirectory, { recursive: true });
+const service = new WritingService([new GenericAdapter()]);
+try {
+  const resolved = await service.resolve(corpus, "generic");
+  if (resolved.status !== "resolved" || !resolved.workRef) throw new Error(`Corpus resolution failed: ${resolved.status}`);
+  const candidate = resolved.candidates[0], adapter = new GenericAdapter(), parsed = await adapter.load(candidate);
+  const fullInputText = parsed.documents.map((document) => document.content).join(delimiter), parsedChars = parsed.documents.reduce((total, document) => total + document.content.length, 0);
+  if (!parsedChars) throw new Error("Corpus contains no parsed input characters");
+  const indexStarted = performance.now(); await service.index(resolved.workRef, "rebuild"); const indexMs = performance.now() - indexStarted;
+  // The M3 latency contract is explicitly a warm-query gate. Prime every
+  // frozen task once so SQLite pages and revision-scoped PRF caches are not
+  // misreported as steady-state latency.
+  for (const task of tasks.explore) await service.explore(resolved.workRef, task.operation ?? "search", task.query ?? "", task.limit ?? 20, task.maxHops ?? 2, task.targetChapter);
+  for (const task of tasks.context) await service.context(resolved.workRef, task.query ?? "", task.budgetTokens ?? 1000, task.requiredRefs ?? [], task.options ?? {});
+  const exploreLatencies = [], contextLatencies = [], exploreSamples = [], contextSamples = [], contexts = [], estimators = new Set();
+  for (let run = 0; run < measuredRunsPerTask; run++) for (const [taskIndex, task] of tasks.explore.entries()) { const started = performance.now(); await service.explore(resolved.workRef, task.operation ?? "search", task.query ?? "", task.limit ?? 20, task.maxHops ?? 2, task.targetChapter); const elapsedMs = performance.now() - started; exploreLatencies.push(elapsedMs); exploreSamples.push({ run: run + 1, task: taskIndex + 1, elapsedMs }); }
+  for (let run = 0; run < measuredRunsPerTask; run++) for (const [taskIndex, task] of tasks.context.entries()) { const started = performance.now(), packet = await service.context(resolved.workRef, task.query ?? "", task.budgetTokens ?? 1000, task.requiredRefs ?? [], task.options ?? {}); const elapsedMs = performance.now() - started; contextLatencies.push(elapsedMs); contextSamples.push({ run: run + 1, task: taskIndex + 1, elapsedMs }); if (run === 0) { const packetText = JSON.stringify(packet), accountedInputs = packet.blocks.map((block) => ({ ref: block.ref, text: block.evidence.excerpt, estimatedTokens: block.tokens })), accountedTokens = accountedInputs.reduce((sum, input) => sum + input.estimatedTokens, 0); if (accountedTokens !== packet.usedTokens) throw new Error(`Context token accounting mismatch: blocks=${accountedTokens}, packet=${packet.usedTokens}`); estimators.add(packet.estimator); contexts.push({ query: task.query ?? "", packet: { ...packet, refs: packet.blocks.map((block) => block.ref), serialization: { text: packetText, chars: packetText.length, utf8Bytes: Buffer.byteLength(packetText, "utf8"), sha256: sha256(packetText) } }, accountedInputs, estimator: packet.estimator, usedTokens: packet.usedTokens, accountingScope: "evidence_excerpts_only", refs: packet.blocks.map((block) => block.ref) }); } }
+  if (estimators.size !== 1) throw new Error(`Corpus context tasks returned inconsistent estimators: ${[...estimators].join(", ")}`);
+  const indexPerMillionMs = indexMs / parsedChars * 1_000_000, exploreP95Ms = stats(exploreLatencies), contextP95Ms = stats(contextLatencies);
+  const material = { schemaVersion: "token-evaluation-materials-v1", delimiter: { version: "writing-mcp-token-material-v1", value: delimiter }, accountingScope: "evidence_excerpts_only", externalTokenResult: "not_evaluated", estimator: [...estimators][0], fullInput: { text: fullInputText, chars: fullInputText.length, utf8Bytes: Buffer.byteLength(fullInputText, "utf8"), sha256: sha256(fullInputText) }, contexts };
+  const report = { schemaVersion: 2, corpus: basename(corpus), parsedChars, measurement: { warmupRunsPerTask: 1, measuredRunsPerTask, percentile: 0.95 }, index: { elapsedMs: indexMs, normalizedMsPerMillionChars: indexPerMillionMs }, explore: { count: exploreLatencies.length, p95Ms: exploreP95Ms, samples: exploreSamples }, context: { count: contextLatencies.length, p95Ms: contextP95Ms, samples: contextSamples }, gates: { maxIndexPerMillionMs, maxExploreP95Ms, maxContextP95Ms }, accountingScope: "evidence_excerpts_only", externalTokenResult: "not_evaluated" };
+  await writeFile(join(reportDirectory, "corpus-benchmark-report.json"), JSON.stringify(report, null, 2) + "\n", "utf8");
+  await writeFile(join(reportDirectory, "token-evaluation-materials.json"), JSON.stringify(material, null, 2) + "\n", "utf8");
   console.log(JSON.stringify(report, null, 2));
-  
-  service.close();
-}
-
-main().catch(error => {
-  console.error("Error:", error.message);
-  console.error(error.stack);
-  process.exit(1);
-});
+  if (indexPerMillionMs > maxIndexPerMillionMs || exploreP95Ms > maxExploreP95Ms || contextP95Ms > maxContextP95Ms) { if (indexPerMillionMs > maxIndexPerMillionMs) console.error("Index time per million parsed characters exceeded threshold"); if (exploreP95Ms > maxExploreP95Ms) console.error("Explore P95 exceeded threshold"); if (contextP95Ms > maxContextP95Ms) console.error("Context P95 exceeded threshold"); process.exitCode = 1; }
+} finally { service.close(); }

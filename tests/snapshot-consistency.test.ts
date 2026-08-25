@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
 import { GenericAdapter } from "@writing-mcp/adapter-generic";
-import { WritingService, type ParsedWork, type WorkAdapter, type WorkCandidate } from "@writing-mcp/core";
+import { WritingService, type ParsedWork, type SourceSnapshot, type WorkAdapter, type WorkCandidate } from "@writing-mcp/core";
 
 // AUD-029: loading reads multiple files over a time window; the source may
 // change mid-read and produce a snapshot that mixes different states. The
@@ -20,10 +20,11 @@ describe("snapshot consistency (AUD-029)", () => {
     const adapter: WorkAdapter = {
       kind: "generic",
       discover: path => delegate.discover(path),
-      load: async (candidate: WorkCandidate): Promise<ParsedWork> => {
+      snapshot: candidate => delegate.snapshot(candidate),
+      load: async (candidate: WorkCandidate, snapshot?: SourceSnapshot): Promise<ParsedWork> => {
         calls++;
         await writeFile(join(source, "chapter-01.md"), `# 篡改${calls}\n第 ${calls} 次中途改写源文件。`);
-        return delegate.load(candidate);
+        return delegate.load(candidate, snapshot);
       },
     };
     const service = new WritingService([adapter]);
@@ -47,10 +48,11 @@ describe("snapshot consistency (AUD-029)", () => {
     const adapter: WorkAdapter = {
       kind: "generic",
       discover: path => delegate.discover(path),
-      load: async (candidate: WorkCandidate): Promise<ParsedWork> => {
+      snapshot: candidate => delegate.snapshot(candidate),
+      load: async (candidate: WorkCandidate, snapshot?: SourceSnapshot): Promise<ParsedWork> => {
         calls++;
         if (calls === 1) await writeFile(join(source, "chapter-01.md"), "# 稳定\n改写一次后不再变化。");
-        return delegate.load(candidate);
+        return delegate.load(candidate, snapshot);
       },
     };
     const service = new WritingService([adapter]);
