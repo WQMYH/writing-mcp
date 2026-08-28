@@ -3,7 +3,7 @@
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
 > 检查点时间：2026-08-28（公开前隐私审计与历史重写收尾）
-> 当前状态：可靠性 Task 1～7 已完成并完成整分支复审，未发现未关闭的 Critical/Important；PRF 生产配置为 `topK=12/termCount=8/weight=0.35`。代码检查点 `310a84c` 的完整内容通过 `pnpm verify` 与 `pnpm verify:private`：41 个测试文件、196 项测试、lint 0、公共基准 30/30、coverage lines 95.01%；私有 top-20 为 41/42、required 16/16、证据覆盖 100%，黄金 train/holdout 无回退。4,789,903 字符《语料B》门禁为索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；生产搜索使用 revision-scoped 有界暖缓存，评测入口不使用该缓存。外部 tokenizer 仍为 `not_evaluated`，M4 不得据启发式估算宣称精确 Token 收益。隐私门禁已建立并完成首轮清洗：仓库历史经重写去除了私有语料书名与硬编码路径（全部提交 ID 变更，文档引用已重映射），`privacy:gate`（history scope）纳入 `pnpm verify` 链首；worktree 126 文件 / history 691 对象扫描 0 命中，全新 clone 复验 PASS。当前本地 `main` 含三项尚未推送的隐私收尾提交，且未配置 upstream；必须先核对并显式决定远端历史对齐方式，不能把本地结果误记为已推送。
+> 当前状态：可靠性 Task 1～7 已完成并完成整分支复审，未发现未关闭的 Critical/Important；PRF 生产配置为 `topK=12/termCount=8/weight=0.35`。代码检查点 `310a84c` 的完整内容通过 `pnpm verify` 与 `pnpm verify:private`：41 个测试文件、196 项测试、lint 0、公共基准 30/30、coverage lines 95.01%；私有 top-20 为 41/42、required 16/16、证据覆盖 100%，黄金 train/holdout 无回退。4,789,903 字符《语料B》门禁为索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；生产搜索使用 revision-scoped 有界暖缓存，评测入口不使用该缓存。外部 tokenizer 仍为 `not_evaluated`，M4 不得据启发式估算宣称精确 Token 收益。隐私门禁已建立并完成首轮清洗：仓库历史经重写去除了私有语料书名与硬编码路径（全部提交 ID 变更，文档引用已重映射），`privacy:gate`（history scope）纳入 `pnpm verify` 链首；worktree 126 文件 / history 691 对象扫描 0 命中，全新 clone 复验 PASS。远端对齐已完成：`main` 经用户显式确认后强推至 `827513b`，`fix/reliability-hardening` 本地与远端同为 `3b6fb36`（无需动）；推送后全新 clone 的 history gate 为 **689 对象 / 0 命中 PASS**，服务端真相确认零隐私残留（旧远端对象由 GitHub 服务端 GC 回收）。
 
 ## 恢复入口
 
@@ -181,9 +181,10 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
-- `414950c` — fix(scripts): privacy-gate 仓库根解析——调用 cwd 优先，cwd 非 git 树时回退脚本自身位置，支持对任意 clone 直接执行（oxlint 0/0；5/5；全新 clone history PASS）。
-- `730aa01` — chore(privacy): 历史重写后用 commit-map 重映射 98 处提交引用（状态文档 97 + 黄金基线 gitCommit 1，0 歧义）；privacy-gate history scope 收窄为本地 heads/tags，排除 refs/remotes 过期缓存；+1 回归测试。
-- `9b5acec` — chore(privacy): tracked 文档脱敏私有语料书名，新增公开前 privacy-gate 脚本与 4 项回归测试；配合仓库历史整体重写（全部提交 ID 变更）。
+- `827513b` — chore(privacy): 收尾——将 history 隐私门禁接入 `pnpm verify` 链首、登记 tests/README 回归映射，并把检查点从“本地完成”校正为“已强推 origin 并全新 clone 复验 PASS”。
+- `ce5001e` — fix(scripts): privacy-gate 仓库根解析——调用 cwd 优先，cwd 非 git 树时回退脚本自身位置，支持对任意 clone 直接执行（oxlint 0/0；5/5；全新 clone history PASS）。
+- `cafcbb8` — chore(privacy): 历史重写后用 commit-map 重映射 98 处提交引用（状态文档 97 + 黄金基线 gitCommit 1，0 歧义）；privacy-gate history scope 收窄为本地 heads/tags，排除 refs/remotes 过期缓存；+1 回归测试。
+- `ad7e8b1` — chore(repo): tracked 文档脱敏私有语料引用，新增公开前 privacy-gate 脚本与 4 项回归测试；配合仓库历史整体重写（全部提交 ID 变更）。
 - `310a84c` — perf(search): 短原词使用 `64..256` 有界 LIKE 补池且不覆盖 FTS/BM25 行；新增按 revision/query/limit/PRF 配置隔离的 128 项生产暖缓存，evaluator-only 路径绕过，成功索引与 close 失效；196/196、私有 required 16/16、黄金无回退、4.79M 字符完整门禁通过。
 - `a8b8c60` — feat(gates): corpus 报告公开匿名逐样本耗时，使 P95 计算可复核而不泄露查询文本。
 - `531e007` — fix(gates): corpus P95 改为每任务预热一次、测量三次并对全部样本使用 nearest-rank 统计。
