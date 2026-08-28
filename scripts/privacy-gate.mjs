@@ -13,6 +13,15 @@
 // re-running this gate in a fresh clone after the push.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+
+// Repository resolution: the invocation cwd wins (test fixtures run the gate inside temp
+// repos); when cwd is not inside a git working tree, fall back to this script's own
+// location (scripts/..) so e.g. `node /path/to/clone/scripts/privacy-gate.mjs` still works.
+const scriptRepoDefault = join(fileURLToPath(new URL("..", import.meta.url)), "").replace(/[/\\]$/, "");
+const toplevel = spawnSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" });
+const REPO = toplevel.status === 0 ? toplevel.stdout.trim() : scriptRepoDefault;
 
 const scopeArg = process.argv.find((a) => a.startsWith("--scope="));
 const scope = scopeArg ? scopeArg.split("=")[1] : "history";
@@ -34,7 +43,7 @@ const markers = override
   : MARKERS;
 
 const git = (args, input) => {
-  const r = spawnSync("git", args, { encoding: "buffer", input, maxBuffer: 512 * 1024 * 1024 });
+  const r = spawnSync("git", args, { cwd: REPO, encoding: "buffer", input, maxBuffer: 512 * 1024 * 1024 });
   if (r.status !== 0) { console.error(`[privacy:gate] git ${args.join(" ")} failed: ${r.stderr?.toString("utf8")}`); process.exit(2); }
   return r.stdout;
 };
@@ -51,7 +60,7 @@ const scan = (label, content) => {
 };
 
 if (scope === "worktree") {
-  for (const f of git(["ls-files", "-z"]).toString("utf8").split("\0").filter(Boolean)) scan(f, readFileSync(f));
+  for (const f of git(["ls-files", "-z"]).toString("utf8").split("\0").filter(Boolean)) scan(f, readFileSync(join(REPO, f)));
 } else {
   const names = new Map(); const oids = [];
   // enumerate local refs only (heads + tags); skip refs/remotes and refs/notes
