@@ -7,7 +7,10 @@
 // - Markers are stored as UTF-8 hex bytes so this published script never contains the
 //   plaintext it searches for. Add a marker by hex-encoding the phrase, never by pasting it.
 // Usage: node scripts/privacy-gate.mjs [--scope=history|worktree]
-// Scope: history (default) = all objects reachable from refs; worktree = tracked files on disk.
+// Scope: history (default) = objects reachable from local refs (heads/tags); worktree = tracked files on disk.
+// Remote-tracking refs (refs/remotes/*) are deliberately excluded: they are stale local caches of
+// server state, not part of what a push will upload. What the server actually holds is verified by
+// re-running this gate in a fresh clone after the push.
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
@@ -51,7 +54,9 @@ if (scope === "worktree") {
   for (const f of git(["ls-files", "-z"]).toString("utf8").split("\0").filter(Boolean)) scan(f, readFileSync(f));
 } else {
   const names = new Map(); const oids = [];
-  for (const line of git(["rev-list", "--all", "--objects"]).toString("utf8").split("\n")) {
+  // enumerate local refs only (heads + tags); skip refs/remotes and refs/notes
+  const tips = git(["for-each-ref", "--format=%(objectname)", "refs/heads", "refs/tags"]).toString("utf8").split("\n").filter(Boolean);
+  for (const line of git(["rev-list", "--objects", ...tips]).toString("utf8").split("\n")) {
     if (!line) continue;
     const sp = line.indexOf(" ");
     if (sp === -1) { oids.push(line); continue; }

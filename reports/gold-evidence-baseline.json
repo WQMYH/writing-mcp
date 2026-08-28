@@ -6,7 +6,7 @@
     "recall50Min": 0.9,
     "requiredRecall50": 1
   },
-  "gitCommit": "b5d30e0a96c869ba17a79cf5269246abfc1f3751",
+  "gitCommit": "7ba73852862b6d459ab0bd439407c3d5c6752639",
   "train": {
     "count": 18,
     "recallAt5": 0.7778,

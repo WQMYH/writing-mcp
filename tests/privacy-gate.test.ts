@@ -62,6 +62,30 @@ describe("privacy publication gate", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  test("passes when the leak survives only in a remote-tracking ref (stale server cache)", async () => {
+    const root = await initRepo();
+    try {
+      await writeFile(join(root, "clean.txt"), "public\n");
+      commitAll(root, "clean commit");
+      const cleanSha = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
+      // leaked commit exists solely under refs/remotes/*, unreachable from any local ref
+      await writeFile(join(root, "leak.txt"), `private ${SENTINEL}\n`);
+      git(root, "add", "leak.txt");
+      git(root, "commit", "--quiet", "-m", "leaked");
+      const leakSha = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
+      git(root, "update-ref", "refs/remotes/origin/leaky", leakSha);
+      // move every local branch back to the clean commit (init default branch name varies)
+      const heads = spawnSync("git", ["for-each-ref", "--format=%(refname)", "refs/heads"], { cwd: root, encoding: "utf8" }).stdout.split("\n").filter(Boolean);
+      for (const head of heads) git(root, "update-ref", head, cleanSha);
+      expect(gate(root, "history").status).toBe(0);
+      // but the same leak on a local branch must fail: force-push/purge pending means FAIL
+      git(root, "update-ref", "refs/heads/leaky", leakSha);
+      const blocked = gate(root, "history");
+      expect(blocked.status).toBe(1);
+      expect(blocked.stdout).toContain("leak.txt@");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   test("passes a repository without any marker", async () => {
     const root = await initRepo();
     try {
