@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-08-24（Task 7 检索性能/召回复核）
-> 当前状态：可靠性 Task 1～7 已完成并完成整分支复审，未发现未关闭的 Critical/Important；PRF 生产配置为 `topK=12/termCount=8/weight=0.35`。代码检查点 `310a84c` 的完整内容通过 `pnpm verify` 与 `pnpm verify:private`：41 个测试文件、196 项测试、lint 0、公共基准 30/30、coverage lines 95.01%；私有 top-20 为 41/42、required 16/16、证据覆盖 100%，黄金 train/holdout 无回退。4,789,903 字符《语料B》门禁为索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；生产搜索使用 revision-scoped 有界暖缓存，评测入口不使用该缓存。外部 tokenizer 仍为 `not_evaluated`，M4 不得据启发式估算宣称精确 Token 收益。
+> 检查点时间：2026-08-28（公开前隐私审计与历史重写收尾）
+> 当前状态：可靠性 Task 1～7 已完成并完成整分支复审，未发现未关闭的 Critical/Important；PRF 生产配置为 `topK=12/termCount=8/weight=0.35`。代码检查点 `310a84c` 的完整内容通过 `pnpm verify` 与 `pnpm verify:private`：41 个测试文件、196 项测试、lint 0、公共基准 30/30、coverage lines 95.01%；私有 top-20 为 41/42、required 16/16、证据覆盖 100%，黄金 train/holdout 无回退。4,789,903 字符《语料B》门禁为索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；生产搜索使用 revision-scoped 有界暖缓存，评测入口不使用该缓存。外部 tokenizer 仍为 `not_evaluated`，M4 不得据启发式估算宣称精确 Token 收益。隐私门禁已建立并完成首轮清洗：仓库历史经重写去除了私有语料书名与硬编码路径（全部提交 ID 变更，文档引用已重映射），`privacy:gate`（history scope）纳入 `pnpm verify` 链首；worktree 126 文件 / history 691 对象扫描 0 命中，全新 clone 复验 PASS。当前本地 `main` 含三项尚未推送的隐私收尾提交，且未配置 upstream；必须先核对并显式决定远端历史对齐方式，不能把本地结果误记为已推送。
 
 ## 恢复入口
 
@@ -82,7 +82,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
-- 41 个测试文件 / 196 项测试，覆盖：通用链路、MCP 协议与诊断、诊断 retention/协作锁、server/core 响应字节上限与 recorder ordering、统一进程关闭链、检索正确性、短原词候选保留、revision-scoped 暖查询复用与索引失效、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、两遍 PRF/双字候选/批量频率上限、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
+- 42 个测试文件 / 201 项测试，覆盖：通用链路、MCP 协议与诊断、诊断 retention/协作锁、server/core 响应字节上限与 recorder ordering、统一进程关闭链、检索正确性、短原词候选保留、revision-scoped 暖查询复用与索引失效、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、两遍 PRF/双字候选/批量频率上限、公开前隐私门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
 - 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制
@@ -101,7 +101,8 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 ## 下一步
 
-- 可靠性修复 Task 7 已关闭：完整 public/private 门禁、契约/状态/v2/测试清单/运行 skill 一致性核对及整分支 Critical/Important 复审均已完成；分支已推送，等待用户决定合并、PR 或保留。
+- 公开化收尾：创建 `.github/workflows/verify.yml`（Node 24 / pnpm / fetch-depth: 0 跑 `pnpm verify`，含 privacy:gate）；私有验收链（`verify:private`）永不进 CI。GitHub 服务端旧对象由平台 GC 回收，不承诺即时；如公开前需彻底清除缓存视图可联系 GitHub support。
+- 可靠性修复 Task 7 已关闭：完整 public/private 门禁、契约/状态/v2/测试清单/运行 skill 一致性核对及整分支 Critical/Important 复审均已完成；可靠性分支已合并进 `main`。剩余仅为公开前隐私收尾及远端历史对齐。
 - 批次 C（AUD-026～032 + AUD-035 第一/二阶段）已全部完成并审阅归档。
 - AUD-035 第三阶段（Biome 格式化）已由用户决策延后：store.ts 即将被 M3/M4 修改，现在做巨型函数展开与全量格式化必然返工；正确时机是完整重排落地后（检索侧冻结）的重构窗口，届时再评估格式化是否必要。
 - Corpus 阈值门禁已在 4,789,903 字符《语料B》上重跑并通过：索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；报告与 Token 材料仅留本机。该口径按契约先预热每个冻结任务一次，随后测量 revision-scoped 生产缓存路径。
@@ -180,6 +181,9 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 
+- `414950c` — fix(scripts): privacy-gate 仓库根解析——调用 cwd 优先，cwd 非 git 树时回退脚本自身位置，支持对任意 clone 直接执行（oxlint 0/0；5/5；全新 clone history PASS）。
+- `730aa01` — chore(privacy): 历史重写后用 commit-map 重映射 98 处提交引用（状态文档 97 + 黄金基线 gitCommit 1，0 歧义）；privacy-gate history scope 收窄为本地 heads/tags，排除 refs/remotes 过期缓存；+1 回归测试。
+- `9b5acec` — chore(privacy): tracked 文档脱敏私有语料书名，新增公开前 privacy-gate 脚本与 4 项回归测试；配合仓库历史整体重写（全部提交 ID 变更）。
 - `310a84c` — perf(search): 短原词使用 `64..256` 有界 LIKE 补池且不覆盖 FTS/BM25 行；新增按 revision/query/limit/PRF 配置隔离的 128 项生产暖缓存，evaluator-only 路径绕过，成功索引与 close 失效；196/196、私有 required 16/16、黄金无回退、4.79M 字符完整门禁通过。
 - `a8b8c60` — feat(gates): corpus 报告公开匿名逐样本耗时，使 P95 计算可复核而不泄露查询文本。
 - `531e007` — fix(gates): corpus P95 改为每任务预热一次、测量三次并对全部样本使用 nearest-rank 统计。

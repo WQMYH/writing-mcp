@@ -30,6 +30,7 @@
 | `gold-script-isolation.test.ts` | 黄金脚本写隔离：只有 `gold:update` 可写显式仓库外受控快照，gate/check/legacy gate 全部只读；默认仓库快照仍受 clean-HEAD 保护 |
 | `corpus-gate-scripts.test.ts` | corpus 门禁脚本：显式/默认报告目录、暖查询预热/测量轮廓、匿名逐样本耗时、完整 token-evaluation-materials、外部 tokenizer `not_evaluated`、阈值失败与输出目录隔离 |
 | `private-script-mode.test.ts` | 私有验收 report-only 与 enforce 模式边界，已知 required miss 只能在前置测量阶段记录，PRF 完成后 enforce 为硬门禁 |
+| `privacy-gate.test.ts` | 公开前隐私门禁：tracked/历史 blob/commit message 命中检测、history 口径（工作树已删仍被抓）、输出不回显匹配文本、泄露仅存于 refs/remotes 过期缓存不算 FAIL 而同泄露在本地分支必 FAIL |
 | `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见、超大 query 拒绝 |
 | `source-directory-observable.test.ts` | AUD-012 来源目录可观测：explore stats 的 contextSources（byLayer L1/L2/L3 + byKind）复用 AUD-013 注册表 |
 | `status-fast-path.test.ts` | status mtime/size 快速路径：指纹未变时重复 status 零 adapter.load（计数适配器）且结果与全路径语义一致、源编辑击穿快速路径报 stale、status 返回 contextSources |
@@ -59,6 +60,7 @@
 | `scripts/run-private-acceptance.mjs` | 私有验收（gold-span 口径，命中判定经 gold-hit.mjs）：top-20 命中 + probe-100 rank + quoteExposure 诊断 + 性能门禁 |
 | `scripts/ablation-test.mjs` | 因子 ablation（gold-span 口径）：通过 `WritingService.evaluateSearch` 的显式、调用级 `disabledFactors` 注入逐变体评测（coverage/alias/proximity/heading/bm25/FTS/trust），单次索引复用；train-only 测 recall@5/10/50 + MRR，报告落盘 `reports/ablation-gold-span.json`（gitignored） |
 | `scripts/gold-measurement.mjs`、`gold-gate.mjs`、`gold-check.mjs`、`gold-update.mjs` | 共享确定性 gold-span 测量；gate/check 只读，update 原子更新已提交快照并记录代码 hash |
+| `scripts/privacy-gate.mjs` | 公开前隐私门禁：扫描本地 heads/tags 可达对象（blob 内容 + commit/tag message）中的禁词 marker（UTF-8 hex 存储，脚本自身不含明文）；输出 leak-safe，只报 marker 名/路径/oid；`--scope=worktree|history`，排除 refs/remotes 过期缓存，服务端真相以全新 clone 复跑为准；已接入 `pnpm verify` 链首 |
 | `scripts/attribute-misses.mjs` | miss 三层归因（数据层→机制层）：L1 查询词条可达性 / L2 候选可达性（LIKE 匹配数 vs candidateLimit）/ L3 公式因子分解；镜像 store 私有逻辑，需与 store.ts 手工同步 |
 | `scripts/load-corpus.mjs` | 语料加载：扫描目录、统计文件数量/大小/字符数、检测编码格式 |
 | `scripts/run-corpus-benchmark.mjs` | 显式 corpus/tasks/report-dir 的私有语料门禁：每个任务预热一次、测量三次，报告每百万字符索引、Explore/Context 暖查询 nearest-rank P95，以及本地 token-evaluation-materials.json（仅 evidence excerpts，外部 tokenizer 未评估） |
