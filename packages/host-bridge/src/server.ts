@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { BRIDGE_DEFAULT_PORT, BRIDGE_LOOPBACK_HOST, pairRequestSchema } from "@writing-mcp/host-bridge-protocol";
+import { BRIDGE_DEFAULT_PORT, BRIDGE_LOOPBACK_HOST, hostProjectIdSchema, LIMITS, pairRequestSchema } from "@writing-mcp/host-bridge-protocol";
 import type { PairingManager } from "./auth.js";
 import type { BridgeState } from "./state.js";
+import { BridgeError, bridgeStatus, type SnapshotPipeline } from "./snapshot.js";
 
 export function isLoopbackAddress(address: string | undefined): boolean {
   if (!address) return false;
@@ -20,6 +21,7 @@ export interface BridgeServerOptions {
   auth: PairingManager;
   state: BridgeState;
   config: BridgeServerConfig;
+  pipeline?: SnapshotPipeline;
   log?: (line: string) => void;
 }
 
@@ -61,7 +63,7 @@ async function readBody(req: IncomingMessage, limitBytes: number): Promise<strin
  * Diagnostic log lines carry hash-prefix identifiers only — never codes,
  * tokens, or absolute paths.
  */
-export function createBridgeServer({ auth, state, config, log }: BridgeServerOptions): BridgeServer {
+export function createBridgeServer({ auth, state, config, pipeline, log }: BridgeServerOptions): BridgeServer {
   const allowedOrigins = new Set(config.allowedOrigins ?? []);
   const bodyLimitBytes = config.bodyLimitBytes ?? 64 * 1024;
   const httpServer: Server = createServer((req, res) => {
@@ -151,6 +153,47 @@ export function createBridgeServer({ auth, state, config, log }: BridgeServerOpt
       const revoked = auth.unpair(token);
       log?.(`unpair tokenId=${auth.tokenLogId(token)} revoked=${revoked}`);
       return okData(res, { revoked });
+    }
+    const projectMatch = /^\/v1\/projects\/([^/]+)(\/.*)?$/.exec(pathname);
+    if (projectMatch) {
+      if (!requireBearer(req, res)) return;
+      if (!pipeline) return sendJson(res, 404, { error: "not_found" });
+      let hostProjectId: string;
+      try {
+        hostProjectId = decodeURIComponent(projectMatch[1]);
+      } catch {
+        return fail(res, 400, "BRIDGE_PROJECT_ID_INVALID", "hostProjectId is not valid UTF-8");
+      }
+      if (!hostProjectIdSchema.safeParse(hostProjectId).success) {
+        return fail(res, 400, "BRIDGE_PROJECT_ID_INVALID", "hostProjectId violates the protocol charset");
+      }
+      const sub = projectMatch[2] ?? "/";
+      const projectOrigin = origin as string;
+      try {
+        if (req.method === "GET" && sub === "/status") return okData(res, pipeline.status(hostProjectId, projectOrigin));
+        if (req.method === "POST" && sub === "/snapshot") {
+          const declaredLength = Number(req.headers["content-length"] ?? "0");
+          if (declaredLength > LIMITS.maxRawBodyBytes) {
+            return fail(res, 413, "BRIDGE_REQUEST_TOO_LARGE", "snapshot exceeds the 72 MiB raw body limit");
+          }
+          const body = await readBody(req, LIMITS.maxRawBodyBytes);
+          if (body === null) return fail(res, 413, "BRIDGE_REQUEST_TOO_LARGE", "snapshot exceeds the 72 MiB raw body limit");
+          let parsedBody: unknown;
+          try {
+            parsedBody = JSON.parse(body);
+          } catch {
+            return fail(res, 400, "BRIDGE_SNAPSHOT_INVALID", "body is not valid JSON");
+          }
+          return okData(res, await pipeline.activate(hostProjectId, projectOrigin, parsedBody));
+        }
+        if (req.method === "DELETE" && sub === "/derived-data") {
+          return okData(res, await pipeline.deleteDerivedData(hostProjectId, projectOrigin));
+        }
+        return sendJson(res, 404, { error: "not_found" });
+      } catch (error) {
+        if (error instanceof BridgeError) return fail(res, bridgeStatus(error.code), error.code, error.message);
+        throw error;
+      }
     }
     if (pathname.startsWith("/v1/") || pathname.startsWith("/v1")) {
       if (!requireBearer(req, res)) return;

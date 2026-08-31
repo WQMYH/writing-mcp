@@ -4,7 +4,9 @@ import { AUTH, PROTOCOL_VERSION } from "@writing-mcp/host-bridge-protocol";
 import { createPairingManager } from "./auth.js";
 import { acquireInstanceLock, InstanceLockError } from "./instance-lock.js";
 import { createMcpClient } from "./mcp-client.js";
+import { createPluginRegistry } from "./plugins.js";
 import { createBridgeServer } from "./server.js";
+import { createSnapshotPipeline } from "./snapshot.js";
 import { createBridgeState } from "./state.js";
 
 export interface CliIo {
@@ -84,6 +86,8 @@ export async function runCli(argv: string[] = process.argv.slice(2), io: CliIo =
       if (next === "revoked") auth.revokeAll();
     },
   });
+  const registry = createPluginRegistry({ bridgeRoot: args.root, state, log: (line) => io.stderr.write(`writing-mcp-host-bridge: ${line}\n`) });
+  await registry.load();
   const mcp = createMcpClient({
     command: process.execPath,
     args: [args.mcpEntry],
@@ -100,9 +104,19 @@ export async function runCli(argv: string[] = process.argv.slice(2), io: CliIo =
     return 2;
   }
 
+  const pipeline = createSnapshotPipeline({
+    bridgeRoot: args.root,
+    registry,
+    state,
+    mcp,
+    log: (line) => io.stderr.write(`writing-mcp-host-bridge: ${line}\n`),
+  });
+  await pipeline.restoreFromManifests();
+
   const server = createBridgeServer({
     auth,
     state,
+    pipeline,
     config: { port: args.port },
     log: (line) => io.stderr.write(`writing-mcp-host-bridge: ${line}\n`),
   });

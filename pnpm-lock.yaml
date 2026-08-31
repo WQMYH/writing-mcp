@@ -70,6 +70,9 @@ importers:
       '@writing-mcp/host-bridge-protocol':
         specifier: workspace:*
         version: link:../host-bridge-protocol
+      '@writing-mcp/host-plugin-storyforge':
+        specifier: workspace:*
+        version: link:../host-plugin-storyforge
       zod:
         specifier: ^4.4.0
         version: 4.4.3

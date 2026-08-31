@@ -1,5 +1,19 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "dist", "tsBuildInfoFile": "dist/.tsbuildinfo" },
-  "references": [{ "path": "../host-bridge-protocol" }], "include": ["src/**/*.ts"]
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "references": [
+    {
+      "path": "../host-bridge-protocol"
+    },
+    {
+      "path": "../host-plugin-storyforge"
+    }
+  ],
+  "include": [
+    "src/**/*.ts"
+  ]
 }
