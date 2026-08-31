@@ -2,6 +2,12 @@
 
 TypeScript MVP for evidence-backed writing retrieval and token-budgeted context assembly.
 
+## License
+
+Writing MCP is licensed under the GNU Affero General Public License v3.0 only
+(`AGPL-3.0-only`). See [LICENSE](LICENSE). Dependencies retain their own
+licenses.
+
 ## Requirements
 
 - Node.js 24.x (uses built-in `node:sqlite` with FTS5)
