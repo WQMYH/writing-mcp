@@ -89,7 +89,8 @@ export function createMcpClient(options: McpClientOptions): McpClient {
   });
 
   child.stderr.on("data", (chunk: Buffer) => {
-    stderrTail = stderrTail.length + chunk.length <= stderrLimitBytes ? Buffer.concat([stderrTail, chunk]) : Buffer.concat([stderrTail, chunk]).subarray(stderrLimitBytes);
+    const combined = Buffer.concat([stderrTail, chunk]);
+    stderrTail = combined.length <= stderrLimitBytes ? combined : combined.subarray(combined.length - stderrLimitBytes);
   });
 
   function write(message: unknown): void {

@@ -4,14 +4,14 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import {
   computeContentHash, computeProjectKey, computeSnapshotHash, hostSnapshotDraftSchema,
-  LIMITS, PROTOCOL_VERSION, type ProjectBindingState,
+  LIMITS, PROTOCOL_VERSION, TIMEOUTS, type ProjectBindingState,
 } from "@writing-mcp/host-bridge-protocol";
 import { PLUGIN_ID } from "@writing-mcp/host-plugin-storyforge";
 import type { PluginRegistry } from "./plugins.js";
 import type { BridgeState } from "./state.js";
 
 export interface ToolInvoker {
-  callTool(name: string, args: unknown): Promise<unknown>;
+  callTool(name: string, args: unknown, timeoutMs?: number): Promise<unknown>;
 }
 
 const ERROR_STATUS: Record<string, number> = {
@@ -186,7 +186,7 @@ export function createSnapshotPipeline(options: SnapshotPipelineOptions) {
         const resolveData = toolData(await mcp.callTool("writing_resolve", { sourcePath: projectDir(key), adapterHint: "generic" }));
         if (resolveData.status !== "resolved" || typeof resolveData.workRef !== "string") throw new BridgeError("BRIDGE_SNAPSHOT_ACTIVATION_FAILED", "resolve did not yield a workRef");
         const workRef = resolveData.workRef;
-        const indexCall = async (mode: string) => toolData(await mcp.callTool("writing_index", { workRef, mode }));
+        const indexCall = async (mode: string) => toolData(await mcp.callTool("writing_index", { workRef, mode }, TIMEOUTS.snapshotMs));
         let indexData = await indexCall("status");
         if (indexData.freshness === "missing" || indexData.freshness === "stale") indexData = await indexCall("incremental");
         else if (indexData.freshness === "incompatible") indexData = await indexCall("rebuild");

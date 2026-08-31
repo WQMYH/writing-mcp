@@ -7,6 +7,7 @@ import { createPluginRegistry } from "../packages/host-bridge/src/plugins.js";
 import { createSnapshotPipeline } from "../packages/host-bridge/src/snapshot.js";
 import { hostPluginManifestSchema } from "@writing-mcp/host-plugin-storyforge";
 import { computeContentHash, computeSnapshotHash } from "../packages/host-bridge-protocol/src/index.js";
+import { TIMEOUTS } from "@writing-mcp/host-bridge-protocol";
 
 const manifest = hostPluginManifestSchema.parse({
   id: "storyforge",
@@ -29,17 +30,17 @@ const draft = (documents: unknown[], chapters: Array<{ chapterKey: string; ordin
 });
 
 interface StubMcp {
-  calls: Array<{ name: string; args: Record<string, unknown> }>;
+  calls: Array<{ name: string; args: Record<string, unknown>; timeoutMs?: number }>;
   freshnessQueue: Array<"fresh" | "stale" | "missing" | "incompatible">;
   failResolve?: boolean;
-  callTool(name: string, args: unknown): Promise<unknown>;
+  callTool(name: string, args: unknown, timeoutMs?: number): Promise<unknown>;
 }
 
 function stubMcp(overrides: Partial<StubMcp> = {}): StubMcp {
   const stub: StubMcp = { calls: [], freshnessQueue: ["missing", "fresh"], ...overrides };
-  stub.callTool = async (name: string, args: unknown) => {
+  stub.callTool = async (name: string, args: unknown, timeoutMs?: number) => {
     const record = args as Record<string, unknown>;
-    stub.calls.push({ name, args: record });
+    stub.calls.push({ name, args: record, timeoutMs });
     if (name === "writing_resolve") {
       if (stub.failResolve) throw new Error("mcp down");
       return { structuredContent: { result: { ok: true, data: { status: "resolved", workRef: "work-1", candidates: [], diagnostics: [] }, diagnostic: {} } } };
@@ -95,6 +96,18 @@ describe("host bridge snapshot transaction (HB-M2)", () => {
       await stack.pipeline.activate("123", "http://localhost:1111", draft([doc("b.md", "b")]));
       expect(stack.mcp.calls.at(-2)?.args).toMatchObject({ mode: "status" });
       expect(stack.mcp.calls.at(-1)?.args).toMatchObject({ mode: "rebuild" });
+    } finally {
+      await stack.cleanup();
+    }
+  });
+
+  test("snapshot activation gives every index call the frozen 120 second timeout", async () => {
+    const stack = await makeStack();
+    try {
+      await stack.pipeline.activate("123", "http://localhost:1111", draft([doc("a.md", "a")]));
+      const indexCalls = stack.mcp.calls.filter((call) => call.name === "writing_index");
+      expect(indexCalls).toHaveLength(2);
+      expect(indexCalls.every((call) => call.timeoutMs === TIMEOUTS.snapshotMs)).toBe(true);
     } finally {
       await stack.cleanup();
     }

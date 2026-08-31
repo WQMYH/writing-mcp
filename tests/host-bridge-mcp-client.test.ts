@@ -40,6 +40,19 @@ describe("host bridge MCP stdio client (HB-M1)", () => {
     await client.stop();
   });
 
+  test("stderr capture retains the newest complete tail after overflowing the limit", async () => {
+    const limit = 4 * 1024;
+    const marker = "LATEST-DIAGNOSTIC-MARKER";
+    const script = `process.stderr.write('x'.repeat(${limit + 2048}) + '${marker}'); setTimeout(() => process.exit(0), 50);`;
+    const client = createMcpClient({ command: process.execPath, args: ["-e", script], stderrLimitBytes: limit });
+    const exited = new Promise<void>((resolvePromise) => client.onExit(resolvePromise));
+    void client.start().catch(() => undefined);
+    await exited;
+    expect(Buffer.byteLength(client.stderrText(), "utf8")).toBe(limit);
+    expect(client.stderrText().endsWith(marker)).toBe(true);
+    await client.stop();
+  });
+
   test("non-JSON stdout noise does not break the protocol channel", async () => {
     const script = [
       "process.stdout.write('this is definitely not json\\n');",
