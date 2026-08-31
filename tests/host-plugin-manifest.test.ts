@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { MINIMUM_PERMISSIONS, PLUGIN_API_VERSION, PLUGIN_ID, hostPluginManifestSchema } from "../packages/host-plugin-storyforge/src/index.js";
+import { MINIMUM_PERMISSIONS, PLUGIN_API_VERSION, PLUGIN_ID, hostPluginManifestSchema, storyforgePluginManifest } from "../packages/host-plugin-storyforge/src/index.js";
 
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`../fixtures/host-bridge-protocol/${name}`, import.meta.url), "utf8"));
 
@@ -33,5 +33,9 @@ describe("storyforge host plugin manifest (HB-M0)", () => {
     expect([...MINIMUM_PERMISSIONS]).toEqual(["export:snapshot", "invoke:tools", "delete:derived"]);
     const manifest = fixture("manifest-storyforge.json");
     expect(new Set(manifest.minimumPermissions)).toEqual(new Set(MINIMUM_PERMISSIONS));
+  });
+
+  test("the fixture generated for governance equals the manifest the bridge registers", () => {
+    expect(fixture("manifest-storyforge.json")).toEqual(storyforgePluginManifest);
   });
 });

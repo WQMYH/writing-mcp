@@ -24,7 +24,8 @@
 | `host-bridge-binding.test.ts` | HB-M2 binding 生命周期：规范 draft 经 HTTP + 真实 MCP stdio 激活为 fresh（Bearer 门禁内）、未认证 snapshot/status 拒绝、畸形 hostProjectId 拒绝、binding manifest 最后原子写（失败激活不覆盖旧 manifest、no-op 后不同内容失败仍保旧 manifest） |
 | `host-bridge-derived-data.test.ts` | HB-M2 派生数据删除：删 source/项目 .bridge/.writing-index 且保留全局 plugin-state.json、状态转 empty、active capture 守卫返回 DERIVED_DATA_BUSY 且不改动、未知项目 no-op 成功 |
 | `host-bridge-tools.test.ts` | HB-M3 五工具代理：五个 Bearer 项目路由与 strict proxy envelope、独立 `BRIDGE_TOOL_REQUEST_INVALID`；Bridge 强制项目 sourcePath/workRef、`WORK_REF_NOT_FOUND` 单次 resolve+retry、index 120 秒与其余工具 15 秒、diagnose metadata-only 且移除绝对 artifact/diagnostics 路径；真实 MCP stdio 子进程完成 resolve→index→explore→context→diagnose 全链 fixture |
-| `host-plugin-manifest.test.ts` | HB-M0 插件 manifest 冻结：七字段（id/apiVersion/hostCompatibility/minimumPermissions/exportCategories/license/testMatrix）齐全且 strict、错误身份/apiVersion/枚举/空权限拒绝、最小权限词表冻结并覆盖 fixture |
+| `host-bridge-cli-boot.test.ts` | HB-M5 启动接线：`--host-origin` 可重复且仅接受精确 loopback http Origin（`*`/非 loopback/https/带路径一律退出码 2 且不监听）、配对后的 Origin 白名单内外 200/403 冻结码、冷启动 bridgeRoot 也静态注册 storyforge manifest（项目路由不再 `BRIDGE_PLUGIN_DISABLED`） |
+| `host-plugin-manifest.test.ts` | HB-M0 插件 manifest 冻结：七字段（id/apiVersion/hostCompatibility/minimumPermissions/exportCategories/license/testMatrix）齐全且 strict、错误身份/apiVersion/枚举/空权限拒绝、最小权限词表冻结并覆盖 fixture、生成 fixture 与运行期注册常量一致 |
 | `graph-identity-evidence.test.ts` | schema v4 图：重复 Chapter 标题独立身份、按源 ordinal 排序、同名实体全部定义、规范来源晋升、多次 mention、多 span 关系证据 |
 | `index-lifecycle.test.ts` | 索引生命周期：不兼容 schema 只读报告/显式重建、失败事务保留上一 revision、未解析引用入库、status stale 语义、源顺序 snapshot、中断恢复、writer lock、增量影响范围、实体变化刷新引用 |
 | `inkos-fixture.test.ts` | InkOS：静态最小 fixture 的稳定作品引用、原生文档类型、章节编号 |

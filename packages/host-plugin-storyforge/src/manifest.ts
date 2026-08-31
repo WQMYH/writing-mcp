@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { snapshotCategorySchema } from "@writing-mcp/host-bridge-protocol";
+import { SNAPSHOT_CATEGORIES, snapshotCategorySchema } from "@writing-mcp/host-bridge-protocol";
 
 export const PLUGIN_ID = "storyforge";
 export const PLUGIN_API_VERSION = 1;
@@ -23,3 +23,14 @@ export const hostPluginManifestSchema = z.strictObject({
 });
 
 export type HostPluginManifest = z.infer<typeof hostPluginManifestSchema>;
+
+/** Canonical static registration for the only first-party host plugin. */
+export const storyforgePluginManifest: HostPluginManifest = hostPluginManifestSchema.parse({
+  id: PLUGIN_ID,
+  apiVersion: PLUGIN_API_VERSION,
+  hostCompatibility: { bridgeProtocol: "^1" },
+  minimumPermissions: [...MINIMUM_PERMISSIONS],
+  exportCategories: [...SNAPSHOT_CATEGORIES],
+  license: "AGPL-3.0-only",
+  testMatrix: { node: ["24"], browsers: ["chromium"], platforms: ["win32", "darwin", "linux"] },
+});
