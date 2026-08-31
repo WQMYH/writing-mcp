@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { BRIDGE_DEFAULT_PORT, BRIDGE_LOOPBACK_HOST, hostProjectIdSchema, LIMITS, pairRequestSchema } from "@writing-mcp/host-bridge-protocol";
+import { BRIDGE_DEFAULT_PORT, BRIDGE_LOOPBACK_HOST, hostProjectIdSchema, LIMITS, pairRequestSchema, toolProxyRequestSchema } from "@writing-mcp/host-bridge-protocol";
 import type { PairingManager } from "./auth.js";
 import type { BridgeState } from "./state.js";
 import { BridgeError, bridgeStatus, type SnapshotPipeline } from "./snapshot.js";
@@ -22,7 +22,14 @@ export interface BridgeServerOptions {
   state: BridgeState;
   config: BridgeServerConfig;
   pipeline?: SnapshotPipeline;
+  toolProxy?: ProjectToolProxy;
   log?: (line: string) => void;
+}
+
+export type ProjectToolOperation = "resolve" | "index" | "explore" | "context" | "diagnose";
+
+export interface ProjectToolProxy {
+  invoke(operation: ProjectToolOperation, hostProjectId: string, origin: string, args: Record<string, unknown>): Promise<unknown>;
 }
 
 export interface BridgeServer {
@@ -63,7 +70,7 @@ async function readBody(req: IncomingMessage, limitBytes: number): Promise<strin
  * Diagnostic log lines carry hash-prefix identifiers only — never codes,
  * tokens, or absolute paths.
  */
-export function createBridgeServer({ auth, state, config, pipeline, log }: BridgeServerOptions): BridgeServer {
+export function createBridgeServer({ auth, state, config, pipeline, toolProxy, log }: BridgeServerOptions): BridgeServer {
   const allowedOrigins = new Set(config.allowedOrigins ?? []);
   const bodyLimitBytes = config.bodyLimitBytes ?? 64 * 1024;
   const httpServer: Server = createServer((req, res) => {
@@ -171,6 +178,21 @@ export function createBridgeServer({ auth, state, config, pipeline, log }: Bridg
       const projectOrigin = origin as string;
       try {
         if (req.method === "GET" && sub === "/status") return okData(res, pipeline.status(hostProjectId, projectOrigin));
+        const toolMatch = /^\/(resolve|index|explore|context|diagnose)$/.exec(sub);
+        if (req.method === "POST" && toolMatch) {
+          if (!toolProxy) return sendJson(res, 404, { error: "not_found" });
+          const body = await readBody(req, bodyLimitBytes);
+          if (body === null) return fail(res, 413, "BRIDGE_REQUEST_TOO_LARGE", "request body exceeds the limit");
+          let parsedBody: unknown;
+          try {
+            parsedBody = JSON.parse(body);
+          } catch {
+            return fail(res, 400, "BRIDGE_TOOL_REQUEST_INVALID", "body is not valid JSON");
+          }
+          const parsed = toolProxyRequestSchema.safeParse(parsedBody);
+          if (!parsed.success) return fail(res, 400, "BRIDGE_TOOL_REQUEST_INVALID", "tool proxy request violates protocol v1");
+          return okData(res, await toolProxy.invoke(toolMatch[1] as ProjectToolOperation, hostProjectId, projectOrigin, parsed.data.arguments));
+        }
         if (req.method === "POST" && sub === "/snapshot") {
           const declaredLength = Number(req.headers["content-length"] ?? "0");
           if (declaredLength > LIMITS.maxRawBodyBytes) {

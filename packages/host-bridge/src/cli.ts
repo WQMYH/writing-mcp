@@ -8,6 +8,7 @@ import { createPluginRegistry } from "./plugins.js";
 import { createBridgeServer } from "./server.js";
 import { createSnapshotPipeline } from "./snapshot.js";
 import { createBridgeState } from "./state.js";
+import { createProjectToolProxy } from "./tool-proxy.js";
 
 export interface CliIo {
   stderr: { write: (chunk: string) => unknown };
@@ -112,11 +113,18 @@ export async function runCli(argv: string[] = process.argv.slice(2), io: CliIo =
     log: (line) => io.stderr.write(`writing-mcp-host-bridge: ${line}\n`),
   });
   await pipeline.restoreFromManifests();
+  const toolProxy = createProjectToolProxy({
+    bridgeRoot: args.root,
+    mcp,
+    pipeline,
+    isPluginAvailable: () => registry.isAvailable(),
+  });
 
   const server = createBridgeServer({
     auth,
     state,
     pipeline,
+    toolProxy,
     config: { port: args.port },
     log: (line) => io.stderr.write(`writing-mcp-host-bridge: ${line}\n`),
   });
