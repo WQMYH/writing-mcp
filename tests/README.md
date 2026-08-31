@@ -17,6 +17,9 @@
 | `explore-bfs.test.ts` | 0~3 跳 BFS、fan-out/全局上限、逐边 pathEvidence、截断 |
 | `generic-txt.test.ts` | TXT：GBK/GB18030 解码、章节切分、章节编号重置推断新卷、原始文件行号偏移 |
 | `host-bridge-protocol.test.ts` | HB-M0 协议冻结：strict 拒绝未知字段、hostProjectId 字符集、chapter ordinal 连续/唯一（与 chapterKey 值解耦）、relativePath 逃逸拒绝（Unicode 合法）、sha256/协议版本/pluginId 校验、鉴权矩阵仅 OPTIONS/health/pair 免 Bearer、错误码/限额/超时/桥常量与规范 fixture 一致、computeProjectKey/computeContentHash/computeSnapshotHash 独立向量与顺序稳定性、规范快照 draft fixture 解析 |
+| `host-bridge-auth.test.ts` | HB-M1 配对与令牌：初始 code ≥128-bit 熵、错误 code 拒绝、code 单次使用且成功/过期/unpair 后轮换、过期 code 返回 EXPIRED、60 分钟 token TTL 边界（差 1ms）、双标签页独立 token、unpair 仅吊销当前会话、revoked 全部吊销、缺失/畸形 Bearer 冻结错误、日志只含 hash 前缀 |
+| `host-bridge-lifecycle.test.ts` | HB-M1 安全边界与生命周期：loopback 分类器、health 免 Bearer 且投影进程/配对状态、伪造 Host（node:http）与错误/缺失 Origin 的冻结错误码、PNA 预检仅按请求回显、pair 校验/大小限制 413、业务路由先 Bearer 后 404、单实例锁（活 pid 拒绝/死 pid 同内容清理/不可解析不清理）、CLI stdin EOF 幂等关机与锁释放且 health 不泄露 code、MCP 子进程异常死亡转 degraded 不假 ready、runCli 锁占用退出码 3 |
+| `host-bridge-mcp-client.test.ts` | HB-M1 MCP stdio 客户端：initialize 握手 + 真实 writing_resolve 调用（信封 structuredContent.result.data.status）、stderr 有界尾捕获（3 MiB 洪泛封顶）、stdout 非 JSON 噪声不影响协议通道、子进程中途退出拒绝挂起请求为 BRIDGE_MCP_UNAVAILABLE、stop 幂等且子进程终止 |
 | `host-plugin-manifest.test.ts` | HB-M0 插件 manifest 冻结：七字段（id/apiVersion/hostCompatibility/minimumPermissions/exportCategories/license/testMatrix）齐全且 strict、错误身份/apiVersion/枚举/空权限拒绝、最小权限词表冻结并覆盖 fixture |
 | `graph-identity-evidence.test.ts` | schema v4 图：重复 Chapter 标题独立身份、按源 ordinal 排序、同名实体全部定义、规范来源晋升、多次 mention、多 span 关系证据 |
 | `index-lifecycle.test.ts` | 索引生命周期：不兼容 schema 只读报告/显式重建、失败事务保留上一 revision、未解析引用入库、status stale 语义、源顺序 snapshot、中断恢复、writer lock、增量影响范围、实体变化刷新引用 |

@@ -2,13 +2,14 @@ import type { z } from "zod";
 import type {
   bridgeProcessStateSchema, bridgeSuccessEnvelopeSchema, chapterMappingSchema, derivedDataDeleteDataSchema,
   healthDataSchema, hostSnapshotDraftSchema, hostStatusProjectionSchema, pairDataSchema, pairRequestSchema,
-  pluginStateSchema, projectBindingProjectionSchema, projectStatusDataSchema, sessionStateSchema,
-  snapshotCategorySchema, snapshotDocumentSchema, snapshotResultDataSchema, toolProxyRequestSchema,
+  pluginStateSchema, projectBindingProjectionSchema, projectBindingStateSchema, projectStatusDataSchema,
+  sessionStateSchema, snapshotCategorySchema, snapshotDocumentSchema, snapshotResultDataSchema, toolProxyRequestSchema,
 } from "./schemas.js";
 
 export type SessionState = z.infer<typeof sessionStateSchema>;
 export type BridgeProcessState = z.infer<typeof bridgeProcessStateSchema>;
 export type PluginState = z.infer<typeof pluginStateSchema>;
+export type ProjectBindingState = z.infer<typeof projectBindingStateSchema>;
 export type SnapshotCategory = z.infer<typeof snapshotCategorySchema>;
 export type SnapshotDocument = z.infer<typeof snapshotDocumentSchema>;
 export type ChapterMapping = z.infer<typeof chapterMappingSchema>;

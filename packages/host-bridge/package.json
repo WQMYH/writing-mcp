@@ -1,0 +1,7 @@
+{
+  "name": "@writing-mcp/host-bridge", "version": "0.1.0", "private": true, "type": "module",
+  "bin": { "writing-mcp-host-bridge": "dist/cli.js" },
+  "main": "dist/index.js", "types": "dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "dependencies": { "@writing-mcp/host-bridge-protocol": "workspace:*", "zod": "^4.4.0" }
+}

@@ -34,6 +34,7 @@
   "@writing-mcp/adapter-generic": "workspace:*",
   "@writing-mcp/adapter-inkos": "workspace:*",
   "@writing-mcp/core": "workspace:*",
+  "@writing-mcp/host-bridge": "workspace:*",
   "@writing-mcp/host-bridge-protocol": "workspace:*",
   "@writing-mcp/host-plugin-storyforge": "workspace:*",
   "jszip": "^3.10.1",
