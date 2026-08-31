@@ -26,6 +26,12 @@ importers:
       '@writing-mcp/core':
         specifier: workspace:*
         version: link:packages/core
+      '@writing-mcp/host-bridge-protocol':
+        specifier: workspace:*
+        version: link:packages/host-bridge-protocol
+      '@writing-mcp/host-plugin-storyforge':
+        specifier: workspace:*
+        version: link:packages/host-plugin-storyforge
       jszip:
         specifier: ^3.10.1
         version: 3.10.1
@@ -55,6 +61,21 @@ importers:
         version: link:../core
 
   packages/core: {}
+
+  packages/host-bridge-protocol:
+    dependencies:
+      zod:
+        specifier: ^4.4.0
+        version: 4.4.3
+
+  packages/host-plugin-storyforge:
+    dependencies:
+      '@writing-mcp/host-bridge-protocol':
+        specifier: workspace:*
+        version: link:../host-bridge-protocol
+      zod:
+        specifier: ^4.4.0
+        version: 4.4.3
 
   packages/mcp-server:
     dependencies:

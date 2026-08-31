@@ -16,6 +16,8 @@
 | `epub-resource-limits.test.ts` | AUD-028/Task 5A EPUB 资源上限：entry 数超限 `EPUB_TOO_MANY_ENTRIES`、OPF/单 spine/累计 spine 按解码 UTF-8 bytes 的中文多字节精确边界、总量超限 `EPUB_TOTAL_TOO_LARGE`（均可经构造器注入）、EPUB 2.0 包在默认上限下正常加载 |
 | `explore-bfs.test.ts` | 0~3 跳 BFS、fan-out/全局上限、逐边 pathEvidence、截断 |
 | `generic-txt.test.ts` | TXT：GBK/GB18030 解码、章节切分、章节编号重置推断新卷、原始文件行号偏移 |
+| `host-bridge-protocol.test.ts` | HB-M0 协议冻结：strict 拒绝未知字段、hostProjectId 字符集、chapter ordinal 连续/唯一（与 chapterKey 值解耦）、relativePath 逃逸拒绝（Unicode 合法）、sha256/协议版本/pluginId 校验、鉴权矩阵仅 OPTIONS/health/pair 免 Bearer、错误码/限额/超时/桥常量与规范 fixture 一致、computeProjectKey/computeContentHash/computeSnapshotHash 独立向量与顺序稳定性、规范快照 draft fixture 解析 |
+| `host-plugin-manifest.test.ts` | HB-M0 插件 manifest 冻结：七字段（id/apiVersion/hostCompatibility/minimumPermissions/exportCategories/license/testMatrix）齐全且 strict、错误身份/apiVersion/枚举/空权限拒绝、最小权限词表冻结并覆盖 fixture |
 | `graph-identity-evidence.test.ts` | schema v4 图：重复 Chapter 标题独立身份、按源 ordinal 排序、同名实体全部定义、规范来源晋升、多次 mention、多 span 关系证据 |
 | `index-lifecycle.test.ts` | 索引生命周期：不兼容 schema 只读报告/显式重建、失败事务保留上一 revision、未解析引用入库、status stale 语义、源顺序 snapshot、中断恢复、writer lock、增量影响范围、实体变化刷新引用 |
 | `inkos-fixture.test.ts` | InkOS：静态最小 fixture 的稳定作品引用、原生文档类型、章节编号 |

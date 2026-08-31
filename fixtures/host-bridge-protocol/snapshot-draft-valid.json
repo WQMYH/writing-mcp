@@ -1,0 +1,65 @@
+{
+  "protocolVersion": 1,
+  "pluginId": "storyforge",
+  "hostProjectId": "123",
+  "hostRevision": "rev-0001",
+  "documents": [
+    {
+      "relativePath": "chapters/第一章.md",
+      "category": "chapter",
+      "mediaType": "text/markdown",
+      "content": "# 第一章 离乡\n\n林澈背起行囊，回头看了一眼晨雾中的青溪镇。",
+      "sha256": "f71d61a9d563094bbced23f0256d06edd7844e9711a1fe349b34fdafe9036e2f"
+    },
+    {
+      "relativePath": "project/story-core.md",
+      "category": "project",
+      "mediaType": "text/markdown",
+      "content": "# 故事核心\n\n修真世界，凡人逆流而上。",
+      "sha256": "2bd7f4e6dfcda4c0b589e6202ce71ecdc1a6de64137795f66b3c60793bf2a898"
+    },
+    {
+      "relativePath": "characters/林澈.md",
+      "category": "character",
+      "mediaType": "text/markdown",
+      "content": "# 林澈\n\n主角，青溪镇出身，性格坚韧。",
+      "sha256": "05e60f6d2baecd770b160d46cb7dd891bb5848e16ab8ef917c6232fcedb2f467"
+    },
+    {
+      "relativePath": "world/世界设定.md",
+      "category": "world",
+      "mediaType": "text/markdown",
+      "content": "# 世界设定\n\n九洲大地，灵气分五行。",
+      "sha256": "86898dada972b2890890d1ffb4027484b6d54e94a79cb1a163c8ef3134f88b0a"
+    },
+    {
+      "relativePath": "outline/第一卷大纲.md",
+      "category": "outline",
+      "mediaType": "text/markdown",
+      "content": "# 第一卷大纲\n\n林澈离乡，初入宗门。",
+      "sha256": "bbacaada2ee5e606d6c98e8f2672618f5303e0b4c00cef02f3882d2643e1f61d"
+    },
+    {
+      "relativePath": "foreshadows/伏笔-001.md",
+      "category": "foreshadow",
+      "mediaType": "text/markdown",
+      "content": "# 伏笔-001\n\n镇口古井在第三章泛起蓝光。",
+      "sha256": "f13cffd9ff5112d9ae93ae4f69eb1704c77a7b326c224259276ed87e0fb6c54a"
+    }
+  ],
+  "chapters": [
+    {
+      "chapterKey": "n:1",
+      "ordinal": 1
+    },
+    {
+      "chapterKey": "n:2",
+      "ordinal": 2
+    },
+    {
+      "chapterKey": "s:legacy-003",
+      "ordinal": 3
+    }
+  ],
+  "claimedSnapshotHash": "7ef5f85c1fefb620c86a3c265b9758c1d0d0664c65946f9821be6f9d9f339cac"
+}

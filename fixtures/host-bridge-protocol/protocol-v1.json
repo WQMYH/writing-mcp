@@ -1,0 +1,71 @@
+{
+  "protocolVersion": 1,
+  "limits": {
+    "maxDocumentBytes": 16777216,
+    "maxTotalDocumentBytes": 67108864,
+    "maxDocuments": 4096,
+    "maxRawBodyBytes": 75497472
+  },
+  "timeouts": {
+    "toolMs": 15000,
+    "snapshotMs": 120000
+  },
+  "auth": {
+    "pairingCodeTtlMs": 600000,
+    "pairingCodeMinEntropyBits": 128,
+    "tokenTtlMs": 3600000
+  },
+  "bridge": {
+    "host": "127.0.0.1",
+    "port": 48931
+  },
+  "errorCodes": [
+    "BRIDGE_PAIRING_CODE_INVALID",
+    "BRIDGE_PAIRING_CODE_EXPIRED",
+    "BRIDGE_TOKEN_EXPIRED",
+    "BRIDGE_HOST_DENIED",
+    "BRIDGE_ORIGIN_DENIED",
+    "BRIDGE_REQUEST_TOO_LARGE",
+    "BRIDGE_PROJECT_ID_INVALID",
+    "BRIDGE_SNAPSHOT_INVALID",
+    "BRIDGE_SNAPSHOT_ACTIVATION_FAILED",
+    "BRIDGE_BINDING_DEGRADED",
+    "BRIDGE_MCP_UNAVAILABLE",
+    "BRIDGE_PLUGIN_DISABLED",
+    "DERIVED_DATA_BUSY"
+  ],
+  "authMatrix": [
+    {
+      "method": "OPTIONS",
+      "route": "/v1/*",
+      "origin": "required",
+      "bearer": false,
+      "pairingCode": false,
+      "pnaHeader": true
+    },
+    {
+      "method": "GET",
+      "route": "/v1/health",
+      "origin": "if-present",
+      "bearer": false,
+      "pairingCode": false,
+      "pnaHeader": false
+    },
+    {
+      "method": "POST",
+      "route": "/v1/pair",
+      "origin": "required",
+      "bearer": false,
+      "pairingCode": true,
+      "pnaHeader": false
+    },
+    {
+      "method": "*",
+      "route": "/v1/*",
+      "origin": "required",
+      "bearer": true,
+      "pairingCode": false,
+      "pnaHeader": false
+    }
+  ]
+}

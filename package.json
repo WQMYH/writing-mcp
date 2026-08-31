@@ -1,42 +1,44 @@
 {
-  "name": "writing-mcp-workspace",
-  "private": true,
-  "license": "AGPL-3.0-only",
-  "type": "module",
-  "packageManager": "pnpm@11.21.0",
-  "engines": {
-    "node": ">=24 <25"
-  },
-  "scripts": {
-    "build": "tsc -b",
-    "test": "pnpm build && vitest run",
-    "benchmark": "pnpm build && node scripts/run-benchmark.mjs",
-    "benchmark:private": "pnpm build && node scripts/run-private-acceptance.mjs",
-    "check": "tsc -b --pretty false",
-    "lint": "oxlint -c oxlintrc.json --deny-warnings packages tests scripts",
-    "coverage": "vitest run --coverage",
-    "privacy:gate": "node scripts/privacy-gate.mjs --scope=history",
-    "verify": "pnpm privacy:gate && pnpm check && pnpm lint && pnpm test && pnpm benchmark && pnpm coverage",
-    "gold:gate": "pnpm build && node scripts/gold-gate.mjs",
-    "gold:check": "pnpm build && node scripts/gold-check.mjs",
-    "gold:update": "pnpm build && node scripts/gold-update.mjs",
-    "prf:calibrate": "pnpm build && node scripts/prf-calibration.mjs",
-    "private:measure": "pnpm build && node scripts/run-private-acceptance.mjs --report-only",
-    "corpus:gate": "pnpm build && node scripts/run-corpus-benchmark.mjs",
-    "verify:private:pre-prf": "pnpm verify && pnpm private:measure && pnpm gold:gate && pnpm gold:check && pnpm corpus:gate",
-    "verify:private": "pnpm verify:private:pre-prf && pnpm build && node scripts/run-private-acceptance.mjs --enforce",
-    "start": "node packages/mcp-server/dist/index.js"
-  },
-  "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "@types/node": "^24.10.0",
-    "@vitest/coverage-v8": "^4.1.10",
-    "@writing-mcp/adapter-generic": "workspace:*",
-    "@writing-mcp/adapter-inkos": "workspace:*",
-    "@writing-mcp/core": "workspace:*",
-    "jszip": "^3.10.1",
-    "oxlint": "^1.78.0",
-    "typescript": "^5.9.2",
-    "vitest": "^4.0.0"
-  }
+ "name": "writing-mcp-workspace",
+ "private": true,
+ "license": "AGPL-3.0-only",
+ "type": "module",
+ "packageManager": "pnpm@11.21.0",
+ "engines": {
+  "node": ">=24 <25"
+ },
+ "scripts": {
+  "build": "tsc -b",
+  "test": "pnpm build && vitest run",
+  "benchmark": "pnpm build && node scripts/run-benchmark.mjs",
+  "benchmark:private": "pnpm build && node scripts/run-private-acceptance.mjs",
+  "check": "tsc -b --pretty false",
+  "lint": "oxlint -c oxlintrc.json --deny-warnings packages tests scripts",
+  "coverage": "vitest run --coverage",
+  "privacy:gate": "node scripts/privacy-gate.mjs --scope=history",
+  "verify": "pnpm privacy:gate && pnpm check && pnpm lint && pnpm test && pnpm benchmark && pnpm coverage",
+  "gold:gate": "pnpm build && node scripts/gold-gate.mjs",
+  "gold:check": "pnpm build && node scripts/gold-check.mjs",
+  "gold:update": "pnpm build && node scripts/gold-update.mjs",
+  "prf:calibrate": "pnpm build && node scripts/prf-calibration.mjs",
+  "private:measure": "pnpm build && node scripts/run-private-acceptance.mjs --report-only",
+  "corpus:gate": "pnpm build && node scripts/run-corpus-benchmark.mjs",
+  "verify:private:pre-prf": "pnpm verify && pnpm private:measure && pnpm gold:gate && pnpm gold:check && pnpm corpus:gate",
+  "verify:private": "pnpm verify:private:pre-prf && pnpm build && node scripts/run-private-acceptance.mjs --enforce",
+  "start": "node packages/mcp-server/dist/index.js"
+ },
+ "devDependencies": {
+  "@modelcontextprotocol/sdk": "^1.30.0",
+  "@types/node": "^24.10.0",
+  "@vitest/coverage-v8": "^4.1.10",
+  "@writing-mcp/adapter-generic": "workspace:*",
+  "@writing-mcp/adapter-inkos": "workspace:*",
+  "@writing-mcp/core": "workspace:*",
+  "@writing-mcp/host-bridge-protocol": "workspace:*",
+  "@writing-mcp/host-plugin-storyforge": "workspace:*",
+  "jszip": "^3.10.1",
+  "oxlint": "^1.78.0",
+  "typescript": "^5.9.2",
+  "vitest": "^4.0.0"
+ }
 }

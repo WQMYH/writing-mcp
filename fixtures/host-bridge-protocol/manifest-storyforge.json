@@ -1,0 +1,34 @@
+{
+  "id": "storyforge",
+  "apiVersion": 1,
+  "hostCompatibility": {
+    "bridgeProtocol": "^1"
+  },
+  "minimumPermissions": [
+    "export:snapshot",
+    "invoke:tools",
+    "delete:derived"
+  ],
+  "exportCategories": [
+    "project",
+    "world",
+    "character",
+    "outline",
+    "chapter",
+    "foreshadow"
+  ],
+  "license": "AGPL-3.0-only",
+  "testMatrix": {
+    "node": [
+      "24"
+    ],
+    "browsers": [
+      "chromium"
+    ],
+    "platforms": [
+      "win32",
+      "darwin",
+      "linux"
+    ]
+  }
+}

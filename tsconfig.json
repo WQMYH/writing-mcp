@@ -4,6 +4,8 @@
     { "path": "packages/core" },
     { "path": "packages/adapter-generic" },
     { "path": "packages/adapter-inkos" },
-    { "path": "packages/mcp-server" }
+    { "path": "packages/mcp-server" },
+    { "path": "packages/host-bridge-protocol" },
+    { "path": "packages/host-plugin-storyforge" }
   ]
 }

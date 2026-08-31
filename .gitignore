@@ -21,3 +21,6 @@ docs/PRIVATE*.md
 **/book-epub/
 **/*.epub
 **/Materials/
+
+# Host bridge design/plan/protocol docs are local-only artifacts (not tracked)
+docs/host-bridge/

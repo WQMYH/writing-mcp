@@ -1,0 +1,62 @@
+{
+  "canonicalRule": "sha256(JSON.stringify({ protocolVersion, documents: [{ relativePath, category, sha256 }] sorted by relativePath }))",
+  "contentHashVectors": [
+    {
+      "name": "hello",
+      "content": "hello",
+      "expected": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+    },
+    {
+      "name": "empty",
+      "content": "",
+      "expected": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "unicode",
+      "content": "第一章",
+      "expected": "9134b008252f267ca0728ab30ffbe577efb573baa06e54cb3338e2d277860ce0"
+    }
+  ],
+  "vectors": [
+    {
+      "name": "empty-documents",
+      "protocolVersion": 1,
+      "documents": [],
+      "expected": "f474f0af73af7eda9cd664212bb74124a1303600a12a050f00377d5fbefc66da"
+    },
+    {
+      "name": "unsorted-unicode-paths",
+      "protocolVersion": 1,
+      "documents": [
+        {
+          "relativePath": "chapters/第一章.md",
+          "category": "chapter",
+          "sha256": "3ec7a8646eecdb3d25fed0f0d19fd0c569f8be0da2a0366f101fcc27c06dde28"
+        },
+        {
+          "relativePath": "a.md",
+          "category": "project",
+          "sha256": "c09bf558be7191e68715db791f9bb40cd12ab41e98e6b2bcaa1aaa8ffaf3f29d"
+        },
+        {
+          "relativePath": "世界/设定.md",
+          "category": "world",
+          "sha256": "6e8342aec4e90c759ed99aa18968a82295c32499916c4ee21e39fcd7ea7d7420"
+        }
+      ],
+      "expected": "7187a8a601061a9fa1c613d8029d1bc4c53a3a3a151d8acc1d618588ee1c565c"
+    },
+    {
+      "name": "single-document",
+      "protocolVersion": 1,
+      "documents": [
+        {
+          "relativePath": "project/story-core.md",
+          "category": "project",
+          "sha256": "aaeb3ffdb2cb4b905a9d405fde253572b677146dba7897f85039e8325eac0522"
+        }
+      ],
+      "expected": "2a9afc2214e2c7a71f1ad34057e360b87d1dad27871598c84e1c8ce01392488a"
+    }
+  ]
+}
