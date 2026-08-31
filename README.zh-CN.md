@@ -194,6 +194,7 @@ packages/
 ├─ adapter-generic/       # Markdown / TXT / EPUB 适配器
 ├─ adapter-inkos/         # InkOS 项目结构适配器
 ├─ mcp-server/            # stdio 服务、五工具、诊断
+├─ host-bridge/           # 面向浏览器宿主的可选 loopback bridge 运行时
 ├─ host-bridge-protocol/  # 冻结的宿主插件协议 v1（Zod + fixture）
 └─ host-plugin-storyforge/# 首个受治理的静态宿主插件 manifest
 tests/  docs/  scripts/  fixtures/
@@ -201,7 +202,7 @@ tests/  docs/  scripts/  fixtures/
 
 ## 宿主集成插件
 
-Writing MCP 刻意保持核心专注：宿主相关的集成以受治理的静态插件存在，不进入五工具公共契约。首个插件——面向浏览器写作宿主的本地 loopback host bridge——线上协议已冻结为 v1（[`packages/host-bridge-protocol`](packages/host-bridge-protocol)，规范 fixture 见 [`fixtures/host-bridge-protocol`](fixtures/host-bridge-protocol)），bridge 运行时正在开发中。任何宿主专属逻辑都不进入核心 MVP。
+Writing MCP 刻意保持核心专注：宿主相关的集成以受治理的静态插件存在，不进入五工具公共契约。首个插件——面向浏览器写作宿主的本地 loopback host bridge——线上协议已冻结为 v1（[`packages/host-bridge-protocol`](packages/host-bridge-protocol)），规范 fixture 位于 [`fixtures/host-bridge-protocol`](fixtures/host-bridge-protocol)，运行时已实现在 [`packages/host-bridge`](packages/host-bridge)。Storyforge 联合启动与 Bridge 侧验收链已经落地，最终浏览器宿主 Playwright 验收仍未关闭。任何宿主专属逻辑都不进入核心 MVP。
 
 ## 项目状态
 
@@ -217,7 +218,7 @@ Writing MCP 刻意保持核心专注：宿主相关的集成以受治理的静�
 | M4 上下文装配 | 进行中——抽取与预算门禁已落地，Token 估算的外部 tokenizer 复核仍未完成 |
 | M5 客户端验收 | 进行中——文档切片已落地，真实客户端连通与更多 EPUB/InkOS 变体尚未完成 |
 
-本仓库没有任何部分是 v1 完整的：M3～M5 仍在推进，项目不做相反的声称。目前没有 git 标签、没有 GitHub release，包在 M4 外部 tokenizer 复核通过之前保持 `private: true`；首个 `v0.x` 跟随该门禁发布，而不是跟随某个日期。当前的下一步列在 [docs/IMPLEMENTATION_STATUS.md § 下一步](docs/IMPLEMENTATION_STATUS.md)。
+本仓库没有任何部分是 v1 完整的：M3～M5 仍在推进，项目不做相反的声称。目前没有版本化发布标签、没有 GitHub release，包在 M4 外部 tokenizer 复核通过之前保持 `private: true`；首个 `v0.x` 跟随该门禁发布，而不是跟随某个日期。当前的下一步列在 [docs/IMPLEMENTATION_STATUS.md § 下一步](docs/IMPLEMENTATION_STATUS.md)。
 
 ## 文档
 

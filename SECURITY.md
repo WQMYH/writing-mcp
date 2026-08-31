@@ -114,9 +114,9 @@ answers questions about them. The threat model follows from that.
 
 ## The host bridge is a separate boundary
 
-`packages/host-bridge*` is **not** part of the five core tools and is not published
-in this repository's current `main`. When it is, it adds the only inbound network
-surface in the project, and it has its own enforcement order rather than inheriting
+`packages/host-bridge*` is **not** part of the five core tools. It is an optional
+local companion and adds the only inbound network surface in the project, so it
+has its own enforcement order rather than inheriting
 the stdio assumption: bind loopback, then check the peer address, then the `Host`
 header, then an explicit `Origin` allowlist, then the bearer token
 (`packages/host-bridge/src/server.ts:10`,
@@ -126,7 +126,11 @@ SHA-256 hashes of secrets are retained in memory
 (`packages/host-bridge/src/auth.ts:25-37`). A DNS-rebinding or cross-origin request
 that reaches the port is expected to fail at the `Host`/`Origin` layer even with a
 stolen token. Treat a way around that ordering as a vulnerability report.
-Design detail lives in [docs/host-bridge/DESIGN.md](docs/host-bridge/DESIGN.md).
+The executable boundary is defined by
+[`packages/host-bridge-protocol`](packages/host-bridge-protocol), the canonical
+[`fixtures/host-bridge-protocol`](fixtures/host-bridge-protocol), and the Bridge
+security tests. Design and execution-plan notes are intentionally local governance
+artifacts and are not publication dependencies.
 
 ## Reporting a vulnerability
 

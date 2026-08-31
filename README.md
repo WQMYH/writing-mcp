@@ -194,6 +194,7 @@ packages/
 ├─ adapter-generic/       # Markdown / TXT / EPUB adapters
 ├─ adapter-inkos/         # InkOS project structure adapter
 ├─ mcp-server/            # stdio server, five tools, diagnostics
+├─ host-bridge/           # optional loopback bridge runtime for browser hosts
 ├─ host-bridge-protocol/  # frozen host-plugin protocol v1 (Zod + fixtures)
 └─ host-plugin-storyforge/# first governed static host-plugin manifest
 tests/  docs/  scripts/  fixtures/
@@ -201,7 +202,7 @@ tests/  docs/  scripts/  fixtures/
 
 ## Host integration plugins
 
-Writing MCP is designed to stay a focused core: host-specific integrations live in governed, static plugins outside the five public tools. The first one — a local loopback host bridge for browser-based writing hosts — has its wire protocol frozen as v1 in [`packages/host-bridge-protocol`](packages/host-bridge-protocol) with canonical cross-repo fixtures in [`fixtures/host-bridge-protocol`](fixtures/host-bridge-protocol); the bridge runtime is currently in development. Nothing host-specific enters the core MVP.
+Writing MCP is designed to stay a focused core: host-specific integrations live in governed, static plugins outside the five public tools. The first one — a local loopback host bridge for browser-based writing hosts — has its wire protocol frozen as v1 in [`packages/host-bridge-protocol`](packages/host-bridge-protocol), canonical cross-repo fixtures in [`fixtures/host-bridge-protocol`](fixtures/host-bridge-protocol), and an implemented runtime in [`packages/host-bridge`](packages/host-bridge). Storyforge startup wiring and the Bridge-side acceptance chain are implemented; the final browser-host Playwright acceptance remains open. Nothing host-specific enters the core MVP.
 
 ## Project status
 
@@ -217,7 +218,7 @@ Phased M0–M5, and the labels below are the ones [docs/IMPLEMENTATION_STATUS.md
 | M4 context assembly | In progress — extraction and budget gates landed; external tokenizer review of the token estimate is open |
 | M5 client acceptance | In progress — the documentation slice is landed; real-client connectivity and more EPUB/InkOS variants are not |
 
-Nothing in this repository is v1-complete: M3–M5 remain, and the project does not claim otherwise. There are no git tags and no GitHub releases yet, and the packages stay `private: true` until the M4 external-tokenizer review lands; the first `v0.x` release follows that gate rather than a date. Current next steps are listed in [docs/IMPLEMENTATION_STATUS.md § 下一步](docs/IMPLEMENTATION_STATUS.md).
+Nothing in this repository is v1-complete: M3–M5 remain, and the project does not claim otherwise. There are no versioned release tags or GitHub releases yet, and the packages stay `private: true` until the M4 external-tokenizer review lands; the first `v0.x` release follows that gate rather than a date. Current next steps are listed in [docs/IMPLEMENTATION_STATUS.md § 下一步](docs/IMPLEMENTATION_STATUS.md).
 
 ## Documentation
 

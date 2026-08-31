@@ -33,9 +33,26 @@ const TOOL_NAMES: Readonly<Record<ProjectToolOperation, string>> = {
   diagnose: "writing_diagnose",
 };
 
-function browserSafeDiagnose(result: ToolResultEnvelope): ToolResultEnvelope {
+const LOCAL_PATH_FIELDS = new Set(["artifactPath", "diagnosticsDirectory", "rootPath", "sourcePath"]);
+
+function withoutLocalPaths<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((entry) => withoutLocalPaths(entry)) as T;
+  if (value === null || typeof value !== "object") return value;
+  const safe: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (!LOCAL_PATH_FIELDS.has(key)) safe[key] = withoutLocalPaths(entry);
+  }
+  return safe as T;
+}
+
+/**
+ * The browser addresses a project by hostProjectId only, so no proxied result
+ * may carry an absolute local path: neither the derived project directory in
+ * resolve candidates nor the diagnostic artifact locations.
+ */
+function browserSafe(result: ToolResultEnvelope): ToolResultEnvelope {
   if (!result.data) return result;
-  const { artifactPath: _artifactPath, diagnosticsDirectory: _diagnosticsDirectory, ...data } = result.data;
+  const data = withoutLocalPaths(result.data);
   return { ...result, data };
 }
 
@@ -80,7 +97,7 @@ export function createProjectToolProxy(options: ProjectToolProxyOptions): Projec
       if (options.isPluginAvailable && !options.isPluginAvailable()) {
         throw new BridgeError("BRIDGE_PLUGIN_DISABLED", "host plugin is disabled or revoked");
       }
-      if (operation === "resolve") return resolveWork(hostProjectId, origin);
+      if (operation === "resolve") return browserSafe(await resolveWork(hostProjectId, origin));
 
       const call = async (workRef: string): Promise<ToolResultEnvelope> => {
         const callArgs: Record<string, unknown> = { ...args, workRef };
@@ -96,10 +113,10 @@ export function createProjectToolProxy(options: ProjectToolProxyOptions): Projec
       if (!result.ok && result.error?.code === "WORK_REF_NOT_FOUND") {
         const resolved = await resolveWork(hostProjectId, origin);
         const workRef = resolved.ok ? resolved.data?.workRef : undefined;
-        if (typeof workRef !== "string") return resolved;
+        if (typeof workRef !== "string") return browserSafe(resolved);
         result = await call(workRef);
       }
-      return operation === "diagnose" ? browserSafeDiagnose(result) : result;
+      return browserSafe(result);
     },
   };
 }

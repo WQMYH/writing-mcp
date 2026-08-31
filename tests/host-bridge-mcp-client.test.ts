@@ -2,7 +2,7 @@ import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
-import { createMcpClient } from "../packages/host-bridge/src/mcp-client.js";
+import { createMcpClient, createRestartableMcpClient } from "../packages/host-bridge/src/mcp-client.js";
 
 const MCP_ENTRY = resolve("packages/mcp-server/dist/index.js");
 const children: Array<{ kill: (signal?: NodeJS.Signals) => boolean }> = [];
@@ -121,6 +121,35 @@ describe("host bridge MCP stdio client (HB-M1)", () => {
       let alive = true;
       try { process.kill(pid, 0); } catch { alive = false; }
       expect(alive).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("planned maintenance drains the old child, runs exclusively, and restarts without an exit alert", async () => {
+    const root = await mkdtemp(join(tmpdir(), "hb-mcp-maintenance-"));
+    try {
+      const client = createRestartableMcpClient({
+        command: process.execPath,
+        args: [MCP_ENTRY],
+        env: { ...process.env, WRITING_MCP_ROOTS: root } as NodeJS.ProcessEnv,
+      });
+      let unexpectedExits = 0;
+      client.onExit(() => { unexpectedExits += 1; });
+      await client.start();
+      const firstPid = client.pid;
+
+      let oldChildAliveDuringMaintenance = true;
+      await client.restartAround(async () => {
+        try { process.kill(firstPid, 0); } catch { oldChildAliveDuringMaintenance = false; }
+        await expect(client.callTool("writing_resolve", {})).rejects.toMatchObject({ code: "BRIDGE_MCP_UNAVAILABLE" });
+      });
+
+      expect(oldChildAliveDuringMaintenance).toBe(false);
+      expect(client.pid).not.toBe(firstPid);
+      expect(client.isRunning()).toBe(true);
+      expect(unexpectedExits).toBe(0);
+      await client.stop();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

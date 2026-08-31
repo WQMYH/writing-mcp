@@ -90,7 +90,11 @@ describe("host bridge tool routes (HB-M3)", () => {
         return { structuredContent: { result: { ok: true, data: {
           workRef: record.workRef,
           operation: name,
-          ...(name === "writing_diagnose" ? { artifactPath: "C:/private/report.json", diagnosticsDirectory: "C:/private/diagnostics" } : {}),
+          ...(name === "writing_diagnose" ? {
+            artifactPath: "C:/private/report.json",
+            diagnosticsDirectory: "C:/private/diagnostics",
+            recentEvents: [{ artifactPath: "C:/private/nested.json", summary: "safe" }],
+          } : {}),
         }, diagnostic: {} } } };
       },
     };
@@ -114,6 +118,8 @@ describe("host bridge tool routes (HB-M3)", () => {
     expect(JSON.stringify(diagnosed)).not.toContain("C:/private")
     expect(diagnosed).not.toHaveProperty("data.artifactPath")
     expect(diagnosed).not.toHaveProperty("data.diagnosticsDirectory")
+    expect(diagnosed).toMatchObject({ data: { recentEvents: [{ summary: "safe" }] } })
+    expect(JSON.stringify(diagnosed)).not.toContain("C:/private")
   });
 
   test("the complete five-tool proxy fixture runs against one real MCP stdio child", async () => {

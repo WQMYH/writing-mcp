@@ -27,6 +27,11 @@ export interface McpClient {
   onExit(listener: (code: number | null, signal: NodeJS.Signals | null) => void): void;
 }
 
+export interface RestartableMcpClient extends McpClient {
+  /** Run one Bridge-owned maintenance action while no MCP child or tool call is active. */
+  restartAround<T>(operation: () => Promise<T>): Promise<T>;
+}
+
 function unavailable(detail: string): McpUnavailableError {
   const error: McpUnavailableError = Object.assign(new Error(detail), { code: "BRIDGE_MCP_UNAVAILABLE" as const });
   return error;
@@ -146,4 +151,118 @@ export function createMcpClient(options: McpClientOptions): McpClient {
       exitListeners.push(listener);
     },
   };
+}
+
+/**
+ * Supervises replaceable MCP children for Bridge maintenance. Normal requests
+ * share one child. restartAround() closes admission, drains in-flight calls,
+ * stops that child, runs the filesystem action, then starts a fresh child.
+ * Planned exits are hidden from Bridge degraded-state listeners.
+ */
+export function createRestartableMcpClient(options: McpClientOptions): RestartableMcpClient {
+  const exitListeners: Array<(code: number | null, signal: NodeJS.Signals | null) => void> = [];
+  const plannedStops = new WeakSet<McpClient>();
+  let current = makeChild();
+  let started = false;
+  let stopping = false;
+  let maintenanceActive = false;
+  let activeCalls = 0;
+  let resolveDrained: (() => void) | null = null;
+  let maintenanceQueue: Promise<void> = Promise.resolve();
+
+  function makeChild(): McpClient {
+    const child = createMcpClient(options);
+    child.onExit((code, signal) => {
+      if (plannedStops.has(child)) return;
+      if (current === child) for (const listener of exitListeners) listener(code, signal);
+    });
+    return child;
+  }
+
+  async function admitted<T>(run: (client: McpClient) => Promise<T>): Promise<T> {
+    if (maintenanceActive || stopping) throw unavailable("mcp child is temporarily unavailable for bridge maintenance");
+    const child = current;
+    activeCalls += 1;
+    try {
+      return await run(child);
+    } finally {
+      activeCalls -= 1;
+      if (activeCalls === 0) {
+        resolveDrained?.();
+        resolveDrained = null;
+      }
+    }
+  }
+
+  async function waitForDrain(): Promise<void> {
+    if (activeCalls === 0) return;
+    await new Promise<void>((resolve) => { resolveDrained = resolve; });
+  }
+
+  const supervised: RestartableMcpClient = {
+    get pid(): number { return current.pid; },
+    async start(): Promise<void> {
+      if (started) return;
+      await current.start();
+      started = true;
+    },
+    request(method, params, timeoutMs): Promise<unknown> {
+      return admitted((child) => child.request(method, params, timeoutMs));
+    },
+    callTool(name, args, timeoutMs): Promise<unknown> {
+      return admitted((child) => child.callTool(name, args, timeoutMs));
+    },
+    async restartAround<T>(operation: () => Promise<T>): Promise<T> {
+      let releaseQueue!: () => void;
+      const previous = maintenanceQueue;
+      maintenanceQueue = new Promise<void>((resolve) => { releaseQueue = resolve; });
+      await previous;
+      maintenanceActive = true;
+      let operationResult!: T;
+      let operationError: unknown;
+      let restartError: unknown;
+      try {
+        await waitForDrain();
+        const oldChild = current;
+        plannedStops.add(oldChild);
+        await oldChild.stop();
+        try {
+          operationResult = await operation();
+        } catch (error) {
+          operationError = error;
+        }
+        if (!stopping) {
+          const nextChild = makeChild();
+          current = nextChild;
+          try {
+            await nextChild.start();
+            started = true;
+          } catch (error) {
+            restartError = error;
+            started = false;
+          }
+        }
+      } finally {
+        maintenanceActive = false;
+        releaseQueue();
+      }
+      if (operationError !== undefined && restartError !== undefined) {
+        throw new AggregateError([operationError, restartError], "bridge maintenance and MCP restart both failed");
+      }
+      if (operationError !== undefined) throw operationError;
+      if (restartError !== undefined) throw restartError;
+      return operationResult;
+    },
+    async stop(): Promise<void> {
+      stopping = true;
+      await maintenanceQueue;
+      plannedStops.add(current);
+      await current.stop();
+      started = false;
+    },
+    isRunning(): boolean { return started && current.isRunning(); },
+    stderrText(): string { return current.stderrText(); },
+    onExit(listener): void { exitListeners.push(listener); },
+  };
+  return supervised;
 }

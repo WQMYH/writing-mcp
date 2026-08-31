@@ -4,7 +4,7 @@ import { AUTH, PROTOCOL_VERSION } from "@writing-mcp/host-bridge-protocol";
 import { storyforgePluginManifest } from "@writing-mcp/host-plugin-storyforge";
 import { createPairingManager } from "./auth.js";
 import { acquireInstanceLock, InstanceLockError } from "./instance-lock.js";
-import { createMcpClient } from "./mcp-client.js";
+import { createRestartableMcpClient } from "./mcp-client.js";
 import { createPluginRegistry } from "./plugins.js";
 import { createBridgeServer } from "./server.js";
 import { createSnapshotPipeline } from "./snapshot.js";
@@ -111,7 +111,7 @@ export async function runCli(argv: string[] = process.argv.slice(2), io: CliIo =
     const registered = registry.register(storyforgePluginManifest);
     if (!registered.ok) io.stderr.write(`writing-mcp-host-bridge: static plugin registration refused (${registered.reason})\n`);
   }
-  const mcp = createMcpClient({
+  const mcp = createRestartableMcpClient({
     command: process.execPath,
     args: [args.mcpEntry],
     env: { ...process.env, WRITING_MCP_ROOTS: args.mcpRoot },
@@ -132,6 +132,7 @@ export async function runCli(argv: string[] = process.argv.slice(2), io: CliIo =
     registry,
     state,
     mcp,
+    mcpMaintenance: mcp,
     log: (line) => io.stderr.write(`writing-mcp-host-bridge: ${line}\n`),
   });
   await pipeline.restoreFromManifests();

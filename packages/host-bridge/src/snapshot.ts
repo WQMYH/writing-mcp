@@ -47,6 +47,7 @@ export interface SnapshotPipelineOptions {
   registry: PluginRegistry;
   state: BridgeState;
   mcp: ToolInvoker;
+  mcpMaintenance?: { restartAround<T>(operation: () => Promise<T>): Promise<T> };
   pluginId?: string;
   hasActiveCapture?: () => boolean;
   renameFn?: (from: string, to: string) => Promise<void>;
@@ -77,6 +78,19 @@ async function boundedRename(renameFn: (from: string, to: string) => Promise<voi
   for (let attempt = 1; ; attempt += 1) {
     try {
       await renameFn(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (attempt >= 3 || (code !== "EBUSY" && code !== "EPERM")) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+}
+
+async function boundedRemove(target: string): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await rm(target, { recursive: true, force: true });
       return;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -284,10 +298,38 @@ export function createSnapshotPipeline(options: SnapshotPipelineOptions) {
       if (options.hasActiveCapture?.()) throw new BridgeError("DERIVED_DATA_BUSY", "a diagnostic capture is active");
       const key = projectKey(hostProjectId, origin);
       return mutex(key, async () => {
-        await rm(projectDir(key), { recursive: true, force: true });
-        bindings.delete(key);
-        state.setProjectBinding(hostProjectId, "empty");
-        log?.(`derived data deleted project=${key.slice(0, 8)}`);
+        const activeProjectDir = projectDir(key);
+        if (!existsSync(activeProjectDir)) {
+          bindings.delete(key);
+          state.setProjectBinding(hostProjectId, "empty");
+          return { bindingState: "empty" as const };
+        }
+        const deleteRoot = join(options.bridgeRoot, ".staging", key, `delete-${randomUUID()}`);
+        const quarantinedProject = join(deleteRoot, "project");
+        const removeWhileStopped = async () => {
+          await mkdir(deleteRoot, { recursive: true });
+          try {
+            await boundedRename(currentRename, activeProjectDir, quarantinedProject);
+          } catch (error) {
+            await rm(deleteRoot, { recursive: true, force: true }).catch(() => undefined);
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code === "EBUSY" || code === "EPERM") {
+              throw new BridgeError("DERIVED_DATA_BUSY", "project data could not be quarantined for deletion");
+            }
+            throw error;
+          }
+          bindings.delete(key);
+          state.setProjectBinding(hostProjectId, "empty");
+          try {
+            await boundedRemove(deleteRoot);
+          } catch {
+            log?.(`derived data quarantined but cleanup is pending project=${key.slice(0, 8)}`);
+            throw new BridgeError("DERIVED_DATA_BUSY", "project data was quarantined but final cleanup is pending");
+          }
+          log?.(`derived data deleted project=${key.slice(0, 8)}`);
+        };
+        if (options.mcpMaintenance) await options.mcpMaintenance.restartAround(removeWhileStopped);
+        else await removeWhileStopped();
         return { bindingState: "empty" as const };
       });
     },
