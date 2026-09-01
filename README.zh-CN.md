@@ -202,7 +202,7 @@ tests/  docs/  scripts/  fixtures/
 
 ## 宿主集成插件
 
-Writing MCP 刻意保持核心专注：宿主相关的集成以受治理的静态插件存在，不进入五工具公共契约。首个插件——面向浏览器写作宿主的本地 loopback host bridge——线上协议已冻结为 v1（[`packages/host-bridge-protocol`](packages/host-bridge-protocol)），规范 fixture 位于 [`fixtures/host-bridge-protocol`](fixtures/host-bridge-protocol)，运行时已实现在 [`packages/host-bridge`](packages/host-bridge)。Storyforge 联合启动与 Bridge 侧验收链已经落地，最终浏览器宿主 Playwright 验收仍未关闭。任何宿主专属逻辑都不进入核心 MVP。
+Writing MCP 刻意保持核心专注：宿主相关的集成以受治理的静态插件存在，不进入五工具公共契约。首个插件——面向浏览器写作宿主的本地 loopback host bridge——线上协议已冻结为 v1（[`packages/host-bridge-protocol`](packages/host-bridge-protocol)），规范 fixture 位于 [`fixtures/host-bridge-protocol`](fixtures/host-bridge-protocol)，运行时已实现在 [`packages/host-bridge`](packages/host-bridge)。Storyforge 联合启动与真实“浏览器 → Bridge → Writing MCP”验收链已经落地，包含失败关闭与显式单次绕过。任何宿主专属逻辑都不进入核心 MVP。
 
 ## 项目状态
 

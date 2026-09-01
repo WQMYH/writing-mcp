@@ -202,7 +202,7 @@ tests/  docs/  scripts/  fixtures/
 
 ## Host integration plugins
 
-Writing MCP is designed to stay a focused core: host-specific integrations live in governed, static plugins outside the five public tools. The first one — a local loopback host bridge for browser-based writing hosts — has its wire protocol frozen as v1 in [`packages/host-bridge-protocol`](packages/host-bridge-protocol), canonical cross-repo fixtures in [`fixtures/host-bridge-protocol`](fixtures/host-bridge-protocol), and an implemented runtime in [`packages/host-bridge`](packages/host-bridge). Storyforge startup wiring and the Bridge-side acceptance chain are implemented; the final browser-host Playwright acceptance remains open. Nothing host-specific enters the core MVP.
+Writing MCP is designed to stay a focused core: host-specific integrations live in governed, static plugins outside the five public tools. The first one — a local loopback host bridge for browser-based writing hosts — has its wire protocol frozen as v1 in [`packages/host-bridge-protocol`](packages/host-bridge-protocol), canonical cross-repo fixtures in [`fixtures/host-bridge-protocol`](fixtures/host-bridge-protocol), and an implemented runtime in [`packages/host-bridge`](packages/host-bridge). Storyforge startup wiring and the real browser-to-Bridge-to-Writing-MCP acceptance chain are implemented, including fail-closed behavior and explicit one-shot bypass. Nothing host-specific enters the core MVP.
 
 ## Project status
 
