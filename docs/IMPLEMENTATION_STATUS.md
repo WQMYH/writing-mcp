@@ -3,7 +3,7 @@
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
 > 检查点时间：2026-09-01（HB-M0～HB-M6 的 Storyforge 首宿主链已交付；Writing MCP v1 的 M5 仍有独立客户端与格式覆盖门禁）
-> 当前状态：可靠性 Task 1～7、确定性两遍 PRF、公开前隐私门禁和 Storyforge 首宿主 HB-M0～HB-M6 均已完成。Host Bridge 配对检查点为 Writing MCP `80ac885` 与 Storyforge `655ae8e`：联合启动、静态插件注册、快照激活、五工具代理、章节证据注入、失败关闭、显式单次绕过、零自动写回、维护期 MCP 子进程可恢复重启及递归路径脱敏均有可执行回归。最新公共门禁为 Writing MCP 54 文件/278 项、公共基准 30/30、coverage lines 92.92%；Storyforge 266 文件/1002 项、生产依赖审计 0 漏洞、Playwright 35/35。外部 tokenizer 仍为 `not_evaluated`；Writing MCP v1 的 M5 仍缺真实 InkOS、更多 EPUB 2/3 变体和独立客户端安装/连通性验收。上述 HB 提交均只在本地，未推送；push 仍需用户明确授权。
+> 当前状态：可靠性 Task 1～7、确定性两遍 PRF、公开前隐私门禁和 Storyforge 首宿主 HB-M0～HB-M6 均已完成。Host Bridge 配对检查点为 Writing MCP `80ac885` 与 Storyforge `655ae8e`：联合启动、静态插件注册、快照激活、五工具代理、章节证据注入、失败关闭、显式单次绕过、零自动写回、维护期 MCP 子进程可恢复重启及递归路径脱敏均有可执行回归。最新公共门禁为 Writing MCP 54 文件/278 项、公共基准 30/30、coverage lines 92.92%；Storyforge 266 文件/1002 项、生产依赖审计 0 漏洞、Playwright 35/35。外部 tokenizer 仍为 `not_evaluated`；Writing MCP v1 的 M5 仍缺真实 InkOS、更多 EPUB 2/3 变体和独立客户端安装/连通性验收。Writing MCP 的 HB 实现已随合并提交 `e340961` 推送至 `origin/main`；Storyforge 的配对提交按用户要求继续只保留在本地。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -183,9 +183,10 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 ## 可追溯提交清单
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
+> 推送状态校正（2026-09-01）：下方 HB-M0～HB-M3 条目末尾的“本地提交，未推送”保留为当时的历史状态；对应 Writing MCP 提交现已随 `e340961` 进入 `origin/main`。Storyforge 配对提交仍只在本地。
 
-- `655ae8e`（Storyforge）+ `80ac885`（Writing MCP）— HB-M6 真实宿主验收收口：浏览器快照经 Bridge 激活并把 Writing MCP 证据注入 provider，Bridge 停止后失败关闭且只允许显式单次绕过，候选不自动写回；Bridge 在派生数据维护期间可恢复地重启 MCP 子进程，并递归脱敏本地路径。Writing MCP `pnpm verify` 54 文件/278 项、公共基准 30/30、coverage lines 92.92%；Storyforge `npm run ci` 266 文件/1002 项、生产依赖审计 0 漏洞，Playwright 35/35。均为本地提交，未推送。
-- `1c1f0c1`（Storyforge）+ `e53d4d8`（Writing MCP）— HB-M5 联合启动收口：`npm run dev` 同启 Storyforge 与 Bridge，终端提供 pairing code；Bridge 接受严格 loopback Origin 参数并在冷启动静态注册 Storyforge 插件。均为本地提交，未推送。
+- `655ae8e`（Storyforge，本地）+ `80ac885`（Writing MCP，已推送）— HB-M6 真实宿主验收收口：浏览器快照经 Bridge 激活并把 Writing MCP 证据注入 provider，Bridge 停止后失败关闭且只允许显式单次绕过，候选不自动写回；Bridge 在派生数据维护期间可恢复地重启 MCP 子进程，并递归脱敏本地路径。Writing MCP `pnpm verify` 54 文件/278 项、公共基准 30/30、coverage lines 92.92%；Storyforge `npm run ci` 266 文件/1002 项、生产依赖审计 0 漏洞，Playwright 35/35。
+- `1c1f0c1`（Storyforge，本地）+ `e53d4d8`（Writing MCP，已推送）— HB-M5 联合启动收口：`npm run dev` 同启 Storyforge 与 Bridge，终端提供 pairing code；Bridge 接受严格 loopback Origin 参数并在冷启动静态注册 Storyforge 插件。
 - `0aa1ca4` — fix(writing-bridge): HB-M4 复审收口——当前快照先激活再查询、MCP 工具信封 typed 解包、真实 excerpt/locator/path 注入、快照覆盖来源 replace 与用户消息保护、budget_unsatisfiable 阻断、生产/禁用态零 localhost client；Storyforge 6 文件/30 项 Bridge 测试、eslint、tsc、生产 build 全绿。Writing MCP 无代码变化。本地提交，未推送。
 - `eca7b3e` — feat(writing-bridge): HB-M4 章节调用前注入 MCP 证据的首个纵向切片；复审发现其未激活快照、未解包工具信封且按错误字段读取 ContextBlock，故完成声明由后续 `0aa1ca4` 才闭合。本地提交，未推送。
 - `27d29b3` — feat(bridge): HB-M3 五工具代理——Bearer 门禁的 resolve/index/explore/context/diagnose 路由（BRIDGE_TOOL_REQUEST_INVALID 第 14 个冻结错误码、bridge-owned workRef 与 WORK_REF_NOT_FOUND 单次重解析、15/120 秒冻结超时、diagnose 强制 metadata 并剥离绝对路径、真实 MCP stdio 五工具 fixture 链）；3 项先失败测试；pnpm verify 52 文件/271 测试。与 Storyforge `959872d` 配对（HB-M3）。本地提交，未推送。
