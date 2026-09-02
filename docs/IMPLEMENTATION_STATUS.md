@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-09-01（HB-M0～HB-M6 的 Storyforge 首宿主链已交付；Writing MCP v1 的 M5 仍有独立客户端与格式覆盖门禁）
-> 当前状态：可靠性 Task 1～7、确定性两遍 PRF、公开前隐私门禁和 Storyforge 首宿主 HB-M0～HB-M6 均已完成。Host Bridge 配对检查点为 Writing MCP `80ac885` 与 Storyforge `655ae8e`：联合启动、静态插件注册、快照激活、五工具代理、章节证据注入、失败关闭、显式单次绕过、零自动写回、维护期 MCP 子进程可恢复重启及递归路径脱敏均有可执行回归。最新公共门禁为 Writing MCP 54 文件/278 项、公共基准 30/30、coverage lines 92.92%；Storyforge 266 文件/1002 项、生产依赖审计 0 漏洞、Playwright 35/35。外部 tokenizer 仍为 `not_evaluated`；Writing MCP v1 的 M5 仍缺真实 InkOS、更多 EPUB 2/3 变体和独立客户端安装/连通性验收。Writing MCP 的 HB 实现已随合并提交 `e340961` 推送至 `origin/main`；Storyforge 的配对提交按用户要求继续只保留在本地。
+> 检查点时间：2026-09-02（可靠性复审指出的五项 core/gate 缺口已在隔离分支实现并逐项提交，等待整分支自审与集成）
+> 当前状态：`fix/reliability-core-gates` 已修复真实查询 deadline、通用文本读取前限额、SQLite/FTS 多进程冷启动、document LIKE 字面匹配和 lint/coverage 门禁漂移；最新公共 `pnpm verify` 为 57 文件/287 项、公共基准 30/30、coverage lines 92.68% / branches 78.35%，MCP server branches 60.75%。本批次尚未完成最终 SkillFlow 自审、状态提交和集成，因此不得沿用“可靠性 Task 1～7 已关闭并合并”的旧声明。Storyforge 首宿主 HB-M0～HB-M6 既有交付状态不变；Writing MCP v1 的 M5 仍缺真实 InkOS、更多 EPUB 2/3 变体和独立客户端安装/连通性验收，外部 tokenizer 仍为 `not_evaluated`。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -72,19 +72,19 @@ pnpm start
 |---|---|---|---|
 | M0 | 主体完成 | 版本化协议/存储合同、五工具 schema、统一信封、最小 fixture、30 个任务、Token/事实基线 | 指标含义和实现契约继续校准 |
 | M0.1 | ✅ 完成 | 全工具诊断 wrapper、显式 capture、脱敏与报告哈希、开发捕获有界命中 ref（AUD-023 主体）、general JSONL 串行轮转与并发/写失败护栏（AUD-024 主体）、协议层错误边界（AUD-025 主体） | — |
-| M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB、跨 spine 分段 locator、通用作品边界与 capabilities 实际化（AUD-026 主体）、章节编号语法明确化（AUD-027 主体）、EPUB 资源上限（AUD-028 主体）、snapshot 一致性与文本内存上限（AUD-029 主体）、span 硬上限与 locator 精确规则（AUD-030 主体）、进程生命周期与优雅关闭（AUD-032 主体）、工程硬化门禁与适配器模块抽离（AUD-035 第一/二阶段主体） | AUD-035 格式化阶段（用户决策延后至 M3/M4 语义冻结后的重构窗口再评估） |
-| M2 | ✅ 基础门禁完成 | SQLite/FTS5、schema v4、语义 snapshot、truthful status、revision/事务、原子替换、作品级串行/写锁、恢复、work/document 作用域身份、规范定义晋升、多 mention/关系证据、源顺序图 | 后续只随 M3/M4 查询语义做受控增强 |
-| M3 | 主体完成 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限、0～3 跳 BFS、timeline、词汇表、source-trust、A1 freshness、确定性两遍 PRF 与 revision-scoped 有界暖缓存；真实长语料性能门禁通过 | 后续仅做受控检索质量增强与重构，不再以未验证的“完整重排”作为完成声明 |
+| M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB、跨 spine 分段 locator、通用作品边界与 capabilities 实际化（AUD-026 主体）、章节编号语法明确化（AUD-027 主体）、EPUB 资源上限（AUD-028 主体）、snapshot 一致性与文本内存上限（AUD-029 主体）、通用文本在 `readFile` 前按 snapshot 拒绝单文件/累计超限、span 硬上限与 locator 精确规则（AUD-030 主体）、进程生命周期与优雅关闭（AUD-032 主体）、工程硬化门禁与适配器模块抽离（AUD-035 第一/二阶段主体） | AUD-035 格式化阶段（用户决策延后至 M3/M4 语义冻结后的重构窗口再评估） |
+| M2 | ✅ 基础门禁完成 | SQLite/FTS5、schema v4、语义 snapshot、truthful status、revision/事务、原子替换、作品级串行/写锁、恢复、work/document 作用域身份、规范定义晋升、多 mention/关系证据、源顺序图；多进程冷启动通过 WAL 有界 busy 重试与 `BEGIN IMMEDIATE` schema 双检串行化 | 后续只随 M3/M4 查询语义做受控增强 |
+| M3 | 主体完成 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限、document 字面子串查询、0～3 跳 BFS、timeline、词汇表、source-trust、A1 freshness、真实 explore/context/evaluator deadline、确定性两遍 PRF 与 revision-scoped 有界暖缓存；真实长语料性能门禁通过 | 后续仅做受控检索质量增强与重构，不再以未验证的“完整重排”作为完成声明 |
 | M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、AUD-005/AUD-012/AUD-013 的约束与来源装配；`accountingScope: evidence_excerpts_only` 已冻结；Context 内部池 12 且真实长语料 P95 通过；A1、server 响应字节、EPUB/诊断/lifecycle 均完成 | 外部 tokenizer 复核尚未完成；token-evaluation-materials 只提供复核材料，不给出精确 Token 结论 |
 | M5 | 进行中（Storyforge 首宿主链已闭环） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归；`CLIENT_SETUP.md` 覆盖 Node 24、pnpm/build、Qoder/Codex stdio 配置、首次调用路由、七类故障、诊断隐私与 v1 边界；Storyforge Host Bridge HB-M0～HB-M6 已完成（最终配对提交：Writing MCP `80ac885` + Storyforge `655ae8e`），真实浏览器链验证证据注入、失败关闭、显式单次绕过与零自动写回 | 真实 InkOS、更多 EPUB 2/3 变体、独立 MCP 客户端安装/连通性验收；外部 tokenizer 结论仍属 M4 独立门禁 |
 
-Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、007～010 的当前门禁；Step 3 已完成中文问句、别名/歧义、稳定排序、输入上限、FTS 降级与检索诊断（提交 `aa84645`），并完成 AUD-018 时间上限（提交 `45f45cb`）；AUD-021 源指纹复用修复（`service.index()` 增加指纹记录，修复 `ensureFresh` 在 `previous === undefined` 时跳过增量更新的逻辑缺陷，55/55 测试全部通过）。AUD-005（REVIEW_2026-08-16 P0，提前于 Step 3 剩余项处理）：`requiredRefs` 脱离 search top-50 候选池按 entity/span/document 三级直接解析，池外必选 ref 进 blocks 并计入预算最小值，不存在 ref 以 `not_found` 进 omitted，预算不足触发 `budget_unsatisfiable`；`ContextPacket` 形状与状态词汇未变（M0_CONTRACT 新增 M4 requiredRefs amendment）。M0.1、M1 其余问题和 M3～M5 尚未完成，现有成果不能据此宣称 Writing MCP v1 已完成。
+Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、007～010 的当前门禁；Step 3 已完成中文问句、别名/歧义、稳定排序、输入上限、FTS 降级与检索诊断（提交 `aa84645`）。AUD-018 的旧实现/测试被复审证实只做事后计时且标题错标，现由 `e57264c` 以真实 delayed-source 回归覆盖 explore/context/evaluator、队列占用和 close 等待。AUD-021 SourceSnapshot 双指纹修复保持有效。AUD-005（REVIEW_2026-08-16 P0，提前于 Step 3 剩余项处理）：`requiredRefs` 脱离 search top-50 候选池按 entity/span/document 三级直接解析，池外必选 ref 进 blocks 并计入预算最小值，不存在 ref 以 `not_found` 进 omitted，预算不足触发 `budget_unsatisfiable`；`ContextPacket` 形状与状态词汇未变（M0_CONTRACT 新增 M4 requiredRefs amendment）。M0.1、M1 其余问题和 M3～M5 尚未完成，现有成果不能据此宣称 Writing MCP v1 已完成。
 
 ## 当前测试覆盖
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
-- 54 个测试文件 / 278 项测试，覆盖：通用链路、MCP 协议与诊断、M5 客户端文档契约、HB-M0 host-bridge 协议与 Storyforge manifest 冻结、HB-M1 配对/令牌/安全边界/单实例锁/MCP stdio 客户端/CLI 生命周期、HB-M2 快照事务/binding/派生数据删除与 Storyforge 确定性导出、HB-M3 五工具代理路由/工作引用恢复/脱敏诊断与 Storyforge 薄客户端/Settings 开发面/协议 fixture 门禁、HB-M5 联合启动、HB-M6 MCP 子进程维护期重启/递归路径脱敏/真实 Bridge 链、诊断 retention/协作锁、server/core 响应字节上限与 recorder ordering、统一进程关闭链、检索正确性、短原词候选保留、revision-scoped 暖查询复用与索引失效、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、两遍 PRF/双字候选/批量频率上限、公开前隐私门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
+- 57 个测试文件 / 287 项测试，覆盖：通用链路、MCP 协议与诊断、真实查询 deadline/队列/关闭等待、M5 客户端文档契约、HB-M0 host-bridge 协议与 Storyforge manifest 冻结、HB-M1 配对/令牌/安全边界/单实例锁/MCP stdio 客户端/CLI 生命周期、HB-M2 快照事务/binding/派生数据删除与 Storyforge 确定性导出、HB-M3 五工具代理路由/工作引用恢复/脱敏诊断与 Storyforge 薄客户端/Settings 开发面/协议 fixture 门禁、HB-M5 联合启动、HB-M6 MCP 子进程维护期重启/递归路径脱敏/真实 Bridge 链、诊断 retention/协作锁、server/core 响应字节上限与 recorder ordering、统一进程关闭链、检索正确性、document LIKE 字面匹配、SQLite/FTS 12 进程冷启动、文本读取前资源门禁、短原词候选保留、revision-scoped 暖查询复用与索引失效、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、两遍 PRF/双字候选/批量频率上限、公开前隐私门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
 - 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制
@@ -105,11 +105,11 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 - Host Bridge：Storyforge 首宿主 HB-M0～HB-M6 已关闭；维持静态单宿主、loopback、显式配对、失败关闭和零自动写回边界，不在本轮扩成动态插件市场。下一步先把真实使用反馈转成协议兼容性回归，再决定第二宿主或可配置端口等扩展。
 - M5 收尾：补真实 InkOS、更多 EPUB 2/3 变体及独立 MCP 客户端安装/连通性验收；`.github/workflows/verify.yml` 已存在并只跑公共 `pnpm verify`，私有验收链永不进 CI。
-- 可靠性修复 Task 7 已关闭：完整 public/private 门禁、契约/状态/v2/测试清单/运行 skill 一致性核对及整分支 Critical/Important 复审均已完成；可靠性分支已合并进 `main`。该关闭声明只针对可靠性批次，不覆盖上列 M4/M5 产品门禁。
+- 可靠性复审批次：五项 core/gate 缺口已在 `fix/reliability-core-gates` 逐项提交；尚待整分支 SkillFlow 自审、最终公共门禁与集成。private/corpus 与外部 tokenizer 不受本批代码触碰，不能用历史结果冒充本轮新鲜证据。
 - 批次 C（AUD-026～032 + AUD-035 第一/二阶段）已全部完成并审阅归档。
 - AUD-035 第三阶段（Biome 格式化）已由用户决策延后：store.ts 即将被 M3/M4 修改，现在做巨型函数展开与全量格式化必然返工；正确时机是完整重排落地后（检索侧冻结）的重构窗口，届时再评估格式化是否必要。
 - Corpus 阈值门禁已在 4,789,903 字符《语料B》上重跑并通过：索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；报告与 Token 材料仅留本机。该口径按契约先预热每个冻结任务一次，随后测量 revision-scoped 生产缓存路径。
-- **重构窗口按触碰面分流（2026-08-18）**：装配侧窗口已开（M4 冻结后）——context 拆 registry/sources/dedup/budget/layer 纯模块（registry+dedup 已落地，sources/budget/layer 可与完整重排并行）；检索侧窗口待**完整重排落地后**——（1）store.ts 图构建/检索 SQL 抽离；（2）移除 oxlintrc.json 对 store.ts 的 ignorePatterns 忽略项；（3）评估 Biome 格式化（若执行：quoteStyle single / semicolons asNeeded / lineWidth 120）。
+- **重构窗口按触碰面分流（2026-09-02 校正）**：装配侧 context 的 registry+dedup 已落地，sources/budget/layer 仍只在有功能需求时拆分；`store.ts` 的 oxlint 豁免已由 `5e6f6c1` 移除并以 0 警告进入门禁，不再等待格式化。检索 SQL 抽离与 Biome 全量格式化仍延后，禁止仅为覆盖率或风格指标重写生产结构。
 - M4 剩余：PRF 与真实长语料重测已关闭；仍待外部 tokenizer 对本地材料复核。`mixed-cjk-v1` 继续只是 excerpt-only 启发式估算，不升级为精确 Token 结论。
 - M4 审议：已完成的来源/约束装配、excerpt-only accountingScope、server response-size 与 Task 5 运行时硬化保留；A1 使用 adapter-owned `SourceSnapshot`、一致读取重试、及 `loadedFingerprint`/`indexedFingerprint` 双指纹状态语义。真实长语料已由本轮 `verify:private` 重测，结果见上方 Corpus 门禁；后续不得沿用脱离 revision 的历史数字。
 
@@ -128,15 +128,15 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 | **AUD-029** snapshot 一致性 | ✅ 合格：读取前后指纹校验、有界重试、文本内存上限、源变化显式错误 | `b1da1f0` | `snapshot-consistency.test.ts` 5 项 | 加法式（新错误码 + 新导出 + 构造参数扩展） |
 | **AUD-030** splitDocument 硬切与边界规则 | ✅ 合格：超长行硬切、locator 精确排除空行、连续平铺无重叠无遗漏、重叠方案拒绝 | `2c89a2e` | `span-hard-split.test.ts` 5 项 | 无接口变更（仅切分行为变化） |
 | **AUD-032** 进程生命周期与优雅关闭 | ✅ 合格并硬化：`createStdioRuntime` 与 process termination 均返回同一 memoized promise；信号/stdin EOF 共链，先关 server 再关 service，失败后置汇总，正常退出不主动调用 `process.exit(0)`，5 秒仅作悬挂兜底，stdout 纯 JSON-RPC | `a3877c3` + `61bc056` | `lifecycle.test.ts` 11 项 | 加法式内部测试 seam + 行为收敛（正常自然退出/失败非零） |
-| **AUD-035-1** lint/coverage 门禁 | ✅ 合格：oxlint 0 警告、coverage 阈值棘轮、vitest 别名修复覆盖率失真 | `c2093cd` | 108/108 回归 | 无产品接口变更（工程基建） |
+| **AUD-035-1** lint/coverage 门禁 | ✅ 复审收口：初版门禁仍豁免 `store.ts` 且全局 branch 仅 73%；`5e6f6c1` 移除豁免、修净两条真实 warning、将全局 branch 棘轮升至 75%，并冻结 MCP server branch 60% 文件级底线（实测 60.75%） | `c2093cd` + `5e6f6c1` | 57 文件/287 项 + coverage 门禁 | 无产品接口变更（工程基建） |
 | **AUD-035-2** generic 适配器模块抽离 | ✅ 合格：21.8KB 单文件拆为 errors/numbering/txt/epub 四策略模块、公共 API 兼容、覆盖率逐位不变 | `e3088af` | 108/108 回归 | 无（纯结构重构） |
 | **AUD-013** 来源提供器注册表与 evidenceHash 去重 | ✅ 合格（含缺陷修复）：语义分层、required 晋升 L0、duplicate_evidence 折叠；审阅发现 kind 输入接错——searchRows 返回小写文档类型（d.kind）而注册表键为大写实体类型，全落 L3 → `5aacdb0` 以 DOCUMENT_KIND_ALIASES 归一修复并补真实路径 L1/L2 断言（教训：原单元测试喂大写键绕过真实输入路径而漏检） | `d7f8c24` + `5aacdb0` | `context-source-registry.test.ts` 7 项 | 无接口变更（内部装配语义） |
 
 **审阅附注**：2026-08-16 首批三条与 2026-08-17 批次 C 六条均在已提交 HEAD 上通过 `tsc -b`、全量测试与 30/30 基准验证；2026-08-16 发现的工作区待办（AUD-028 半成品与 L102 语法错误）已在 AUD-028 提交中修复。
 
-## 待审阅修复方案（Pending Review）
+## 历史实施记录（非当前待审）
 
-> 按用户授权（2026-08-16）自主执行的修复，逐条记录方案内容并标注待审阅；审阅通过后归档入上节。AUD-035-3（Biome 格式化）经用户决策延后至 M3/M4 语义冻结后的重构窗口再评估，评估数据保留于末条供重构窗口参考。
+> 以下内容保留 2026-08-16～18 当时的实施/验证措辞，仅供历史追溯，不表示当前仍在 Pending Review。当前状态只读文首、里程碑表和“下一步”；AUD-035-3（Biome 格式化）仍按用户决策延后。
 
 ### AUD-012 接线审阅三缺陷修复（待审阅，2026-08-17）
 
@@ -185,6 +185,11 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 > 推送状态校正（2026-09-01）：下方 HB-M0～HB-M3 条目末尾的“本地提交，未推送”保留为当时的历史状态；对应 Writing MCP 提交现已随 `e340961` 进入 `origin/main`。Storyforge 配对提交仍只在本地。
 
+- `5e6f6c1` — chore(gates): 移除 `store.ts` lint 豁免并修净两条 iterator warning；全局 branch 门槛 73→75，新增 MCP server branch ≥60% 文件门槛（实测 60.75%），未为覆盖率改写生产结构；57 文件/287 项、30/30、branches 78.35%。
+- `c31df5d` — fix(core): document 查询将 `%`、`_`、`\\` 按字面子串处理并显式使用 SQL `ESCAPE`；新增路径/标题定向回归；57 文件/287 项、30/30、branches 78.35%。
+- `72bc343` — fix(core): SQLite/FTS 冷启动增加 WAL 有界 busy 重试与 `BEGIN IMMEDIATE` 后 `user_version` 双检；12 独立进程屏障回归连续通过；56 文件/286 项、30/30、branches 78.35%。
+- `c3d6e82` — fix(adapter): Generic TXT/Markdown 根据已验证 SourceSnapshot 在 `readFile` 前执行单文件与累计大小门禁，并保留读取后二次竞态防线；55 文件/285 项、30/30、branches 78.72%。
+- `e57264c` — fix(core): 30 秒查询 deadline 移入逐作品队列并覆盖 explore/context/evaluator；超时不提前释放串行槽，service close 等待底层尾任务；54 文件/283 项、30/30、branches 78.75%。
 - `655ae8e`（Storyforge，本地）+ `80ac885`（Writing MCP，已推送）— HB-M6 真实宿主验收收口：浏览器快照经 Bridge 激活并把 Writing MCP 证据注入 provider，Bridge 停止后失败关闭且只允许显式单次绕过，候选不自动写回；Bridge 在派生数据维护期间可恢复地重启 MCP 子进程，并递归脱敏本地路径。Writing MCP `pnpm verify` 54 文件/278 项、公共基准 30/30、coverage lines 92.92%；Storyforge `npm run ci` 266 文件/1002 项、生产依赖审计 0 漏洞，Playwright 35/35。
 - `1c1f0c1`（Storyforge，本地）+ `e53d4d8`（Writing MCP，已推送）— HB-M5 联合启动收口：`npm run dev` 同启 Storyforge 与 Bridge，终端提供 pairing code；Bridge 接受严格 loopback Origin 参数并在冷启动静态注册 Storyforge 插件。
 - `0aa1ca4` — fix(writing-bridge): HB-M4 复审收口——当前快照先激活再查询、MCP 工具信封 typed 解包、真实 excerpt/locator/path 注入、快照覆盖来源 replace 与用户消息保护、budget_unsatisfiable 阻断、生产/禁用态零 localhost client；Storyforge 6 文件/30 项 Bridge 测试、eslint、tsc、生产 build 全绿。Writing MCP 无代码变化。本地提交，未推送。
