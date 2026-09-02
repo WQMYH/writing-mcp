@@ -257,7 +257,7 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 ### M1 snapshot consistency amendment (2026-08-17)
 
 - Every adapter read is bracketed by source fingerprint checks (names + mtime + size of all files under the work root): if the fingerprint differs after the read, the service retries the read exactly once, then fails with stable code `SOURCE_CHANGED_DURING_READ`. A snapshot is never built from mixed-time source state; the client should retry the operation.
-- Text ingestion is bounded deterministically: per-file `maxDocumentBytes` (breach: `SOURCE_FILE_TOO_LARGE`) and per-work cumulative `maxTotalBytes` (breach: `SOURCE_TOTAL_TOO_LARGE`), defaults 16 MiB / 64 MiB. Injectable via `new GenericAdapter({ text: Partial<TextLimits> })`; `DEFAULT_TEXT_LIMITS` is exported. EPUB sizes remain governed by the EPUB resource limits amendment.
+- Text ingestion is bounded deterministically: per-file `maxDocumentBytes` (breach: `SOURCE_FILE_TOO_LARGE`) and per-work cumulative `maxTotalBytes` (breach: `SOURCE_TOTAL_TOO_LARGE`), defaults 16 MiB / 64 MiB. After realpath/stat revalidation, the adapter uses the validated `SourceSnapshotEntry.size` to reject a file or cumulative work before calling `readFile`; it retains the post-read byte checks as defense against a change between stat and read. Injectable via `new GenericAdapter({ text: Partial<TextLimits> })`; `DEFAULT_TEXT_LIMITS` is exported. EPUB sizes remain governed by the EPUB resource limits amendment.
 
 ### M1 SourceSnapshot freshness amendment (2026-08-21)
 
