@@ -3,7 +3,7 @@
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
 > 检查点时间：2026-09-02（可靠性复审指出的五项 core/gate 缺口已在隔离分支实现并逐项提交；首轮整分支自审发现并修复独立 coverage 对残留 `dist` 的隐式依赖，等待最终复验与集成）
-> 当前状态：`fix/reliability-core-gates` 已修复真实查询 deadline、通用文本读取前限额、SQLite/FTS 多进程冷启动、document LIKE 字面匹配和 lint/coverage 门禁漂移；`pnpm coverage` 现会先自行构建，可在干净检出中独立执行。最新覆盖率复验为 57 文件/287 项，coverage lines 92.68% / branches 78.35%，MCP server branches 60.75%；本批次仍未集成，最终公共 `pnpm verify` 与 SkillFlow 复审结论须以当前 HEAD 的新鲜证据为准，不得沿用“可靠性 Task 1～7 已关闭并合并”的旧声明。Storyforge 首宿主 HB-M0～HB-M6 既有交付状态不变；Writing MCP v1 的 M5 仍缺真实 InkOS、更多 EPUB 2/3 变体和独立客户端安装/连通性验收，外部 tokenizer 仍为 `not_evaluated`。
+> 当前状态：`fix/reliability-core-gates` 已修复真实查询 deadline、通用文本读取前限额、SQLite/FTS 多进程冷启动、document LIKE 字面匹配和 lint/coverage 门禁漂移；`pnpm coverage` 现会先自行构建，可在干净检出中独立执行，Vitest worker 并发固定上限 4，避免与常驻 IDE/MCP 进程争用虚拟内存。最新覆盖率复验为 57 文件/287 项，coverage lines 92.68% / branches 78.35%，MCP server branches 60.75%；本批次仍未集成，最终公共 `pnpm verify` 与 SkillFlow 复审结论须以当前 HEAD 的新鲜证据为准，不得沿用“可靠性 Task 1～7 已关闭并合并”的旧声明。Storyforge 首宿主 HB-M0～HB-M6 既有交付状态不变；Writing MCP v1 的 M5 仍缺真实 InkOS、更多 EPUB 2/3 变体和独立客户端安装/连通性验收，外部 tokenizer 仍为 `not_evaluated`。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -185,6 +185,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 > 推送状态校正（2026-09-01）：下方 HB-M0～HB-M3 条目末尾的“本地提交，未推送”保留为当时的历史状态；对应 Writing MCP 提交现已随 `e340961` 进入 `origin/main`。Storyforge 配对提交仍只在本地。
 
+- `5f5cd58` — fix(gates): Vitest worker 并发上限固定为 4；在常驻多组 IDE/MCP 服务、低剩余虚拟内存的 Windows 环境中，消除全量门禁的 `VirtualAlloc` worker 退出；生产逻辑与断言均未改变，57 文件/287 项复验通过。
 - `d87f8b4` — fix(gates): `pnpm coverage` 先构建再运行覆盖率，消除 child-process 集成测试对残留 `dist` 的隐式依赖；独立 coverage 复验 57 文件/287 项、lines 92.68%、branches 78.35%、MCP server branches 60.75%。
 - `5e6f6c1` — chore(gates): 移除 `store.ts` lint 豁免并修净两条 iterator warning；全局 branch 门槛 73→75，新增 MCP server branch ≥60% 文件门槛（实测 60.75%），未为覆盖率改写生产结构；57 文件/287 项、30/30、branches 78.35%。
 - `c31df5d` — fix(core): document 查询将 `%`、`_`、`\\` 按字面子串处理并显式使用 SQL `ESCAPE`；新增路径/标题定向回归；57 文件/287 项、30/30、branches 78.35%。
