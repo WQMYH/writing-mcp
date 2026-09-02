@@ -2,12 +2,18 @@ import type { AdapterKind, ContextOptions, ContextPacket, ExploreOperation, Expl
 import { WritingStore } from "./store.js";
 import { join } from "node:path";
 
-const EXPLORE_TIME_LIMIT_MS = 30_000;
+const DEFAULT_QUERY_TIME_LIMIT_MS = 30_000;
+
+export interface WritingServiceOptions {
+  readonly queryTimeLimitMs?: number;
+}
 
 export class WritingService {
   private readonly works=new Map<string,WorkCandidate>(); private readonly active=new Map<string,{store:WritingStore;loadedFingerprint?:string;indexedFingerprint?:string}>();
   private readonly queues=new Map<string,Promise<void>>();
-  constructor(private readonly adapters:WorkAdapter[],private readonly authorizedRoots?:string[]){}
+  private readonly queryTimeLimitMs:number;
+  private closing?:Promise<void>;
+  constructor(private readonly adapters:WorkAdapter[],private readonly authorizedRoots?:string[],options:WritingServiceOptions={}){this.queryTimeLimitMs=Math.max(1,Math.trunc(options.queryTimeLimitMs??DEFAULT_QUERY_TIME_LIMIT_MS));}
   async resolve(sourcePath:string,adapterHint?:AdapterKind):Promise<ResolveResult>{
     if(this.authorizedRoots){const {assertAuthorizedPath}=await import("./ids.js");sourcePath=await assertAuthorizedPath(sourcePath,this.authorizedRoots);}
     const selected=adapterHint?this.adapters.filter(a=>a.kind===adapterHint):this.adapters.filter(a=>a.kind!=="generic");
@@ -19,12 +25,19 @@ export class WritingService {
   private async store(workRef:string){const active=this.active.get(workRef);if(active)return active.store;const candidate=this.candidate(workRef),loaded=await this.loadConsistent(candidate),store=new WritingStore(loaded.work);this.active.set(workRef,{store,loadedFingerprint:loaded.fingerprint});return store;}
   private candidate(workRef:string):WorkCandidate{const candidate=this.works.get(workRef);if(!candidate)throw Object.assign(new Error("Unknown workRef; call writing_resolve first"),{code:"WORK_REF_NOT_FOUND"});return candidate;}
   private adapter(candidate:WorkCandidate):WorkAdapter{const adapter=this.adapters.find(adapter=>adapter.kind===candidate.adapter);if(!adapter)throw Object.assign(new Error(`No adapter is registered for ${candidate.adapter}`),{code:"ADAPTER_NOT_FOUND"});return adapter;}
-  private async serial<T>(workRef:string,action:()=>Promise<T>):Promise<T>{
+  private serial<T>(workRef:string,action:()=>Promise<T>,timeout?:{code:string;label:string}):Promise<T>{
     const previous=this.queues.get(workRef)??Promise.resolve();
-    const current=previous.catch(()=>undefined).then(action);
-    const marker=current.then(()=>undefined,()=>undefined);
+    const scheduled=previous.catch(()=>undefined).then(()=>{
+      const actionPromise=Promise.resolve().then(action);
+      if(!timeout)return{actionPromise,resultPromise:actionPromise};
+      let timer:ReturnType<typeof setTimeout>;
+      const timeoutPromise=new Promise<T>((_resolve,reject)=>{timer=setTimeout(()=>reject(Object.assign(new Error(`${timeout.label} exceeded the ${this.queryTimeLimitMs}ms execution time limit`),{code:timeout.code})),this.queryTimeLimitMs);timer.unref?.();});
+      return{actionPromise,resultPromise:Promise.race([actionPromise,timeoutPromise]).finally(()=>clearTimeout(timer))};
+    });
+    const marker=scheduled.then(({actionPromise})=>actionPromise.then(()=>undefined,()=>undefined),()=>undefined);
     this.queues.set(workRef,marker);
-    try{return await current;}finally{if(this.queues.get(workRef)===marker)this.queues.delete(workRef);}
+    void marker.then(()=>{if(this.queues.get(workRef)===marker)this.queues.delete(workRef);});
+    return scheduled.then(({resultPromise})=>resultPromise);
   }
   private async indexUnlocked(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{
     const candidate=this.candidate(workRef),previous=this.active.get(workRef);
@@ -47,15 +60,11 @@ export class WritingService {
   }
   async index(workRef:string,mode:"status"|"incremental"|"rebuild"):Promise<IndexResult>{return this.serial(workRef,async()=>this.indexUnlocked(workRef,mode));}
   async explore(workRef:string,operation:ExploreOperation,query="",limit=20,maxHops=2,targetChapter?:number):Promise<ExploreResult>{
-    const started=performance.now();
-    const result=await this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).explore(operation,query,limit,maxHops,targetChapter);});
-    const elapsedMs=performance.now()-started;
-    if(elapsedMs>EXPLORE_TIME_LIMIT_MS)throw Object.assign(new Error(`Explore exceeded the ${EXPLORE_TIME_LIMIT_MS}ms deterministic time limit (took ${Math.trunc(elapsedMs)}ms)`),{code:"EXPLORE_TIME_LIMIT_EXCEEDED"});
-    return result;
+    return this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).explore(operation,query,limit,maxHops,targetChapter);},{code:"EXPLORE_TIME_LIMIT_EXCEEDED",label:"Explore"});
   }
   /** Evaluator-only: options are scoped to this call and never stored. */
-  async evaluateSearch(workRef:string,query:string,limit:number,options:SearchExperimentOptions):Promise<ExploreResult>{return this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).evaluateSearch(query,limit,options);});}
-  async context(workRef:string,query:string,budgetTokens:number,requiredRefs:string[]=[],options:ContextOptions={}):Promise<ContextPacket>{return this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).context(query,budgetTokens,requiredRefs,options);});}
+  async evaluateSearch(workRef:string,query:string,limit:number,options:SearchExperimentOptions):Promise<ExploreResult>{return this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).evaluateSearch(query,limit,options);},{code:"EVALUATE_SEARCH_TIME_LIMIT_EXCEEDED",label:"Evaluator search"});}
+  async context(workRef:string,query:string,budgetTokens:number,requiredRefs:string[]=[],options:ContextOptions={}):Promise<ContextPacket>{return this.serial(workRef,async()=>{await this.ensureFresh(workRef);return (await this.store(workRef)).context(query,budgetTokens,requiredRefs,options);},{code:"CONTEXT_TIME_LIMIT_EXCEEDED",label:"Context"});}
   diagnosticDirectory(workRef?:string):string|undefined{const candidate=workRef?this.works.get(workRef):undefined;const root=candidate?.rootPath??this.authorizedRoots?.[0];if(!root)return undefined;const scope=candidate?workRef!.replaceAll(":","-"):"_server";return join(root,".writing-index",scope,"diagnostics");}
-  close():void{for(const state of this.active.values())state.store.close();this.active.clear();this.queues.clear();}
+  close():void|Promise<void>{if(this.closing)return this.closing;const finish=()=>{for(const state of this.active.values())state.store.close();this.active.clear();this.queues.clear();};const pending=[...this.queues.values()];if(!pending.length){finish();return;}this.closing=Promise.allSettled(pending).then(finish);return this.closing;}
 }

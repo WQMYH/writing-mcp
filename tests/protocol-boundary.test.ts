@@ -52,6 +52,27 @@ describe("MCP protocol boundary (AUD-025)", () => {
     }
   });
 
+  test("query deadlines return a diagnosed error with timeout-specific recovery", async () => {
+    const timeout = Object.assign(new Error("Explore exceeded the execution time limit"), { code: "EXPLORE_TIME_LIMIT_EXCEEDED" });
+    const service = { ...stubService({}), explore: async () => { throw timeout; } };
+    const recorder = new DiagnosticRecorder(() => undefined);
+    const server = createServer(service as never, recorder);
+    const client = new Client({ name: "boundary-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+      const call = await client.callTool({ name: "writing_explore", arguments: { workRef: "work:test", operation: "search" } });
+      expect(call.isError).toBe(true);
+      const failed = failure(call);
+      expect(failed.error.code).toBe("EXPLORE_TIME_LIMIT_EXCEEDED");
+      expect(failed.error.recovery).toBe("Retry with a narrower query or lower result limit after any current index update finishes.");
+      expect(failed.diagnostic.outcome).toBe("failure");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   test("normal in-process calls stay consistent and report no protocol errors", async () => {
     const dir = await mkdtemp(join(tmpdir(), "writing-mcp-boundary-normal-"));
     const source = join(dir, "novel");

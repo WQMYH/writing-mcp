@@ -55,6 +55,7 @@ function recoveryFor(code: string): string {
   if (code === "PATH_NOT_ALLOWED" || code === "AUTHORIZED_ROOTS_REQUIRED") return "Check WRITING_MCP_ROOTS and use a source inside an authorized root.";
   if (code === "OUTPUT_SCHEMA_MISMATCH") return "This is a server-side contract defect, not a caller error; report the traceId and retry after the server is updated.";
   if (code === "RESPONSE_TOO_LARGE") return "Narrow the query, lower the result limit, or request a smaller diagnostic window, then retry.";
+  if (code.endsWith("_TIME_LIMIT_EXCEEDED")) return "Retry with a narrower query or lower result limit after any current index update finishes.";
   return "Check the tool arguments and related work reference, then retry.";
 }
 
