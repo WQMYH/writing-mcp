@@ -14,7 +14,7 @@
   "benchmark:private": "pnpm build && node scripts/run-private-acceptance.mjs",
   "check": "tsc -b --pretty false",
   "lint": "oxlint -c oxlintrc.json --deny-warnings packages tests scripts",
-  "coverage": "vitest run --coverage",
+  "coverage": "pnpm build && vitest run --coverage",
   "privacy:gate": "node scripts/privacy-gate.mjs --scope=history",
   "verify": "pnpm privacy:gate && pnpm check && pnpm lint && pnpm test && pnpm benchmark && pnpm coverage",
   "gold:gate": "pnpm build && node scripts/gold-gate.mjs",
