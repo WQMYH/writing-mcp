@@ -28,6 +28,8 @@ function pretrimExploreCollections(results:ExploreItem[],ambiguous:ExploreItem[]
 }
 const asNumber = (value: unknown) => typeof value === "bigint" ? Number(value) : Number(value ?? 0);
 const compareText = (left:string,right:string) => left < right ? -1 : left > right ? 1 : 0;
+const literalLikePattern = (value: string): string =>
+  `%${value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
 
 interface DocumentState {
   readonly document: ParsedWork["documents"][number];
@@ -540,7 +542,10 @@ export class WritingStore {
   async explore(operation:ExploreOperation,query="",limit=20,maxHops=2,targetChapter?:number):Promise<ExploreResult>{if(query.length>2048)throw codedError("QUERY_TOO_LARGE","Query exceeds the 2048-character deterministic limit");const started=performance.now(),db=await this.open();const revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);limit=Math.max(1,Math.min(100,Math.trunc(limit)));maxHops=Math.max(0,Math.min(3,maxHops));let rows:Array<Record<string,unknown>>=[],ambiguousRows:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
     if(operation==="stats"){const c={...this.counts(db),contextSources:this.contextSourceCounts(db)};rows=[{span_ref:"stats",heading:"Index statistics",content:json(c),relative_path:".writing-index",start_line:1,end_line:1,score:1,kind:"stats"}];}
     else if(operation==="entity"||operation==="neighborhood"){const lookup=this.entityRows(db,query,limit,operation==="neighborhood");rows=lookup.rows;ambiguousRows=lookup.ambiguous;diagnostics=lookup.diagnostics;}
-    else if(operation==="document"){rows=db.prepare("SELECT s.span_ref,s.heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,1 score,d.kind FROM spans s JOIN documents d ON d.document_ref=s.document_ref WHERE d.relative_path LIKE ? OR d.title LIKE ? ORDER BY d.source_ordinal,s.ordinal,s.span_ref LIMIT ?").all(`%${query}%`,`%${query}%`,limit) as Array<Record<string,unknown>>;}
+    else if(operation==="document"){
+      const pattern=literalLikePattern(query);
+      rows=db.prepare("SELECT s.span_ref,s.heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,1 score,d.kind FROM spans s JOIN documents d ON d.document_ref=s.document_ref WHERE d.relative_path LIKE ? ESCAPE '\\' OR d.title LIKE ? ESCAPE '\\' ORDER BY d.source_ordinal,s.ordinal,s.span_ref LIMIT ?").all(pattern,pattern,limit) as Array<Record<string,unknown>>;
+    }
     else if(operation==="timeline"){const timeline=this.timelineRows(db,query,limit,targetChapter);rows=timeline.rows;diagnostics=timeline.diagnostics;}
     else {const searched=this.searchRows(db,query,limit,undefined,PRODUCTION_PRF_CONFIGURATION);rows=searched.rows;diagnostics=searched.diagnostics;}
     const locatorsBySpan=this.locatorMap(db,rows.map(row=>String(row.span_ref)));
