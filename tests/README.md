@@ -2,7 +2,7 @@
 
 > 文档定位：这是 `docs/IMPLEMENTATION_STATUS.md`「当前测试覆盖」一节的**详细清单宿主**。状态文档只保留概述与指向本文件的抽取路径；本文件随测试文件一起维护。
 >
-> 运行：`pnpm build && pnpm test`（vitest）。基准门禁：`pnpm benchmark`。lint 门禁：`pnpm lint`（oxlint，覆盖全部 `packages`/`tests`/`scripts`，包括 `core/store.ts`，要求 0 警告）。覆盖率棘轮门禁：`pnpm coverage`（命令会先自行构建，确保可在无残留 `dist` 的干净检出中独立运行；全局 branch ≥75%，另对 `packages/mcp-server/src/server.ts` 冻结 branch ≥60%；其余阈值见 `vitest.config.ts`）。Gold/private acceptance 使用 `WRITING_MCP_PRIVATE_ACCEPTANCE`；corpus gate 使用 `WRITING_MCP_PRIVATE_CORPUS` 与 `WRITING_MCP_CORPUS_TASKS`，可选 `WRITING_MCP_PRIVATE_REPORT_DIR`。公开 `verify` 不读取任何私有环境变量。
+> 运行：`pnpm build && pnpm test`（vitest，worker 并发上限 4，避免开发机同时运行多个 MCP/IDE 服务时无界争用虚拟内存）。基准门禁：`pnpm benchmark`。lint 门禁：`pnpm lint`（oxlint，覆盖全部 `packages`/`tests`/`scripts`，包括 `core/store.ts`，要求 0 警告）。覆盖率棘轮门禁：`pnpm coverage`（命令会先自行构建，确保可在无残留 `dist` 的干净检出中独立运行；全局 branch ≥75%，另对 `packages/mcp-server/src/server.ts` 冻结 branch ≥60%；其余阈值见 `vitest.config.ts`）。Gold/private acceptance 使用 `WRITING_MCP_PRIVATE_ACCEPTANCE`；corpus gate 使用 `WRITING_MCP_PRIVATE_CORPUS` 与 `WRITING_MCP_CORPUS_TASKS`，可选 `WRITING_MCP_PRIVATE_REPORT_DIR`。公开 `verify` 不读取任何私有环境变量。
 
 ## 测试文件 → 主题映射
 
