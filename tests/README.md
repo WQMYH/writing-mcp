@@ -61,6 +61,7 @@
 | `snapshot-consistency.test.ts` | AUD-029 snapshot 一致性：读取期间源持续变化拒绝 `SOURCE_CHANGED_DURING_READ`（有界重试后仍不一致）、一次性写入稳定后有界重试成功、单文件超限 `SOURCE_FILE_TOO_LARGE`、作品总量超限 `SOURCE_TOTAL_TOO_LARGE`、默认上限正常加载 |
 | `adapter-pre-read-limits.test.ts` | AUD-029 读取前资源门禁：单文件 snapshot size 超限时 0 次 `readFile`；累计 size 将越界时不读取下一文件，防止“读入内存后才拒绝” |
 | `source-snapshot-reliability.test.ts` | Task 1 SourceSnapshot：完整相对路径避免重名碰撞、超过 12 层的精确枚举、单文件与增删指纹变化、越界 symlink 拒绝、status stale 后 explore 先增量索引、未变化快路径，以及失败增量不推进 freshness 并可恢复查询 |
+| `fts-cold-init.test.ts` | R4 SQLite/FTS 冷启动：12 个独立进程经共享屏障并发打开同一新索引，验证 WAL 配置的有界 busy 重试与 `BEGIN IMMEDIATE` schema 双检不会暴露 `database is locked`，最终 schema v4/FTS 表唯一且完整 |
 | `span-hard-split.test.ts` | AUD-030 span 硬上限与边界规则：超长单行硬切为共享同一源行的有界 chunk、locator 不含被裁空行、相邻 span 连续平铺无重叠无遗漏且内容可重组、硬切后后续 span 行号连续、heading 边界 locator 精确 |
 | `lifecycle.test.ts` | AUD-032/Task 5C 进程生命周期：SIGTERM/SIGINT 在时限内终止进程（POSIX 优雅 exit 0 / Windows 信号终止）、stdin EOF 优雅退出 exit 0、完整会话 stdout 只输出 JSON-RPC；runtime/termination promise 身份幂等、server→service 失败后置、5 秒悬挂兜底/成功取消、错误报告失败仍完成且零 stdout 写入 |
 

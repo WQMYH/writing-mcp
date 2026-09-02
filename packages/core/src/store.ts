@@ -12,6 +12,11 @@ const SCHEMA_VERSION = 4;
 const SOFTWARE_VERSION = "0.1.0";
 const MAX_RESPONSE_BYTES = 200_000;
 const CONTEXT_SEARCH_LIMIT = 12;
+const SQLITE_BUSY_TIMEOUT_MS = 5_000;
+const WAL_CONFIG_MAX_ATTEMPTS = 50;
+const WAL_CONFIG_INITIAL_DELAY_MS = 10;
+const WAL_CONFIG_DELAY_STEP_MS = 5;
+const WAL_CONFIG_MAX_DELAY_MS = 100;
 const json = (value: unknown) => JSON.stringify(value);
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 function pretrimExploreCollections(results:ExploreItem[],ambiguous:ExploreItem[],cap:number):{results:ExploreItem[];ambiguous:ExploreItem[];dropped:number}{
@@ -38,6 +43,14 @@ interface StoredDocumentState {
 
 const errorCode = (error: unknown): string | undefined =>
   typeof error === "object" && error && "code" in error ? String(error.code) : undefined;
+
+const isSqliteBusy = (error: unknown): boolean =>
+  typeof error === "object" && error !== null &&
+  (("errcode" in error && Number(error.errcode) === 5) ||
+    ("message" in error && String(error.message).includes("database is locked")));
+
+const delay = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 const codedError = (code: string, message: string, cause?: unknown): Error =>
   Object.assign(new Error(message, { cause }), { code });
@@ -74,12 +87,57 @@ export class WritingStore {
     if (this.db) return this.db;
     await this.prepareIndexLocation();
     const db = new DatabaseSync(this.indexPath!);
-    db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;");
-    this.schemaVersionOnDisk=asNumber((db.prepare("PRAGMA user_version").get() as Record<string,unknown>).user_version);
-    if(this.schemaVersionOnDisk!==0&&this.schemaVersionOnDisk!==SCHEMA_VERSION){this.db=db;return db;}
-    this.initializeSchema(db);
-    this.db = db;
-    return db;
+    try {
+      db.exec(`PRAGMA busy_timeout=${SQLITE_BUSY_TIMEOUT_MS};`);
+      await this.configureConnection(db);
+      this.schemaVersionOnDisk = this.readSchemaVersion(db);
+      if (this.schemaVersionOnDisk !== 0 && this.schemaVersionOnDisk !== SCHEMA_VERSION) {
+        this.db = db;
+        return db;
+      }
+      if (this.schemaVersionOnDisk === 0) this.initializeSchemaOnce(db);
+      this.db = db;
+      return db;
+    } catch (error) {
+      db.close();
+      throw error;
+    }
+  }
+
+  private async configureConnection(db: DatabaseSync): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        db.exec("PRAGMA journal_mode=WAL;");
+        break;
+      } catch (error) {
+        if (!isSqliteBusy(error) || attempt === WAL_CONFIG_MAX_ATTEMPTS - 1) throw error;
+        await delay(Math.min(
+          WAL_CONFIG_INITIAL_DELAY_MS + attempt * WAL_CONFIG_DELAY_STEP_MS,
+          WAL_CONFIG_MAX_DELAY_MS,
+        ));
+      }
+    }
+    db.exec("PRAGMA foreign_keys=ON;");
+  }
+
+  private readSchemaVersion(db: DatabaseSync): number {
+    return asNumber((db.prepare("PRAGMA user_version").get() as Record<string, unknown>).user_version);
+  }
+
+  private initializeSchemaOnce(db: DatabaseSync): void {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      // Another process may have completed the cold bootstrap while BEGIN IMMEDIATE waited.
+      this.schemaVersionOnDisk = this.readSchemaVersion(db);
+      if (this.schemaVersionOnDisk === 0) {
+        this.initializeSchema(db);
+        this.schemaVersionOnDisk = SCHEMA_VERSION;
+      }
+      db.exec("COMMIT");
+    } catch (error) {
+      try { db.exec("ROLLBACK"); } catch { /* Preserve the initialization failure. */ }
+      throw error;
+    }
   }
 
   private initializeSchema(db:DatabaseSync):void{

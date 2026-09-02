@@ -7,6 +7,7 @@ This document freezes the public and storage decisions for the MVP. Changes requ
 - Node.js: `>=24 <25`.
 - MCP SDK: `@modelcontextprotocol/sdk` 1.x.
 - Storage: built-in `node:sqlite`, SQLite 3 with FTS5 trigram.
+- A new index may be opened by multiple local MCP processes. Connections set a 5-second SQLite busy timeout; WAL configuration uses a bounded busy retry, and schema bootstrap is guarded by `BEGIN IMMEDIATE` with a second `user_version` check after the lock is acquired. This applies only to cold initialization and does not replace the existing index writer lock.
 - EPUB: JSZip 3.x; local parsing only, no DRM support.
 - Token fallback: `mixed-cjk-v1` (`ceil(CJK × 1.15 + non-CJK words × 1.3)`).
 
