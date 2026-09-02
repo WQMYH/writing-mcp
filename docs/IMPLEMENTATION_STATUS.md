@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-09-02（可靠性复审指出的五项 core/gate 缺口已在隔离分支实现并逐项提交；首轮整分支自审发现并修复独立 coverage 对残留 `dist` 的隐式依赖，等待最终复验与集成）
-> 当前状态：`fix/reliability-core-gates` 已修复真实查询 deadline、通用文本读取前限额、SQLite/FTS 多进程冷启动、document LIKE 字面匹配和 lint/coverage 门禁漂移；`pnpm coverage` 现会先自行构建，可在干净检出中独立执行，Vitest worker 并发固定上限 4，避免与常驻 IDE/MCP 进程争用虚拟内存。最新覆盖率复验为 57 文件/287 项，coverage lines 92.68% / branches 78.35%，MCP server branches 60.75%；本批次仍未集成，最终公共 `pnpm verify` 与 SkillFlow 复审结论须以当前 HEAD 的新鲜证据为准，不得沿用“可靠性 Task 1～7 已关闭并合并”的旧声明。Storyforge 首宿主 HB-M0～HB-M6 既有交付状态不变；Writing MCP v1 的 M5 仍缺真实 InkOS、更多 EPUB 2/3 变体和独立客户端安装/连通性验收，外部 tokenizer 仍为 `not_evaluated`。
+> 检查点时间：2026-09-02（可靠性复审指出的五项 core/gate 缺口已在隔离分支实现并逐项提交；整分支自审另发现并修复两项公共门禁缺陷，最终复审通过，等待集成）
+> 当前状态：`fix/reliability-core-gates` 已修复真实查询 deadline、通用文本读取前限额、SQLite/FTS 多进程冷启动、document LIKE 字面匹配和 lint/coverage 门禁漂移；`pnpm coverage` 现会先自行构建，可在干净检出中独立执行，Vitest worker 并发固定上限 4，避免与常驻 IDE/MCP 进程争用虚拟内存。最终 SkillFlow 复审无开放发现，公共 `pnpm verify` 通过：57 文件/287 项、公共基准 30/30、coverage lines 92.68% / branches 78.35%，MCP server branches 60.75%；本批次仍未集成，因此不得沿用“可靠性 Task 1～7 已关闭并合并”的旧声明。Storyforge 首宿主 HB-M0～HB-M6 既有交付状态不变；Writing MCP v1 的 M5 仍缺真实 InkOS、更多 EPUB 2/3 变体和独立客户端安装/连通性验收，外部 tokenizer 仍为 `not_evaluated`。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -105,7 +105,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 - Host Bridge：Storyforge 首宿主 HB-M0～HB-M6 已关闭；维持静态单宿主、loopback、显式配对、失败关闭和零自动写回边界，不在本轮扩成动态插件市场。下一步先把真实使用反馈转成协议兼容性回归，再决定第二宿主或可配置端口等扩展。
 - M5 收尾：补真实 InkOS、更多 EPUB 2/3 变体及独立 MCP 客户端安装/连通性验收；`.github/workflows/verify.yml` 已存在并只跑公共 `pnpm verify`，私有验收链永不进 CI。
-- 可靠性复审批次：五项 core/gate 缺口已在 `fix/reliability-core-gates` 逐项提交；首轮 SkillFlow 自审发现 standalone coverage 依赖残留构建产物，已由 `d87f8b4` 修复，尚待当前 HEAD 最终公共门禁、复审收口与集成。private/corpus 与外部 tokenizer 不受本批代码触碰，不能用历史结果冒充本轮新鲜证据。
+- 可靠性复审批次：五项 core/gate 缺口已在 `fix/reliability-core-gates` 逐项提交；SkillFlow 自审发现的 standalone coverage 残留构建依赖与无界 test worker 资源争用，已分别由 `d87f8b4`、`5f5cd58` 修复。最终公共门禁与复审已通过，下一动作仅为集成决策。private/corpus 与外部 tokenizer 不受本批代码触碰，不能用历史结果冒充本轮新鲜证据。
 - 批次 C（AUD-026～032 + AUD-035 第一/二阶段）已全部完成并审阅归档。
 - AUD-035 第三阶段（Biome 格式化）已由用户决策延后：store.ts 即将被 M3/M4 修改，现在做巨型函数展开与全量格式化必然返工；正确时机是完整重排落地后（检索侧冻结）的重构窗口，届时再评估格式化是否必要。
 - Corpus 阈值门禁已在 4,789,903 字符《语料B》上重跑并通过：索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；报告与 Token 材料仅留本机。该口径按契约先预热每个冻结任务一次，随后测量 revision-scoped 生产缓存路径。
