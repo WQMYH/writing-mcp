@@ -32,6 +32,12 @@ Moving a work or document intentionally changes its reference. Editing content w
 - Source trust order: native > deterministic > heuristic.
 - Candidate scoring compares lowercased query terms and source text consistently. Evidence windows locate case-insensitive literal matches in the original text using original UTF-16 offsets (not offsets from a lowercased copy whose length may differ); returned excerpts preserve source spelling/case. This corrects the single-proper-noun support-window failure without changing candidate generation, PRF configuration, or promising general transliteration/compatibility normalization (MR4 W006, 2026-10-17).
 
+### MR5 Unicode input-length amendment (2026-10-17, W025)
+
+- Published JSON Schema `maxLength` and SDK/Zod/core validation share Unicode code-point units: query 2048, taskType 64, label 80, and each entry of requiredRefs/entityRefs/documentRefs/excludeRefs 256. Supplementary/BMP/mixed strings use the same boundaries; list item-count limits are unchanged.
+- The Zod input schemas publish those same bounds via metadata and validate code points, rather than using UTF-16 `.max`. A cheap UTF-16 precheck bounds counting allocations; direct store query/evaluator/ref guards use the same helper. Diagnostic labels retain at most 80 complete code points after existing whitespace sanitation.
+- This amendment does not change source/span/excerpt UTF-16 offsets/caps, EPUB/HTTP resource byte limits, response UTF-8 byte caps, or excerpt-only estimated token accounting.
+
 ### M3 query-limit amendment (2026-08-14)
 
 - Neighborhood traversal uses stable breadth-first expansion for 0 to 3 hops.

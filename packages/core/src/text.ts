@@ -2,6 +2,9 @@ import type { EvidenceLocator, SourceDocument } from "./types.js";
 
 export interface Span { spanRef: string; documentRef: string; ordinal: number; startLine: number; endLine: number; heading: string; content: string; locators: EvidenceLocator[] }
 
+// Bound allocation before counting supplementary code points; BMP inputs need no array.
+export const exceedsCodePointLimit=(value:string,limit:number):boolean=>value.length>limit*2||(value.length>limit&&Array.from(value).length>limit);
+
 // UTF-16 offsets and caps; omit only a surrogate pair split by a slice boundary.
 export const sliceText = (value: string, start = 0, end = value.length): string =>
   value.slice(start, end).replace(/^[\udc00-\udfff]|[\ud800-\udbff]$/g, "");

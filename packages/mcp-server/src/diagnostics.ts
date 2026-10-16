@@ -481,7 +481,7 @@ function effectView(value: unknown): unknown {
 
 function stringField(value: Readonly<Record<string, unknown>> | undefined, key: string): string | undefined { const field = value?.[key]; return typeof field === "string" ? field : undefined; }
 function numberField(value: Readonly<Record<string, unknown>> | undefined, key: string): number | undefined { const field = value?.[key]; return typeof field === "number" ? field : undefined; }
-function sanitizeLabel(value: string): string { return value.trim().replace(/[\r\n\t]/g, " ").slice(0, 80); }
+function sanitizeLabel(value: string): string { return Array.from(value.trim().replace(/[\r\n\t]/g, " ").slice(0, 160)).slice(0, 80).join(""); }
 
 function codedError(code: string, message: string): Error {
   return Object.assign(new Error(message), { code });
