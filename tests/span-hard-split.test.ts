@@ -71,6 +71,20 @@ describe("span hard cap and boundary rules (AUD-030)", () => {
     expect(spans.map(span => span.content).join("")).toBe(line);
   });
 
+  test.each(["😀", "𠀀", "中"])("keeps %s intact at a hard split (W-MCP-002)", glyph => {
+    const content = "甲".repeat(7) + glyph + "乙";
+    const spans = splitDocument(doc(content, 7), String, 8);
+    expect(spans.every(span => span.content.isWellFormed())).toBe(true);
+    expect(spans.every(span => span.content.length <= 8)).toBe(true);
+    expect(spans.map(span => span.content).join("")).toBe(content);
+    expect(spans.every(span => span.startLine === 7 && span.endLine === 7)).toBe(true);
+    expect(spans.every(span => span.locators.every(locator => locator.startLine === 7 && locator.endLine === 7))).toBe(true);
+  });
+
+  test("rejects a cap that cannot hold a surrogate pair rather than dropping data or looping (W-MCP-002)", () => {
+    expect(() => splitDocument(doc("😀"), String, 1)).toThrow(RangeError);
+  });
+
   test("locators exclude blank lines trimmed from span edges", () => {
     const spans = splitDocument(doc("\n\n首行正文\n\n"), n => String(n));
     expect(spans).toHaveLength(1);

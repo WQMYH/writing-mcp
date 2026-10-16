@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-16 23:05 +08:00（MR1 公开验收通过，按用户持续执行授权进入 MR2）
-> 当前状态：MR1 三项修复在本机及 [Windows/Linux CI](https://github.com/WQMYH/writing-mcp/actions/runs/38919516032) 完整通过（57/316、30/30、lines 92.77%、branches 79.02%）；原失败与恢复见提交清单。用户已授权 MR2 并要求按现有计划持续执行，沿用隔离分支及 [Draft PR #1](https://github.com/WQMYH/writing-mcp/pull/1)，不合并 main。MR2 的 W001 已修复普通多行追加前限额，并以语义指纹中的 text-derivation version 使旧分片自动失效重算；新增 7 个失败→通过回归，span/lifecycle/snapshot/TXT 39 项、check、lint 通过。MR2 其余五项及本阶段全量门禁尚未完成，316 是 MR1 的最后全量计数，不冒充当前增量全量结果。25 类长期目标仍 active；私有/宿主/tokenizer 和旧版 Linux WAL 低层取证未由本轮声明关闭。
+> 检查点时间：2026-10-16 23:16 +08:00（MR2 W001/W002 针对性门禁通过）
+> 当前状态：MR1 三项修复的双平台完整 verify 已通过，57/316 为该阶段计数，见提交清单与 CI。MR2 持续实施中：W001（`38ab81d`）多行上限及旧派生指纹失效已提交；W002 的 UTF-16 安全切片已贯通硬切、SQLite、直接/搜索/BFS/context 摘录及 EPUB fallback 标题，新增 10 项（含 BMP 对照），相关 55 项、check、lint 通过。派生规则版本随之更新，使旧损坏片段不因原文未变而保留。W010/011/016/020 及 MR2 完整验收仍待完成；25 类目标保持 active。沿用隔离分支及 Draft PR #1，main 不合并，阶段之间不重复询问。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -86,7 +86,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 MR1 从修改前 287 项增加至 316 项：图回归 6 项、EPUB 21 项、service/snapshot 2 项，并补强失败保存/恢复断言；既有 pre-read 断言只做 realpath 校正，无测试跳过或阈值下调。
 
-MR2 当前新增 W001 七项，针对性 39 项通过；阶段全量 verify 尚待执行，下列完整计数仍指 MR1。
+MR2 当前新增 W001 七项、W002 十项，分别针对性 39/55 项通过；阶段全量 verify 尚待执行，下列完整计数仍指 MR1。
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 

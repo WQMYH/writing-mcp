@@ -4,7 +4,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { posix, relative } from "node:path";
 import JSZip from "jszip";
-import { stableId, type SourceDocument } from "@writing-mcp/core";
+import { sliceText, stableId, type SourceDocument } from "@writing-mcp/core";
 import { codedError } from "./errors.js";
 import { chapterNumber } from "./numbering.js";
 
@@ -53,7 +53,7 @@ export function htmlText(html:string):{content:string;fallbackTitle?:string}{
   const body=html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1]??html.replace(/<head\b[^>]*>[\s\S]*?<\/head>/gi,"");
   const heading=body.match(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/i)?.[1];
   const content=decodeXml(body.replace(/<!--[\s\S]*?-->/g,"").replace(/<(script|style|nav)\b[^>]*>[\s\S]*?<\/\1>/gi,"").replace(/<br\s*\/?\s*>/gi,"\n").replace(/<\/(?:p|div|li|tr|blockquote|h[1-6]|section|article)>/gi,"\n").replace(/<[^>]+>/g,"")).replace(/\u00a0/g," ").replace(/[ \t]+\n/g,"\n").replace(/\n[ \t]+/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
-  return{content,...(heading?{fallbackTitle:plainXmlText(heading).slice(0,100)}:{})};
+  return{content,...(heading?{fallbackTitle:sliceText(plainXmlText(heading),0,100)}:{})};
 }
 
 const epubChapterHeading=(value:string)=>/^(?:第([零〇○Ｏ０一二三四五六七八九十两\d]+)(?:章|回|节)|chapter\s+(\d+))(?:\s+.*)?$/i.exec(value);
@@ -66,7 +66,7 @@ export function splitEpubChunks(path:string,root:string,workRef:string,chunks:Ep
   // reverting to one-spine-item-per-chapter would silently destroy structure.
   const epubRel=relative(root,path).replaceAll("\\","/"),documents:SourceDocument[]=[];
   const headingCount=chunks.reduce((count,chunk)=>count+chunk.content.split("\n").filter(line=>epubChapterHeading(line.trim())).length,0);
-  if(!headingCount)return chunks.map((chunk,index)=>({documentRef:stableId("doc",workRef,epubRel,chunk.entryPath),relativePath:`${epubRel}#${chunk.entryPath}`,absolutePath:path,title:chunk.fallbackTitle||chunk.content.split("\n").find(Boolean)?.slice(0,100)||`Chapter ${index+1}`,kind:"chapter",content:chunk.content,chapterNumber:index+1,volumeNumber:1,localChapterNumber:index+1,sourceStartLine:1,sourceSegments:[{relativePath:`${epubRel}#${chunk.entryPath}`,startLine:1,endLine:chunk.content.split("\n").length,documentStartLine:1,documentEndLine:chunk.content.split("\n").length}],sourceMtimeMs:mtimeMs,sourceSize:Buffer.byteLength(chunk.content)}));
+  if(!headingCount)return chunks.map((chunk,index)=>({documentRef:stableId("doc",workRef,epubRel,chunk.entryPath),relativePath:`${epubRel}#${chunk.entryPath}`,absolutePath:path,title:chunk.fallbackTitle||sliceText(chunk.content.split("\n").find(Boolean)??"",0,100)||`Chapter ${index+1}`,kind:"chapter",content:chunk.content,chapterNumber:index+1,volumeNumber:1,localChapterNumber:index+1,sourceStartLine:1,sourceSegments:[{relativePath:`${epubRel}#${chunk.entryPath}`,startLine:1,endLine:chunk.content.split("\n").length,documentStartLine:1,documentEndLine:chunk.content.split("\n").length}],sourceMtimeMs:mtimeMs,sourceSize:Buffer.byteLength(chunk.content)}));
 
   type Segment={entryPath:string;startLine:number;endLine:number;documentStartLine:number;documentEndLine:number};
   type Pending={title:string;local:number;volume:number;entryPath:string;startLine:number;lines:string[];segments:Segment[]};
@@ -107,7 +107,7 @@ export async function epubDocuments(path:string,root:string,workRef:string,bookT
     if(totalDecoded>limits.maxTotalBytes)throw codedError("EPUB_TOTAL_TOO_LARGE","EPUB total decoded spine exceeds the package size limit");
     const parsed=htmlText(html);
     if(!parsed.content||coverLike(entryPath,item,parsed.content,parsed.fallbackTitle))continue;
-    chunks.push({entryPath,content:parsed.content,fallbackTitle:parsed.fallbackTitle??parsed.content.split("\n").find(Boolean)?.slice(0,100)??`Chapter ${chunks.length+1}`});
+    chunks.push({entryPath,content:parsed.content,fallbackTitle:parsed.fallbackTitle??sliceText(parsed.content.split("\n").find(Boolean)??`Chapter ${chunks.length+1}`,0,100)});
   }
   if(!chunks.length)throw codedError("EPUB_NO_READABLE_SPINE","EPUB contains no readable spine chapters");const documents=splitEpubChunks(path,root,workRef,chunks,sourceMtimeMs,pkg.title??bookTitle);if(!documents.length)throw codedError("EPUB_NO_READABLE_SPINE","EPUB contains no readable spine chapters");return documents;
 }

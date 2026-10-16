@@ -15,6 +15,46 @@ const makeWork=(rootPath:string):ParsedWork=>{
 };
 
 describe("M3 deterministic query analysis",()=>{
+  test.each(["😀", "𠀀"])("preserves %s through SQLite, excerpt windows and graph evidence (W-MCP-002)", async glyph => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-unicode-evidence-")), workRef = stableId("work", "unicode-evidence", root);
+    const document = (path: string, title: string, kind: SourceDocument["kind"], content: string): SourceDocument => ({
+      documentRef: stableId("doc", workRef, path), relativePath: path, absolutePath: path, title, kind, content, sourceMtimeMs: 1, sourceSize: Buffer.byteLength(content),
+    });
+    const splitContent = "p".repeat(2399) + glyph + " trailer";
+    const documents = [
+      document("role.md", "Iona", "character", "# Iona\n" + "x".repeat(892) + glyph + "z".repeat(300)),
+      document("split.md", "Split", "document", splitContent),
+      document("window.md", "Window", "document", "x".repeat(850) + glyph + "x".repeat(148) + "needle" + "x".repeat(142) + glyph + "x".repeat(800)),
+      document("fallback.md", "fallbackhit", "document", "y".repeat(899) + glyph + "z".repeat(1100)),
+    ];
+    const store = new WritingStore({ workRef, title: "Unicode evidence", rootPath: root, adapter: "generic", capabilities: [], documents });
+    try {
+      await store.index("rebuild");
+      const db = new DatabaseSync(join(root, ".writing-index", workRef.replace(":", "-"), "index.sqlite"), { readOnly: true });
+      try {
+        const contents = db.prepare("SELECT content FROM spans WHERE document_ref=? ORDER BY ordinal").all(documents[1]!.documentRef).map(row => String(row.content));
+        expect(contents.join("")).toBe(splitContent);
+        expect(contents.every(content => content.isWellFormed() && content.length <= 2400)).toBe(true);
+      } finally { db.close(); }
+      const direct = await store.explore("entity", "Iona", 20, 0);
+      expect(direct.results).toHaveLength(1);
+      expect(direct.results[0]!.evidence.excerpt.isWellFormed()).toBe(true);
+      const window = await store.explore("search", "needle", 20, 0);
+      expect(window.results[0]!.evidence.excerpt).toContain("needle");
+      expect(window.results[0]!.evidence.excerpt.isWellFormed()).toBe(true);
+      const fallback = await store.explore("search", "fallbackhit", 20, 0);
+      expect(fallback.results).not.toHaveLength(0);
+      expect(fallback.results[0]!.evidence.excerpt.isWellFormed()).toBe(true);
+      const neighborhood = await store.explore("neighborhood", "Iona", 20, 1);
+      const edges = neighborhood.results.flatMap(item => item.pathEvidence ?? []);
+      expect(edges).not.toHaveLength(0);
+      expect(edges.every(edge => edge.evidence.excerpt.isWellFormed())).toBe(true);
+      const packet = await store.context("needle", 10_000);
+      expect(packet.blocks).not.toHaveLength(0);
+      expect(packet.blocks.every(block => block.evidence.excerpt.isWellFormed())).toBe(true);
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
   test("finds relevant evidence from an unsegmented Chinese question",async()=>{
     const root=await mkdtemp(join(tmpdir(),"writing-mcp-cjk-query-")),store=new WritingStore(makeWork(root));
     try{

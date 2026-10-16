@@ -292,6 +292,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - A text-derivation version participates in each document semantic fingerprint. Upgrading from pre-MR2 fingerprints therefore reports stale and re-derives unchanged documents on the next incremental/query refresh; raw sources are never migrated. This is a derived-data invalidation within schema v4, not a SQLite schema migration.
 - Corrected splitting may change span ordinals/refs. Clients must use the returned revision and re-resolve old refs; a stable source path does not promise an eternal span ordinal. Repeated incremental indexing after the upgrade remains a no-op.
 
+### MR2 Unicode boundary amendment (2026-10-16, W-MCP-002)
+
+- For well-formed Unicode source, span hard cuts, 900-unit excerpts, 298-unit search windows, graph path evidence and 100-unit EPUB fallback titles never return half a UTF-16 surrogate pair. Existing caps remain UTF-16-unit caps, not code-point or grapheme-cluster promises.
+- A clipped excerpt omits a partially intersecting boundary code point; a hard-split source span instead carries the entire code point into the next span, so concatenating same-line chunks preserves the source. A custom cap too small for the next code point fails with RangeError rather than dropping data or looping; MCP uses its unchanged 2400-unit default.
+- The text-derivation fingerprint advances for corrected hard splitting; existing indices re-derive as specified above. Raw source text is not repaired, replaced or rewritten.
+
 ### M1 process lifecycle amendment (2026-08-17)
 
 - The stdio server shuts down gracefully and deterministically: SIGINT, SIGTERM, and stdin EOF (client disconnect) all route through one shutdown chain — close the MCP server (transport) before closing the `WritingService` — then exit with code 0. A 5-second grace guard forces termination, so a long synchronous SQLite operation that cannot be cancelled can never keep the process alive indefinitely.

@@ -12,7 +12,7 @@
 | `benchmark.test.ts` | 30 个机器可读基准任务的确定性门禁 |
 | `diagnostics.test.ts` | 诊断链：脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用、不可持久化降级、AUD-023 开发捕获有界命中 ref/score/locator 哈希（不存正文）、AUD-024 general JSONL 串行轮转/并发不丢不乱/写失败降级、Task 5B 当前返回 artifact 保护/清理延迟披露/capture truncate 写入计数 |
 | `diagnostic-retention.test.ts` | Task 5B 诊断保留：默认 64 次写入/1 MiB 扫描门槛、同目录扫描合并、稳定 mtime→Unicode code-point 文件排序、报告优先/closed capture 组清理、active capture 保护、协作锁延迟/死进程与畸形锁回收、ENOENT 与替换锁竞态 |
-| `epub.test.ts` | EPUB：正常双章节 spine、元数据、封面过滤、跨 spine 续章、独立作品引用；W-MCP-014 属性匹配引号/引号内 >、XML 单层实体与 URL 编码、container/spine id 解码、章节顺序/search/context/locator；缺失必需声明/资源拒绝部分 fresh，非线性/nav/cover/空内容过滤及无可读内容、路径/属性错误 |
+| `epub.test.ts` | EPUB：正常双章节 spine、元数据、封面过滤、跨 spine 续章、独立作品引用；W-MCP-014 属性匹配引号/引号内 >、XML 单层实体与 URL 编码、container/spine id 解码、章节顺序/search/context/locator；缺失必需声明/资源拒绝部分 fresh，非线性/nav/cover/空内容过滤及无可读内容、路径/属性错误；W002 heading/正文 fallback 标题在 100-unit 边界不切断代理对 |
 | `epub-resource-limits.test.ts` | AUD-028/Task 5A EPUB 资源上限：entry 数超限 `EPUB_TOO_MANY_ENTRIES`、OPF/单 spine/累计 spine 按解码 UTF-8 bytes 的中文多字节精确边界、总量超限 `EPUB_TOTAL_TOO_LARGE`（均可经构造器注入）、EPUB 2.0 包在默认上限下正常加载 |
 | `explore-bfs.test.ts` | 0~3 跳 BFS、fan-out/全局上限、逐边 pathEvidence、截断 |
 | `generic-txt.test.ts` | TXT：GBK/GB18030 解码、章节切分、章节编号重置推断新卷、原始文件行号偏移 |
@@ -36,7 +36,7 @@
 | `path-security.test.ts` | 授权 roots 缺失/越界、symlink/junction 越界、service 层强制 roots |
 | `resolve-matrix.test.ts` | 作品识别矩阵：空目录、不支持扩展名、多书歧义、同目录直接文件隔离、InkOS 新旧结构 |
 | `response-limits.test.ts` | Task 4 server 最终响应门禁：中文 UTF-8 byte accounting、8,192-byte 诊断预留、explore/context/resolve/diagnose/index 确定性 reducer、完整 L3→L2→L1→optional L0 次序、budget-unsatisfiable required 事实保护、真实 WritingStore→server omission 守恒、recorder 只见最终 data/error、动态 Markdown 防 CR/LF/控制字符伪造与 16,384-byte 上限、输出 schema 保真 |
-| `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限、长词 FTS 满池时的短原词候选、revision-scoped 暖查询复用与 rebuild 失效、core UTF-8 响应预裁剪（ambiguous tail 先于 results、omittedEstimate 守恒、evaluator 同口径） |
+| `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限、短原词候选、revision 缓存/重建失效、UTF-8 响应预裁剪；W002 SQLite 往返、直接摘录、命中/回退窗口、BFS pathEvidence 与 context 的代理对保真 |
 | `document-literal-search.test.ts` | document 查询字面子串语义：`%`、`_`、`\` 在相对路径和标题中仅匹配自身，不得被 SQLite LIKE 解释为通配符或转义符 |
 | `search-prf.test.ts` | Task 6 PRF 纯逻辑：冻结生产配置 `12/8/0.35`、原词/别名/停用词/单字/单 span 过滤、双字/三字/四字候选、bytewise tie-break、128 预频率池与单批调用、非法网格拒绝 |
 | `evaluator-isolation.test.ts` | evaluator-only 搜索隔离：环境变量不影响生产查询、调用级 ablation/PRF 不重建索引且不污染普通路径、生产配置与显式评测一致、非法网格拒绝、重复双字中文词可扩展真实候选 |
@@ -63,7 +63,7 @@
 | `adapter-pre-read-limits.test.ts` | AUD-029 读取前资源门禁：单文件 snapshot size 超限时 0 次 `readFile`；累计 size 将越界时不读取下一文件，防止“读入内存后才拒绝” |
 | `source-snapshot-reliability.test.ts` | Task 1 SourceSnapshot：完整相对路径避免重名碰撞、超过 12 层的精确枚举、单文件与增删指纹变化、越界 symlink 拒绝、status stale 后 explore 先增量索引、未变化快路径；W-MCP-007 incremental/rebuild 失败保留旧正文/revision、status stale 且可增量恢复 |
 | `fts-cold-init.test.ts` | R4 SQLite/FTS 冷启动：12 个独立进程经共享屏障并发打开同一新索引，验证 WAL 配置的有界 busy 重试与 `BEGIN IMMEDIATE` schema 双检不会暴露 `database is locked`，最终 schema v4/FTS 表唯一且完整 |
-| `span-hard-split.test.ts` | AUD-030 边界/定位/重组；W001 普通多行在追加前计入 LF 并满足 cap−1/cap/cap+1、小 cap 与 2400 边界；旧 schema-v4 分片指纹变 stale，原文不变仍增量重算且之后 noop |
+| `span-hard-split.test.ts` | AUD-030 边界/定位/重组；W001 多行追加前计入 LF、cap−1/cap/cap+1、旧指纹增量升级/noop；W002 emoji/补充汉字/BMP 硬切保真与原行定位，不可容纳码点的 cap 明确拒绝 |
 | `lifecycle.test.ts` | AUD-032/Task 5C 进程生命周期：SIGTERM/SIGINT 在时限内终止进程（POSIX 优雅 exit 0 / Windows 信号终止）、stdin EOF 优雅退出 exit 0、完整会话 stdout 只输出 JSON-RPC；runtime/termination promise 身份幂等、server→service 失败后置、5 秒悬挂兜底/成功取消、错误报告失败仍完成且零 stdout 写入 |
 
 ## 评测脚本（非 CI，本地评测用）

@@ -26,6 +26,25 @@ async function convertedBookFixture(){
 
 describe("generic EPUB technical validation",()=>{
   test.each([
+    { tag: "h1", glyph: "😀" }, { tag: "p", glyph: "😀" },
+    { tag: "h1", glyph: "𠀀" }, { tag: "p", glyph: "𠀀" },
+  ])("keeps $glyph intact at the $tag fallback-title boundary (W-MCP-002)", async ({ tag, glyph }) => {
+    const dir = await mkdtemp(join(tmpdir(), "writing-mcp-epub-unicode-title-")), path = join(dir, "title.epub");
+    const zip = await JSZip.loadAsync(await fixtureZip());
+    zip.file("OEBPS/content.opf", '<package><manifest><item id="one" href="chapter-1.xhtml"/></manifest><spine><itemref idref="one"/></spine></package>');
+    zip.file("OEBPS/chapter-1.xhtml", `<html><body><${tag}>${"T".repeat(99)}${glyph}title</${tag}></body></html>`);
+    await writeFile(path, await zip.generateAsync({ type: "nodebuffer" }));
+    const adapter = new GenericAdapter();
+    try {
+      const work = await adapter.load((await adapter.discover(path))[0]!);
+      expect(work.documents).toHaveLength(1);
+      expect(work.documents[0]!.title.isWellFormed()).toBe(true);
+      expect(work.documents[0]!.title).toBe("T".repeat(99));
+      expect(work.documents[0]!.content).toContain(glyph + "title");
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  test.each([
     { name: "percent ampersand", attributes: 'href="part%262.xhtml"', entry: "part&2.xhtml" },
     { name: "XML ampersand", attributes: 'href="part&amp;2.xhtml"', entry: "part&2.xhtml" },
     { name: "decimal ampersand", attributes: 'href="part&#38;2.xhtml"', entry: "part&2.xhtml" },
