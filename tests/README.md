@@ -47,7 +47,7 @@
 | `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见；W-MCP-007 热 rebuild 后同一服务新/旧正文、context、磁盘 spans、重复 rebuild 一致；AUD-018 真实响应 deadline 覆盖 explore/context/evaluator，超时后底层操作仍保持逐作品串行 |
 | `source-directory-observable.test.ts` | AUD-012 来源目录可观测：explore stats 的 contextSources（byLayer L1/L2/L3 + byKind）复用 AUD-013 注册表 |
 | `status-fast-path.test.ts` | status mtime/size 快速路径：指纹未变时重复 status 零 adapter.load（计数适配器）且结果与全路径语义一致、源编辑击穿快速路径报 stale、status 返回 contextSources |
-| `context-required-refs.test.ts` | AUD-005 requiredRefs 直接解析：池外 span/entity 强制命中、不存在 ref 进 omitted（not_found）、直解 ref 触发 budget_unsatisfiable、池内去重与优先；所有 ContextPacket 路径声明 excerpt-only accountingScope，usedTokens 等于返回块 tokens 之和 |
+| `context-required-refs.test.ts` | requiredRefs 池外 span/entity 直解、缺失/预算/优先与 excerpt-only accounting；W003 不可满足时 required/optional/excluded/duplicate/not-found 原因及预算恰好/少一；W004 去重后恢复 required/pin，不与 omitted 冲突，低预算时每 ref 只保留真实原因 |
 | `context-source-registry.test.ts` | AUD-013 来源提供器注册表：ENTITY_KINDS 全覆盖的语义分层映射、小写文档类型归一、required 晋升 L0、evidenceHash 去重、L3→低层预算裁剪、真实路径 L1 归属；Task 6 后 Context 内部搜索池固定为 12，requiredRefs 仍走独立直解 |
 | `bfs-batching.test.ts` | AUD-020 批量化护栏：宽图每节点 fan-out 确定性截断与重复运行一致、宽图 BFS 在确定性耗时预算内完成 |
 | `timeline.test.ts` | AUD-015 timeline 独立投影：章节+precedes 时序按章节位置排序、名称过滤、未知章节锚点稳定殿后、无时态数据 NO_RESULTS |
