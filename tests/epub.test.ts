@@ -26,6 +26,53 @@ async function convertedBookFixture(){
 
 describe("generic EPUB technical validation",()=>{
   test.each([
+    { name: "W011 literal named entities", html: "<p>&amp;lt;tag&amp;gt;</p>", want: "&lt;tag&gt;" },
+    { name: "W011 literal decimal entities", html: "<p>&#38;lt;tag&#38;gt;</p>", want: "&lt;tag&gt;" },
+    { name: "W011 literal hex entities", html: "<p>&#x26;lt;tag&#x26;gt;</p>", want: "&lt;tag&gt;" },
+    { name: "W011 basic named control", html: "<p>&lt;tag&gt; &amp; &quot;quoted&quot; &apos;apostrophe&apos; A&nbsp;B</p>", want: '<tag> & "quoted" \'apostrophe\' A B' },
+    { name: "W011 numeric Unicode control", html: "<p>&#60;tag&#x3e; &#128512; &#x20000;</p>", want: "<tag> 😀 𠀀" },
+    { name: "W011 one amp layer control", html: "<p>&amp;amp;</p>", want: "&amp;" },
+    { name: "W011 uppercase literal", html: "<p>&AMP;LT;</p>", want: "&LT;" },
+    { name: "W011 unknown entity control", html: "<p>&mystery; &#notnumber;</p>", want: "&mystery; &#notnumber;" },
+    { name: "W011 metadata entities", html: "<p>Body.</p>", want: "Body.", metadataTitle: "&amp;lt;archive&amp;gt;", wantTitle: "&lt;archive&gt;" },
+    { name: "W016 plain break control", html: "<p>Alpha<br/>Beta</p>", want: "Alpha\nBeta" },
+    { name: "W016 double-quoted break", html: '<p>Alpha<br class="scene"/>Beta</p>', want: "Alpha\nBeta" },
+    { name: "W016 single-quoted break", html: "<p>Alpha<br class='scene' />Beta</p>", want: "Alpha\nBeta" },
+    { name: "W016 multiline break", html: '<p>Alpha<br\nclass="scene" />Beta</p>', want: "Alpha\nBeta" },
+    { name: "W016/W020 quoted greater-than break", html: '<p>Alpha<br title="a > b" />Beta</p>', want: "Alpha\nBeta" },
+    { name: "W020 double-quoted tag", html: '<p title="a > b">Alpha</p>', want: "Alpha" },
+    { name: "W020 single-quoted tag", html: "<p title='a > b'>Alpha</p>", want: "Alpha" },
+    { name: "W020 quoted body", html: "<p>Alpha</p>", bodyAttributes: 'data-note="a > b"', want: "Alpha" },
+    { name: "W020 quoted heading", html: '<h1 title="a > b">Title</h1><p>Alpha</p>', want: "Title\nAlpha", wantTitle: "Title" },
+    { name: "W020 quoted metadata title", html: "<p>Alpha</p>", metadataAttributes: 'data-note="a > b"', metadataTitle: "Archive", want: "Alpha", wantTitle: "Archive" },
+    { name: "W020 nested quoted tags", html: '<p><span title="a > b">Alpha</span><em title=\'c > d\'>Beta</em></p>', want: "AlphaBeta" },
+    { name: "W020 filtered-content control", html: '<script title="a > b">bad</script><style title="a > b">bad</style><nav title="a > b">bad</nav><p>Alpha</p>', want: "Alpha" },
+  ])("preserves body text: $name", async ({ html, want, bodyAttributes, metadataTitle, metadataAttributes, wantTitle }) => {
+    const dir = await mkdtemp(join(tmpdir(), "writing-mcp-epub-text-")), path = join(dir, "fidelity.epub");
+    const zip = await JSZip.loadAsync(await fixtureZip());
+    zip.file("OEBPS/content.opf", `<package xmlns:dc="http://purl.org/dc/elements/1.1/"><metadata><dc:title ${metadataAttributes ?? ""}>${metadataTitle ?? "Fidelity"}</dc:title></metadata><manifest><item id="one" href="chapter-1.xhtml"/></manifest><spine><itemref idref="one"/></spine></package>`);
+    zip.file("OEBPS/chapter-1.xhtml", `<html><head><title>Ignored head</title></head><body ${bodyAttributes ?? ""}>${html}</body></html>`);
+    await writeFile(path, await zip.generateAsync({ type: "nodebuffer" }));
+    const adapter = new GenericAdapter();
+    try {
+      const work = await adapter.load((await adapter.discover(path))[0]!);
+      expect(work.documents).toHaveLength(1);
+      expect(work.documents[0]!.content).toBe(want);
+      if (wantTitle) expect(metadataTitle ? work.title : work.documents[0]!.title).toBe(wantTitle);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  test.each(["&#x110000;", "&#55296;", "&#0;"])("rejects an invalid numeric text reference %s instead of publishing damaged text (W011)", async entity => {
+    const dir = await mkdtemp(join(tmpdir(), "writing-mcp-epub-bad-text-")), path = join(dir, "invalid.epub");
+    const zip = await JSZip.loadAsync(await fixtureZip());
+    zip.file("OEBPS/chapter-1.xhtml", `<html><body><p>${entity}</p></body></html>`);
+    await writeFile(path, await zip.generateAsync({ type: "nodebuffer" }));
+    const adapter = new GenericAdapter();
+    try { await expect(adapter.load((await adapter.discover(path))[0]!)).rejects.toMatchObject({ code: "EPUB_TEXT_INVALID" }); }
+    finally { await rm(dir, { recursive: true, force: true }); }
+  });
+
+  test.each([
     { tag: "h1", glyph: "😀" }, { tag: "p", glyph: "😀" },
     { tag: "h1", glyph: "𠀀" }, { tag: "p", glyph: "𠀀" },
   ])("keeps $glyph intact at the $tag fallback-title boundary (W-MCP-002)", async ({ tag, glyph }) => {

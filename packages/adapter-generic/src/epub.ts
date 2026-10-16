@@ -29,8 +29,17 @@ const xmlAttribute=(tag:string,name:string)=>{
   }
   return undefined;
 };
-const decodeXml=(value:string)=>value.replace(/&#x([0-9a-f]+);/gi,(_,code:string)=>String.fromCodePoint(Number.parseInt(code,16))).replace(/&#(\d+);/g,(_,code:string)=>String.fromCodePoint(Number(code))).replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").replace(/&quot;/gi,"\"").replace(/&apos;|&#39;/gi,"'");
-const plainXmlText=(value:string)=>decodeXml(value.replace(/<[^>]+>/g,"")).trim();
+const decodeXml=(value:string)=>value.replace(/&(#x[0-9a-f]+|#\d+|nbsp|amp|lt|gt|quot|apos);/gi,(_match,entity:string)=>{
+  const name=entity.toLowerCase();
+  if(name==="nbsp")return " ";
+  if(!name.startsWith("#"))return attributeEntities[name]!;
+  const point=name.startsWith("#x")?Number.parseInt(name.slice(2),16):Number(name.slice(1));
+  if(!Number.isSafeInteger(point)||point<=0||point>0x10ffff||(point>=0xd800&&point<=0xdfff))throw codedError("EPUB_TEXT_INVALID","EPUB text contains an invalid numeric character reference");
+  return String.fromCodePoint(point);
+});
+const tagPart=String.raw`(?:[^"'<>]|"[^"]*"|'[^']*')`;
+const stripTags=(value:string)=>value.replace(new RegExp(`<${tagPart}+>`,"g"),"");
+const plainXmlText=(value:string)=>decodeXml(stripTags(value)).trim();
 
 export async function epubPackage(zip:JSZip,limits:EpubLimits):Promise<{opfPath:string;opf:string;title?:string;manifest:Map<string,EpubManifestItem>;spine:EpubSpineItem[]}>{
   const container=await zip.file("META-INF/container.xml")?.async("string"),rootfile=container?.match(/<rootfile\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/i)?.[0],opfPath=rootfile?xmlAttribute(rootfile,"full-path"):undefined;
@@ -41,7 +50,7 @@ export async function epubPackage(zip:JSZip,limits:EpubLimits):Promise<{opfPath:
   for(const match of opf.matchAll(/<item\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi)){const tag=match[0],id=xmlAttribute(tag,"id"),href=xmlAttribute(tag,"href");if(id&&href)manifest.set(id,{href,mediaType:xmlAttribute(tag,"media-type"),properties:xmlAttribute(tag,"properties")});}
   const spine:EpubSpineItem[]=[];
   for(const match of opf.matchAll(/<itemref\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi)){const tag=match[0],idref=xmlAttribute(tag,"idref"),linear=xmlAttribute(tag,"linear");if(!idref&&linear?.toLowerCase()!=="no")throw codedError("EPUB_SPINE_ITEM_MISSING","EPUB required spine entry has no idref");if(idref)spine.push({idref,linear});}
-  const rawTitle=opf.match(/<dc:title\b[^>]*>([\s\S]*?)<\/dc:title>/i)?.[1],title=rawTitle?plainXmlText(rawTitle):undefined;
+  const rawTitle=opf.match(new RegExp(`<dc:title\\b${tagPart}*>([\\s\\S]*?)<\\/dc:title>`,"i"))?.[1],title=rawTitle?plainXmlText(rawTitle):undefined;
   return{opfPath,opf,title:title||undefined,manifest,spine};
 }
 
@@ -50,9 +59,11 @@ export async function bestEffortEpubTitle(path:string):Promise<string|undefined>
 }
 
 export function htmlText(html:string):{content:string;fallbackTitle?:string}{
-  const body=html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1]??html.replace(/<head\b[^>]*>[\s\S]*?<\/head>/gi,"");
-  const heading=body.match(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/i)?.[1];
-  const content=decodeXml(body.replace(/<!--[\s\S]*?-->/g,"").replace(/<(script|style|nav)\b[^>]*>[\s\S]*?<\/\1>/gi,"").replace(/<br\s*\/?\s*>/gi,"\n").replace(/<\/(?:p|div|li|tr|blockquote|h[1-6]|section|article)>/gi,"\n").replace(/<[^>]+>/g,"")).replace(/\u00a0/g," ").replace(/[ \t]+\n/g,"\n").replace(/\n[ \t]+/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
+  const body=html.match(new RegExp(`<body\\b${tagPart}*>([\\s\\S]*?)<\\/body>`,"i"))?.[1]??html.replace(new RegExp(`<head\\b${tagPart}*>[\\s\\S]*?<\\/head>`,"gi"),"");
+  const heading=body.match(new RegExp(`<h[1-6]\\b${tagPart}*>([\\s\\S]*?)<\\/h[1-6]>`,"i"))?.[1];
+  const filtered=body.replace(/<!--[\s\S]*?-->/g,"").replace(new RegExp(`<(script|style|nav)\\b${tagPart}*>[\\s\\S]*?<\\/\\1>`,"gi"),"");
+  const text=filtered.replace(new RegExp(`<${tagPart}+>`,"g"),tag=>/^<br(?=[\s/>])/i.test(tag)||/^<\/(?:p|div|li|tr|blockquote|h[1-6]|section|article)\s*>$/i.test(tag)?"\n":"");
+  const content=decodeXml(text).replace(/\u00a0/g," ").replace(/[ \t]+\n/g,"\n").replace(/\n[ \t]+/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
   return{content,...(heading?{fallbackTitle:sliceText(plainXmlText(heading),0,100)}:{})};
 }
 

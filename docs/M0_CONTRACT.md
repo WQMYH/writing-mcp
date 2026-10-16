@@ -343,6 +343,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Status mtime/size fast path: when the source fingerprint (file name+mtime+size directory, the same AUD-021 fingerprint that guards explore/context reuse) is unchanged since the store was last loaded, `status` reuses the existing store instead of re-reading every source file. Under normal operation the fingerprint change captures all parse-input changes, so reuse is best-effort safe; known edge cases (mtime granularity, sub-millisecond file replacement) can let content changes slip through until the next file modification or process restart. Any file change, first call in a process, or non-status mode falls through to the full semantic path; the store-level semantic snapshot comparison remains the sole authority for `stale`/`fresh` and is unchanged.
 - No schema, error-code, freshness-vocabulary, or `IndexStats` shape changes; `contextSources` is additive and optional.
 
+### MR2 EPUB text fidelity amendment (2026-10-16, W011/W016/W020)
+
+- Body and metadata text decode each original supported named/numeric character reference once. Escaped literal entity spellings are not recursively decoded; unknown references remain literal. Invalid numeric text references (zero, surrogate values or values above U+10FFFF) fail with `EPUB_TEXT_INVALID`, without publishing a partial work. Attribute errors retain `EPUB_ATTRIBUTE_INVALID`.
+- Tag boundaries respect matched attribute quotes, including `>` inside attributes in body, headings and metadata. Attributed/self-closing/multiline `br` elements preserve an explicit LF; existing script/style/nav/comment filtering remains. This is bounded EPUB text extraction, not a general DOM/DTD implementation.
+- Corrected parsed text/title/segments participate in the existing semantic fingerprint and trigger re-derivation where changed. Original EPUB files are never migrated or rewritten; locators describe the corrected extracted text, not HTML byte offsets.
+
 ## Benchmark gate
 
 ### Reliability gate amendment (Task 2, 2026-08-21)
