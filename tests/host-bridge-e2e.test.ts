@@ -10,7 +10,7 @@ import { createBridgeServer, type BridgeServer } from "../packages/host-bridge/s
 import { createPairingManager } from "../packages/host-bridge/src/auth.js";
 import { createProjectToolProxy } from "../packages/host-bridge/src/tool-proxy.js";
 import { storyforgePluginManifest } from "@writing-mcp/host-plugin-storyforge";
-import { computeContentHash, computeSnapshotHash } from "../packages/host-bridge-protocol/src/index.js";
+import { computeContentHash, computeSnapshotHash, projectStatusDataSchema } from "../packages/host-bridge-protocol/src/index.js";
 
 const MCP_ENTRY = resolve("packages/mcp-server/dist/index.js");
 const ORIGIN = "http://127.0.0.1:1111";
@@ -144,6 +144,7 @@ describe("host bridge M5 acceptance chain (HB-M6)", () => {
       expect(activated.data).toMatchObject({ outcome: "activated", bindingState: "fresh" });
       activatedHash = String(activated.data?.snapshotHash);
       expect(activatedHash).toBe(computeSnapshotHash(1, first as never));
+      expect(projectStatusDataSchema.safeParse((await stack.call("GET", `/v1/projects/${PROJECT}/status`)).data).success, "fresh HTTP status must match the strict public projection (W-MCP-023)").toBe(true);
       expect((await stack.call("POST", `/v1/projects/${PROJECT}/snapshot`, { body: draft(PROJECT, first) })).data).toMatchObject({ outcome: "noop" });
 
       // 4 resolve and index against the bridge-owned derived directory
@@ -188,6 +189,7 @@ describe("host bridge M5 acceptance chain (HB-M6)", () => {
       await stack.close();
       stack = await openStack(bridgeRoot, { restore: true });
       expect((await stack.call("GET", `/v1/projects/${PROJECT}/status`)).data).toMatchObject({ bindingState: "stale", snapshotHash: activatedHash });
+      expect(projectStatusDataSchema.safeParse((await stack.call("GET", `/v1/projects/${PROJECT}/status`)).data).success, "restored HTTP status must match the same strict projection (W-MCP-023)").toBe(true);
       expect((await stack.call("POST", `/v1/projects/${PROJECT}/snapshot`, { body: draft(PROJECT, first) })).data).toMatchObject({ outcome: "activated", bindingState: "fresh" });
       expect(JSON.stringify((await stack.tool("explore", { operation: "search", query: "苍梧山", limit: 5 })).data)).toContain("第二章");
 

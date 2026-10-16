@@ -60,7 +60,7 @@ function parseArgs(argv: string[]): ParsedCliArgs | null {
   return {
     root: resolve(root),
     port,
-    mcpEntry: mcpEntryRaw !== undefined ? resolve(mcpEntryRaw) : resolve(dirname(fileURLToPath(import.meta.url)), "../mcp-server/dist/index.js"),
+    mcpEntry: mcpEntryRaw !== undefined ? resolve(mcpEntryRaw) : resolve(dirname(fileURLToPath(import.meta.url)), "../../mcp-server/dist/index.js"),
     mcpRoot: mcpRootRaw !== undefined ? resolve(mcpRootRaw) : join(resolve(root), "projects"),
     hostOrigins,
   };

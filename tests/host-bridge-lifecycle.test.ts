@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { request as httpRequest } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
+import type { AddressInfo } from "node:net";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -208,10 +209,18 @@ describe("host bridge instance lock (HB-M1)", () => {
 });
 
 describe("host bridge CLI lifecycle (HB-M1)", () => {
-  test("stdin EOF shuts the bridge down, releases the lock, and never prints the code to health", async () => {
+  test.each([
+    { entry: "default", cwd: "repository" }, { entry: "default", cwd: "outside" },
+    { entry: "explicit", cwd: "repository" }, { entry: "explicit", cwd: "outside" },
+  ])("boots the compiled $entry entry from $cwd, then EOF releases the lock (W-MCP-022)", async ({ entry, cwd }) => {
     const root = await mkdtemp(join(tmpdir(), "hb-cli-"));
-    const port = 48930 + Math.floor(Math.random() * 400);
-    const child = spawn(process.execPath, [CLI_ENTRY, "--root", root, "--port", String(port), "--mcp-entry", MCP_ENTRY], {
+    const listener = createServer();
+    await new Promise<void>(done => listener.listen(0, "127.0.0.1", done));
+    const port = (listener.address() as AddressInfo).port;
+    await new Promise<void>(done => listener.close(() => done()));
+    const child = spawn(process.execPath, [CLI_ENTRY, "--root", root, "--port", String(port), ...(entry === "explicit" ? ["--mcp-entry", MCP_ENTRY] : [])], {
+      cwd: cwd === "outside" ? root : process.cwd(),
+      windowsHide: true,
       env: { ...process.env, WRITING_MCP_ROOTS: join(root, "projects") } as NodeJS.ProcessEnv,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -228,17 +237,18 @@ describe("host bridge CLI lifecycle (HB-M1)", () => {
         child.once("exit", (exitCode) => rejectPromise(new Error(`cli exited early with ${exitCode}`)));
       });
       expect(code.length).toBeGreaterThanOrEqual(22);
+      let ready = false;
       for (let attempt = 0; attempt < 60; attempt += 1) {
-        try {
-          const health = await request(port, "/v1/health");
-          if (health.status === 200) {
-            expect(health.json).toMatchObject({ data: { processState: "ready" } });
-            expect(health.text).not.toContain(code);
-            break;
-          }
-        } catch { /* not listening yet */ }
+        const health = await request(port, "/v1/health").catch(() => undefined);
+        if (health?.status === 200) {
+          expect(health.json).toMatchObject({ data: { processState: "ready" } });
+          expect(health.text).not.toContain(code);
+          ready = true; break;
+        }
+        if (child.exitCode !== null) throw new Error(`CLI exited before readiness: ${child.exitCode}`);
         await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
       }
+      expect(ready).toBe(true);
       child.stdin.end();
       const exit = await new Promise<number | null>((resolvePromise, rejectPromise) => {
         const timer = setTimeout(() => rejectPromise(new Error("cli did not exit within 10s of stdin EOF")), 10_000);

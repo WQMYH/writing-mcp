@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-17 00:11 +08:00（MR4 四项功能及阶段门禁通过，进入 MR5）
-> 当前状态：MR1～MR4 共 20 类功能及对应阶段门禁通过。MR4 被测代码 `ef21164`：本机完整 verify 57 文件/396 项、公共基准 30/30、coverage lines 93.02% / branches 80.02%，双平台 CI `38929508530` 完整通过；私有 top-20 42/42、required 16/16、gold:gate/check 通过且未更新快照。接续 MR5 W017/019/022/023/025，五类及 MR6 综合验收未完成；25 类目标 active，Draft PR 不合并。
+> 检查点时间：2026-10-17 00:20 +08:00（MR5 W022/W023 针对性门禁通过）
+> 当前状态：MR1～MR4 阶段验收通过。MR5 W022 默认 MCP 入口、W023 严格 status 投影已修复，默认入口两个真实进程失败与 HTTP schema 失败已复现；修后默认/显式 × 仓库/外部 cwd、fresh/restored status 及相关 38 项、check/lint 通过。W017/019 捕获保护/恢复、W025 Unicode 长度和 MR5 阶段验收待完成；25 类目标 active，Draft PR 不合并。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -197,6 +197,7 @@ MR4 新增 W003/W004 三项、W006 三项、W018 三项，共九项；完整 ver
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 > 推送状态校正（2026-09-01）：下方 HB-M0～HB-M3 条目末尾的“本地提交，未推送”保留为当时的历史状态；对应 Writing MCP 提交现已随 `e340961` 进入 `origin/main`。Storyforge 配对提交仍只在本地。
 
+- `d55fb55` — docs(mr4)：收口四项功能与完整/私有/gold/双平台门禁，保留完整引文露出与外部 tokenizer 的独立口径，继续 MR5，已推送。
 - `ef21164` — fix(context)，W018：context/timeline 共用 1-based source-order 章节位置，工具描述/契约对齐；3 项先失败后通过，相关 32 项、stdio/协议 7 项及 check/lint 通过。MR4 完整 verify 57/396、30/30、lines 93.02%、branches 80.02%，双平台 CI `38929508530`、私有 top-20 42/42 required 16/16、gold:gate/check 通过，已推送。
 - `bd592b6` — fix(search)，W006：评分大小写一致，窗口直接取原文 Unicode 不区分大小写匹配位置，避免 lowercased 偏移变长；3 项先失败后通过，相关 39 项及 check/lint 通过，已推送。
 - `f70f29d` — fix(context)，W003/W004：预算不可满足时保留各类遗漏原因，显式 required/pin 恢复后不再同时报告 duplicate；三项有效失败→通过回归、相关 24 项、check/lint 通过，已推送。首轮测试并发直调造成的临时句柄干扰不计入产品失败证据，已改顺序调用后确认真实断言失败。

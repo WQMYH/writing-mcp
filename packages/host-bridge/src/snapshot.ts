@@ -273,7 +273,7 @@ export function createSnapshotPipeline(options: SnapshotPipelineOptions) {
     status(hostProjectId: string, origin: string): { hostProjectId: string; bindingState: ProjectBindingState; snapshotHash?: string; workRef?: string } {
       const key = projectKey(hostProjectId, origin);
       const memory = bindings.get(key);
-      if (memory) return { hostProjectId, ...memory };
+      if (memory) return { hostProjectId, bindingState: memory.bindingState, snapshotHash: memory.snapshotHash, workRef: memory.workRef };
       return { hostProjectId, bindingState: "empty" };
     },
     async restoreFromManifests(): Promise<number> {
