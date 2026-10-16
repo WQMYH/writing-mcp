@@ -52,6 +52,12 @@ Moving a work or document intentionally changes its reference. Editing content w
 - `timeline` is an independent deterministic projection, not full-text search: it returns entities carrying temporal attributes (`valid_from_chapter`, `valid_to_chapter`, or `narrative_time`) plus `precedes` sequence relations, ordered by chapter position, then `valid_to_chapter` position, then `narrative_time`, then reference. An optional query filters the projection by name substring. Results report `TIMELINE_PROJECTION`; an empty projection reports `NO_RESULTS`.
 - Chapter-tense filtering against a target chapter anchor is deferred until the target-chapter input exists (AUD-012); no new public parameter is introduced by this amendment.
 
+### MR3 Chapter title-alias lifecycle amendment (2026-10-16, W013)
+
+- Chapter identity remains document-scoped across title edits. Its automatic alias is derived from the current canonical title, not a cumulative history of former titles. Incremental indexing, noop/reopen and cold rebuild therefore agree on current Chapter aliases and native references.
+- v1 has no explicit source declaration or write API for Chapter aliases. Only Chapter title-derived aliases are recomputed; other entities' persisted aliases survive ordinary incremental reconciliation. Manual cache edits are not a source of truth and are not promised to survive deleting/rebuilding the index. No source alias grammar or alias CRUD API is introduced.
+- The existing semantic derivation version invalidates legacy cached derivations once; original files and schema-v4 storage remain unchanged.
+
 ### M3 deterministic PRF candidate-expansion amendment (2026-08-21)
 
 - Search may perform one deterministic pseudo-relevance-feedback (PRF) expansion after the existing first-pass ranking. PRF is a retrieval candidate mechanism owned by the MCP knowledge-access layer: it neither interprets authorial intent nor generates, reviews, revises, or writes creative content. It does not change any MCP input/output schema.

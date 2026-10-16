@@ -27,7 +27,7 @@
 | `host-bridge-cli-boot.test.ts` | HB-M5 启动接线：`--host-origin` 可重复且仅接受精确 loopback http Origin（`*`/非 loopback/https/带路径一律退出码 2 且不监听）、配对后的 Origin 白名单内外 200/403 冻结码、冷启动 bridgeRoot 也静态注册 storyforge manifest（项目路由不再 `BRIDGE_PLUGIN_DISABLED`） |
 | `host-bridge-e2e.test.ts` | HB-M6 Bridge 侧真实链：loopback 启动/配对、快照 activate/no-op、真实 MCP 五工具、ContextPacket 证据、重启恢复、失败回滚、活跃 SQLite 下的维护式派生删除、重新快照/重建、授权目录约束，以及未认证/恶意 Origin 负矩阵 |
 | `host-plugin-manifest.test.ts` | HB-M0 插件 manifest 冻结：七字段（id/apiVersion/hostCompatibility/minimumPermissions/exportCategories/license/testMatrix）齐全且 strict、错误身份/apiVersion/枚举/空权限拒绝、最小权限词表冻结并覆盖 fixture、生成 fixture 与运行期注册常量一致 |
-| `graph-identity-evidence.test.ts` | schema v4 图：重复 Chapter 标题独立身份、按源 ordinal 排序、同名实体全部定义、规范来源晋升、多次 mention、多 span 关系证据；W-MCP-012 五类非章节资料编辑及无引用对照保留 precedes/证据，noop、重开、冷建一致 |
+| `graph-identity-evidence.test.ts` | schema v4 图：重复 Chapter 标题独立身份、按源 ordinal 排序、同名实体全部定义、规范来源晋升、多次 mention、多 span 关系证据；W-MCP-012 五类非章节资料编辑及无引用对照保留 precedes/证据；W013 Chapter 标题改名/缩短/恢复时只重算自动标题别名，非 Chapter 持久化别名保留，noop/重开/冷建的标题及原生引用一致 |
 | `index-lifecycle.test.ts` | 索引生命周期：不兼容 schema 只读报告/显式重建、失败事务保留上一 revision、未解析引用入库、status stale 语义、源顺序 snapshot、中断恢复、writer lock、增量影响范围、实体变化刷新引用 |
 | `inkos-fixture.test.ts` | InkOS：静态最小 fixture 的稳定作品引用、原生文档类型、章节编号 |
 | `mcp-stdio.test.ts` | MCP stdio：枚举五工具、顺序调用 resolve/index/explore/context/diagnose、诊断 hook、结构化错误信封 |

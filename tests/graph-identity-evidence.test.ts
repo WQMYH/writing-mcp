@@ -36,6 +36,47 @@ const document = (
 const indexPath = (work: ParsedWork) => join(work.rootPath, ".writing-index", work.workRef.replace(":", "-"), "index.sqlite");
 
 describe("schema v4 graph identity and evidence", () => {
+  test("recomputes Chapter title aliases without dropping other persisted aliases (W-MCP-013)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-title-alias-")), ref = stableId("work", "graph-test", root);
+    const chapter = document(ref, "one.md", "Opening Gate", "chapter", "# Opening Gate\nDawn.", 1);
+    const witness = document(ref, "two.md", "After", "chapter", "# After\n[[Opening Gate]] and [[Opening]].", 2);
+    const work = workAt(root, [document(ref, "role.md", "Iona", "character", "# Iona"), chapter, witness]);
+    const store = new WritingStore(work);
+    const chapterState = (path: string) => {
+      const db = new DatabaseSync(path, { readOnly: true });
+      try {
+        return {
+          aliases: db.prepare("SELECT e.entity_ref,a.alias,a.normalized_alias FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref WHERE e.kind='Chapter' ORDER BY e.entity_ref,a.normalized_alias").all(),
+          references: db.prepare("SELECT source_ref,target_ref FROM edges WHERE kind='mentions' ORDER BY source_ref,target_ref").all(),
+          unresolved: db.prepare("SELECT text,reason FROM unresolved_mentions ORDER BY text").all(),
+        };
+      } finally { db.close(); }
+    };
+    try {
+      await store.index("rebuild");
+      const identity = (await store.explore("entity", "Opening Gate", 20, 0)).results[0]!.ref;
+      const db = new DatabaseSync(indexPath(work));
+      try {
+        const owner = db.prepare("SELECT entity_ref FROM entities WHERE name='Iona'").get()!;
+        db.prepare("INSERT INTO aliases VALUES(?,?,?)").run(String(owner.entity_ref), "Nightbird", "nightbird");
+        db.prepare("INSERT INTO aliases VALUES(?,?,?)").run(identity, "Ancient title", "ancient title");
+      } finally { db.close(); }
+      for (const title of ["Opening", "Opening Gate"]) {
+        chapter.title = title; chapter.content = `# ${title}\nDawn.`; chapter.sourceSize = Buffer.byteLength(chapter.content);
+        await store.index("incremental");
+        const state = chapterState(indexPath(work));
+        expect(state.aliases.filter(row => row.entity_ref === identity)).toEqual([{ entity_ref: identity, alias: title, normalized_alias: title.toLowerCase() }]);
+        expect((await store.explore("entity", "Nightbird", 20, 0)).results.map(item => item.title)).toEqual(["Iona"]);
+        const cold = new WritingStore(work, join(root, "cold.sqlite"));
+        try { await cold.index("rebuild"); expect(state).toEqual(chapterState(join(root, "cold.sqlite"))); } finally { cold.close(); }
+        await store.index("incremental");
+        expect(chapterState(indexPath(work))).toEqual(state);
+        store.close();
+        expect((await store.explore("entity", title, 20, 0)).results[0]!.ref).toBe(identity);
+      }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
   test.each([
     { kind: "character", title: "Iona" },
     { kind: "foreshadow", title: "Iona" },

@@ -9,8 +9,8 @@ import { derivePrfTerms, PRODUCTION_PRF_CONFIGURATION, validatePrfConfiguration,
 import type { ContextBlock, ContextOptions, ContextPacket, EntityKind, ExploreItem, ExploreOperation, ExploreResult, IndexResult, ParsedWork, SearchExperimentOptions } from "./types.js";
 
 const SCHEMA_VERSION = 4;
-// Increment when unchanged source must be re-derived under corrected text rules.
-const TEXT_DERIVATION_VERSION = 3;
+// Increment when unchanged source must be re-derived under corrected text/graph rules.
+const TEXT_DERIVATION_VERSION = 4;
 const SOFTWARE_VERSION = "0.1.0";
 const MAX_RESPONSE_BYTES = 200_000;
 const CONTEXT_SEARCH_LIMIT = 12;
@@ -465,6 +465,8 @@ export class WritingStore {
       db.prepare("DELETE FROM aliases WHERE entity_ref=?").run(entityRef);
       db.prepare("DELETE FROM entities WHERE entity_ref=?").run(entityRef);
     }
+    // Chapter aliases are current-title derivations, not a title-history store.
+    db.exec("DELETE FROM aliases WHERE entity_ref IN (SELECT entity_ref FROM entities WHERE kind='Chapter')");
     for(const [entityRef,definition] of canonical){
       const kind=String(definition.kind),spanRef=String(definition.span_ref),identityHash=hash(`${this.work.workRef}\0${kind}\0${entityRef}`),evidenceHash=String(definition.evidence_hash);
       const chapterRef=kind==="Chapter"?entityRef:null;

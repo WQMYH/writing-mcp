@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-16 23:38 +08:00（MR2 功能及阶段门禁通过，进入 MR3）
-> 当前状态：MR1 三项、MR2 六项功能及阶段门禁已通过。MR2 被测代码 `8595bee`：本机与双平台 CI 完整 verify 57 文件/369 项、公共基准 30/30、coverage lines 92.84% / branches 79.77%；私有 top-20 42/42、required 16/16、证据覆盖率 100%，gold @50 均 1.0。原 gold:check 出现 holdout @5/MRR 差异；单变量对照证实源于 W001 正确分片，用户明确接受重校准，已由 gold:update 绑定被测提交，gold:gate/check 及私有硬门禁重跑通过；原差异与对照不抹除。继续 MR3，25 类目标保持 active，Draft PR 不合并。
+> 检查点时间：2026-10-16 23:42 +08:00（MR3 W013 针对性门禁通过）
+> 当前状态：MR1 三项、MR2 六项功能及阶段门禁已通过，MR2 完整结果见提交清单。MR3 进行中：W013 现只重算 Chapter 当前标题派生别名，保留其他实体持久化别名；标题缩短/恢复、Chapter 身份不变、原生引用与冷建一致的新回归先失败后通过，相关 35 项、check/lint 通过。MR3 其余六项及阶段全量验收待完成；25 类目标 active，Draft PR 不合并。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -76,7 +76,7 @@ pnpm start
 | M0.1 | MR5 待补强 | 全工具诊断 wrapper、显式 capture、脱敏、有界记录及协议错误边界既有实现保留 | W019 捕获恢复顺序与 W017 生产 CLI 活动捕获保护仍待修复 |
 | M1 | MR2 功能及阶段门禁通过 | W001/002/010/011/016/020 六项失败→通过回归、全量/私有/双平台 CI 通过；W014 必需 spine 完整性门禁保留 | 不声称覆盖全部 EPUB 变体；独立客户端/宿主综合验收仍属 MR6 |
 | M2 | MR1 公开验收通过 | W012 无关顺序边/证据保留，W007 受管理连接替换、热服务/磁盘一致及失败恢复，本机 Windows 与双平台完整 CI 通过；W014 完整性见 M1 | PR 仍 Draft，未合并；该门禁不是跨进程读协调或旧版 Linux WAL 低层机制取证，亦不关闭其余 22 项 |
-| M3 | MR3/MR4 待补强 | search/entity/neighborhood/document/stats、问句分析、PRF/缓存、BFS/timeline、词汇表、真实 deadline 等既有能力保留 | W005/008/009/013/015/021/024 的身份/歧义/增量/评分/字面匹配，以及 W006/018 证据窗口/章节位置仍待修复；历史私有指标不是本轮新证据 |
+| M3 | MR3/MR4 待补强 | 既有检索/图能力保留；W013 当前标题别名生命周期及与冷建一致回归通过 | W005/008/009/015/021/024 的身份/歧义/增量/评分/字面匹配，以及 W006/018 证据窗口/章节位置仍待修复；MR3 阶段门禁未运行 |
 | M4 | MR4 待补强 | ContextPacket、抽取式装配、约束接线、excerpt-only accountingScope、预算与响应限额既有实现保留 | W003/004/006/018 的遗漏/返回互斥/支撑摘录/章节位置待修复；外部 tokenizer 仍 not_evaluated，材料不等于精确 Token 结论 |
 | M5 | 进行中（Storyforge 首宿主链已闭环） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归；`CLIENT_SETUP.md` 覆盖 Node 24、pnpm/build、Qoder/Codex stdio 配置、首次调用路由、七类故障、诊断隐私与 v1 边界；Storyforge Host Bridge HB-M0～HB-M6 已完成（最终配对提交：Writing MCP `80ac885` + Storyforge `655ae8e`），真实浏览器链验证证据注入、失败关闭、显式单次绕过与零自动写回 | 真实 InkOS、更多 EPUB 2/3 变体、独立 MCP 客户端安装/连通性验收；外部 tokenizer 结论仍属 M4 独立门禁 |
 
@@ -193,6 +193,7 @@ MR2 新增 W001 七项、W002 十项、W010 十二项、W011/016/020 二十四�
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 > 推送状态校正（2026-09-01）：下方 HB-M0～HB-M3 条目末尾的“本地提交，未推送”保留为当时的历史状态；对应 Writing MCP 提交现已随 `e340961` 进入 `origin/main`。Storyforge 配对提交仍只在本地。
 
+- `95ad62c` — docs(mr2)：记录六项修复的阶段验收及用户接受的正确分片重校准；保留初始 gold:check 差异、单变量对照和旧快照追溯，进入 MR3，已推送。
 - `8595bee` — fix(epub)，W011/016/020：单层正文实体、属性 br 换行及引号内 > 保真，新增 24 项；本机完整 verify 57/369、30/30、lines 92.84%、branches 79.77%，双平台 CI `38924539472` 完整通过。私有 top-20 42/42、required 16/16；原 gold:check 差异由仅关闭 W001 的临时副本对照精确复现旧快照，用户接受按正确分片重校准。gold:update 绑定本提交，后续 gold:gate/check 与私有硬门禁通过，未修改标注/排序/硬阈值。
 - `23be2c6` — fix(txt)，W010：前言去空白时同步原始行偏移，新增 12 项 LF/CRLF/BOM/嵌套路径回读回归；相关 35 项、check/lint 及双平台 CI `38923192385` 完整通过，已推送。
 - `0f246b0` — fix(text)，W002：共享 UTF-16 边界切片贯通分片、SQLite、直接/搜索/BFS/context 证据与 EPUB 标题，派生版本更新；新增 10 项（9 项先失败、BMP 对照通过），相关 55 项及 check/lint、双平台 CI `38922858471` 完整通过，已推送。
