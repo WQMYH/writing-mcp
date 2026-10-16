@@ -16,19 +16,31 @@ export interface EpubChunk { entryPath:string; content:string; fallbackTitle:str
 export interface EpubLimits { maxEntries:number; maxDocumentBytes:number; maxTotalBytes:number }
 export const DEFAULT_EPUB_LIMITS:EpubLimits={maxEntries:4096,maxDocumentBytes:16*1024*1024,maxTotalBytes:64*1024*1024};
 
-const xmlAttribute=(tag:string,name:string)=>tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`,"i"))?.[1];
+const attributeEntities:Record<string,string>={amp:"&",lt:"<",gt:">",quot:'"',apos:"'"};
+const decodeXmlAttribute=(value:string)=>value.replace(/&(#x[0-9a-fA-F]+|#\d+|amp|lt|gt|quot|apos);/g,(_match,entity:string)=>{
+  if(!entity.startsWith("#"))return attributeEntities[entity]!;
+  const point=entity.startsWith("#x")?Number.parseInt(entity.slice(2),16):Number(entity.slice(1));
+  if(!Number.isSafeInteger(point)||point<=0||point>0x10ffff||(point>=0xd800&&point<=0xdfff))throw codedError("EPUB_ATTRIBUTE_INVALID","EPUB package contains an invalid numeric attribute character");
+  return String.fromCodePoint(point);
+});
+const xmlAttribute=(tag:string,name:string)=>{
+  for(const match of tag.matchAll(/\s+([^\s"'<>/=]+)\s*=\s*(["'])([\s\S]*?)\2/g)){
+    if(match[1]!.toLowerCase()===name.toLowerCase())return decodeXmlAttribute(match[3]!);
+  }
+  return undefined;
+};
 const decodeXml=(value:string)=>value.replace(/&#x([0-9a-f]+);/gi,(_,code:string)=>String.fromCodePoint(Number.parseInt(code,16))).replace(/&#(\d+);/g,(_,code:string)=>String.fromCodePoint(Number(code))).replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").replace(/&quot;/gi,"\"").replace(/&apos;|&#39;/gi,"'");
 const plainXmlText=(value:string)=>decodeXml(value.replace(/<[^>]+>/g,"")).trim();
 
 export async function epubPackage(zip:JSZip,limits:EpubLimits):Promise<{opfPath:string;opf:string;title?:string;manifest:Map<string,EpubManifestItem>;spine:EpubSpineItem[]}>{
-  const container=await zip.file("META-INF/container.xml")?.async("string"),rootfile=container?.match(/<rootfile\b[^>]*>/i)?.[0],opfPath=rootfile?xmlAttribute(rootfile,"full-path"):undefined;
+  const container=await zip.file("META-INF/container.xml")?.async("string"),rootfile=container?.match(/<rootfile\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/i)?.[0],opfPath=rootfile?xmlAttribute(rootfile,"full-path"):undefined;
   if(!opfPath)throw codedError("EPUB_CONTAINER_MISSING","EPUB container does not declare an OPF package");
   const opf=await zip.file(opfPath)?.async("string");if(!opf)throw codedError("EPUB_OPF_MISSING","EPUB OPF package is missing");
   if(Buffer.byteLength(opf,"utf8")>limits.maxDocumentBytes)throw codedError("EPUB_DOCUMENT_TOO_LARGE","EPUB OPF package exceeds the per-document size limit");
   const manifest=new Map<string,EpubManifestItem>();
-  for(const match of opf.matchAll(/<item\b[^>]*>/gi)){const tag=match[0],id=xmlAttribute(tag,"id"),href=xmlAttribute(tag,"href");if(id&&href)manifest.set(id,{href,mediaType:xmlAttribute(tag,"media-type"),properties:xmlAttribute(tag,"properties")});}
+  for(const match of opf.matchAll(/<item\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi)){const tag=match[0],id=xmlAttribute(tag,"id"),href=xmlAttribute(tag,"href");if(id&&href)manifest.set(id,{href,mediaType:xmlAttribute(tag,"media-type"),properties:xmlAttribute(tag,"properties")});}
   const spine:EpubSpineItem[]=[];
-  for(const match of opf.matchAll(/<itemref\b[^>]*>/gi)){const tag=match[0],idref=xmlAttribute(tag,"idref");if(idref)spine.push({idref,linear:xmlAttribute(tag,"linear")});}
+  for(const match of opf.matchAll(/<itemref\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi)){const tag=match[0],idref=xmlAttribute(tag,"idref"),linear=xmlAttribute(tag,"linear");if(!idref&&linear?.toLowerCase()!=="no")throw codedError("EPUB_SPINE_ITEM_MISSING","EPUB required spine entry has no idref");if(idref)spine.push({idref,linear});}
   const rawTitle=opf.match(/<dc:title\b[^>]*>([\s\S]*?)<\/dc:title>/i)?.[1],title=rawTitle?plainXmlText(rawTitle):undefined;
   return{opfPath,opf,title:title||undefined,manifest,spine};
 }
@@ -79,6 +91,23 @@ export async function epubDocuments(path:string,root:string,workRef:string,bookT
   // unbounded packages; every breach is a stable error code, never a hang.
   const entryCount=Object.keys(zip.files).length;if(entryCount>limits.maxEntries)throw codedError("EPUB_TOO_MANY_ENTRIES",`EPUB contains ${entryCount} ZIP entries, above the limit of ${limits.maxEntries}`);
   const pkg=await epubPackage(zip,limits),opfDir=posix.dirname(pkg.opfPath),sourceMtimeMs=mtimeMs??(await stat(path)).mtimeMs,chunks:EpubChunk[]=[];let totalDecoded=0;
-  for(const spineItem of pkg.spine){if(spineItem.linear?.toLowerCase()==="no")continue;const item=pkg.manifest.get(spineItem.idref);if(!item)continue;let decodedHref:string;try{decodedHref=decodeURIComponent(item.href.split("#")[0]!);}catch(error){throw codedError("EPUB_HREF_INVALID",`EPUB manifest contains an invalid href: ${item.href}`,error);}const entryPath=posix.normalize(posix.join(opfDir==="."?"":opfDir,decodedHref)).replace(/^\/+/g,"");if(entryPath.startsWith("../"))throw codedError("EPUB_HREF_INVALID",`EPUB manifest href escapes the package root: ${item.href}`);const html=await zip.file(entryPath)?.async("string");if(!html)continue;const decodedBytes=Buffer.byteLength(html,"utf8");if(decodedBytes>limits.maxDocumentBytes)throw codedError("EPUB_DOCUMENT_TOO_LARGE",`EPUB spine document ${entryPath} exceeds the per-document size limit`);totalDecoded+=decodedBytes;if(totalDecoded>limits.maxTotalBytes)throw codedError("EPUB_TOTAL_TOO_LARGE","EPUB total decoded spine exceeds the package size limit");const parsed=htmlText(html);if(!parsed.content||coverLike(entryPath,item,parsed.content,parsed.fallbackTitle))continue;chunks.push({entryPath,content:parsed.content,fallbackTitle:parsed.fallbackTitle??parsed.content.split("\n").find(Boolean)?.slice(0,100)??`Chapter ${chunks.length+1}`});}
+  for(const spineItem of pkg.spine){
+    if(spineItem.linear?.toLowerCase()==="no")continue;
+    const item=pkg.manifest.get(spineItem.idref);
+    if(!item)throw codedError("EPUB_SPINE_ITEM_MISSING","EPUB required spine item has no declared manifest href");
+    let decodedHref:string;
+    try{decodedHref=decodeURIComponent(item.href.split("#")[0]!);}catch(error){throw codedError("EPUB_HREF_INVALID",`EPUB manifest contains an invalid href: ${item.href}`,error);}
+    const entryPath=posix.normalize(posix.join(opfDir==="."?"":opfDir,decodedHref)).replace(/^\/+/g,"");
+    if(entryPath.startsWith("../"))throw codedError("EPUB_HREF_INVALID",`EPUB manifest href escapes the package root: ${item.href}`);
+    const resource=zip.file(entryPath);
+    if(!resource)throw codedError("EPUB_SPINE_RESOURCE_MISSING","EPUB required spine resource is missing from the ZIP");
+    const html=await resource.async("string"),decodedBytes=Buffer.byteLength(html,"utf8");
+    if(decodedBytes>limits.maxDocumentBytes)throw codedError("EPUB_DOCUMENT_TOO_LARGE",`EPUB spine document ${entryPath} exceeds the per-document size limit`);
+    totalDecoded+=decodedBytes;
+    if(totalDecoded>limits.maxTotalBytes)throw codedError("EPUB_TOTAL_TOO_LARGE","EPUB total decoded spine exceeds the package size limit");
+    const parsed=htmlText(html);
+    if(!parsed.content||coverLike(entryPath,item,parsed.content,parsed.fallbackTitle))continue;
+    chunks.push({entryPath,content:parsed.content,fallbackTitle:parsed.fallbackTitle??parsed.content.split("\n").find(Boolean)?.slice(0,100)??`Chapter ${chunks.length+1}`});
+  }
   if(!chunks.length)throw codedError("EPUB_NO_READABLE_SPINE","EPUB contains no readable spine chapters");const documents=splitEpubChunks(path,root,workRef,chunks,sourceMtimeMs,pkg.title??bookTitle);if(!documents.length)throw codedError("EPUB_NO_READABLE_SPINE","EPUB contains no readable spine chapters");return documents;
 }

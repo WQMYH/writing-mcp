@@ -3,7 +3,7 @@
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
 > 检查点时间：2026-10-16（25 类独立复审后，用户授权进入 MR1；隔离分支 `fix/mr1-index-graph-epub`）
-> 当前状态：main 基线为 `af78942`，此前可靠性分支已集成，旧“等待集成”声明作废。本轮仅实施 MR1 的 W-MCP-007/012/014，不扩展到其余 22 项。W012 已完成引用刷新清理范围修复：五类非章节资料修改与无引用对照共 6 个回归，通过顺序边/证据、noop、重开及冷建验证；graph/timeline/vocabulary 18 项、check、lint 通过。W007 热重建和 W014 EPUB 静默漏章仍开放。隔离检出修改前全量基线为 57 文件/287 项通过；本轮全量 verify、覆盖率和 Linux 热重建验收尚未运行，不沿用历史绿灯。Storyforge 既有交付不变；M5 真实 InkOS、更多 EPUB 2/3 变体及独立客户端验收仍未完成，外部 tokenizer 为 `not_evaluated`。
+> 当前状态：main 基线为 `af78942`，此前可靠性分支已集成，旧“等待集成”声明作废。本轮仅实施 MR1 的 W-MCP-007/012/014，不扩展到其余 22 项。W012 已提交 `5890d83`：6 个新回归，graph/timeline/vocabulary 18 项、check、lint 通过。W014 已修复属性引号/单层实体解码/必需 spine 完整性；新增 21 项回归，EPUB/资源限额共 32 项、check、lint 通过，稳定错误语义见 M0 amendment。W007 热重建仍开放。隔离检出修改前全量基线为 57 文件/287 项通过；本轮全量 verify、覆盖率和 Linux 热重建验收尚未运行，不沿用历史绿灯。Storyforge 既有交付不变；M5 真实 InkOS、更多 EPUB 2/3 变体及独立客户端验收仍未完成，外部 tokenizer 为 `not_evaluated`。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -82,7 +82,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 ## 当前测试覆盖
 
-MR1 当前增量：`graph-identity-evidence.test.ts` 新增 6 项，针对性 18 项通过；下列 57/287 是修改前全量基线，待里程碑 verify 后整体替换计数。
+MR1 当前增量：图回归新增 6 项（相关 18 项通过），EPUB 新增 21 项（相关 32 项通过）；下列 57/287 是修改前全量基线，待里程碑 verify 后整体替换计数。
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 

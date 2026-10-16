@@ -256,6 +256,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Every breach is a stable coded error — `EPUB_TOO_MANY_ENTRIES`, `EPUB_DOCUMENT_TOO_LARGE`, `EPUB_TOTAL_TOO_LARGE` — never a hang or unbounded memory growth.
 - Limits are injectable for tests via `new GenericAdapter({ epub: Partial<EpubLimits> })`; `DEFAULT_EPUB_LIMITS` is exported from `@writing-mcp/adapter-generic`. No other interface changes.
 
+### MR1 EPUB spine integrity amendment (2026-10-16, W-MCP-014)
+
+- Package/container attributes match their opening quote, including the opposite quote and `>` inside values. Attribute values decode XML predefined/numeric entities exactly once before href fragment splitting, percent decoding and the existing package-root check. This does not change the separate XHTML body decoder or promise general XML/DTD support.
+- A required (not `linear="no"`) spine entry without an idref or declared manifest href fails with `EPUB_SPINE_ITEM_MISSING`. A declared required resource absent from the ZIP fails with `EPUB_SPINE_RESOURCE_MISSING`, even if earlier chapters were readable; no partial work/index is published as fresh. This supersedes `EPUB_NO_READABLE_SPINE` for absent ZIP resources; that code remains for present but wholly empty/filtered readable content. Invalid numeric attribute characters fail with `EPUB_ATTRIBUTE_INVALID`.
+- Non-linear, navigation and cover filtering, resource limits, ordering and source locators are unchanged. Tool shapes and SQLite schema are unchanged.
+
 ### M1 snapshot consistency amendment (2026-08-17)
 
 - Every adapter read is bracketed by source fingerprint checks (names + mtime + size of all files under the work root): if the fingerprint differs after the read, the service retries the read exactly once, then fails with stable code `SOURCE_CHANGED_DURING_READ`. A snapshot is never built from mixed-time source state; the client should retry the operation.

@@ -12,7 +12,7 @@
 | `benchmark.test.ts` | 30 个机器可读基准任务的确定性门禁 |
 | `diagnostics.test.ts` | 诊断链：脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用、不可持久化降级、AUD-023 开发捕获有界命中 ref/score/locator 哈希（不存正文）、AUD-024 general JSONL 串行轮转/并发不丢不乱/写失败降级、Task 5B 当前返回 artifact 保护/清理延迟披露/capture truncate 写入计数 |
 | `diagnostic-retention.test.ts` | Task 5B 诊断保留：默认 64 次写入/1 MiB 扫描门槛、同目录扫描合并、稳定 mtime→Unicode code-point 文件排序、报告优先/closed capture 组清理、active capture 保护、协作锁延迟/死进程与畸形锁回收、ENOENT 与替换锁竞态 |
-| `epub.test.ts` | EPUB：正常双章节 spine、OPF 属性顺序变化、元数据标题、封面过滤、跨 spine 续章、单作品多 EPUB 引用隔离、损坏 ZIP/缺 container/缺 OPF/无可读 spine 四类失败 |
+| `epub.test.ts` | EPUB：正常双章节 spine、元数据、封面过滤、跨 spine 续章、独立作品引用；W-MCP-014 属性匹配引号/引号内 >、XML 单层实体与 URL 编码、container/spine id 解码、章节顺序/search/context/locator；缺失必需声明/资源拒绝部分 fresh，非线性/nav/cover/空内容过滤及无可读内容、路径/属性错误 |
 | `epub-resource-limits.test.ts` | AUD-028/Task 5A EPUB 资源上限：entry 数超限 `EPUB_TOO_MANY_ENTRIES`、OPF/单 spine/累计 spine 按解码 UTF-8 bytes 的中文多字节精确边界、总量超限 `EPUB_TOTAL_TOO_LARGE`（均可经构造器注入）、EPUB 2.0 包在默认上限下正常加载 |
 | `explore-bfs.test.ts` | 0~3 跳 BFS、fan-out/全局上限、逐边 pathEvidence、截断 |
 | `generic-txt.test.ts` | TXT：GBK/GB18030 解码、章节切分、章节编号重置推断新卷、原始文件行号偏移 |
