@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-17 00:46 +08:00（MR5 阶段验收通过，进入 MR6）
-> 当前状态：MR1～MR5 阶段验收通过。MR5 被测代码 `6421740`：本机完整 verify 58 文件/408 项、公开 30/30、coverage lines 91.21%/branches 79.91%；Windows/Linux CI `38934125779` 均通过，私有 top-20 42/42、required 16/16、证据覆盖率 1.0，gold:gate/check 通过且未更新快照。真实 CLI 子进程不计入父进程 V8 coverage，未降低阈值。MR6 真实 SDK 编辑/增量/重建/重启/删索引重建新回归已通过，完整回执、108 个原始缺口映射与语料/外部 tokenizer 验收进行中；25 类目标 active，Draft PR 不合并。
+> 检查点时间：2026-10-17 00:57 +08:00（MR1～MR6 本轮 25 类修复与约定工程验收收口）
+> 当前状态：W-MCP-001～025 均有修复/政策、失败触发与回归证据，见 [固定验收映射](REPAIR_ACCEPTANCE_2026-10-17.md)。本机 MR6 完整 verify 等价展开（为 test 增加原生 JSON reporter）58 文件/409 项、0 失败/0 跳过、公开 30/30、coverage lines 91.21%/branches 79.91% 通过；被测 `0759c76` 的 Windows/Linux CI `38934729394` 和补充跨项目捕获断言 `02eb2b8` 的 CI `38935521968` 全部通过。私有 top-20 42/42、required 16/16、gold gate/check 通过；108 个历史缺口为 106 原名 + 2 个明确审阅替代组通过，非倒推历史 canonical pass。真实 SDK 恢复链、超大语料性能、外部 tokenizer 材料门禁通过；无基线/阈值放宽、私有资料不上传。范围内修复验收完成不等于 Writing MCP v1 全面发布或真实 UI/所有平台验收，Draft PR 保持不合并 main。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -74,13 +74,13 @@ pnpm start
 |---|---|---|---|
 | M0 | 主体完成 | 版本化协议/存储合同、五工具 schema、统一信封、最小 fixture、30 个任务、Token/事实基线 | 指标含义和实现契约继续校准 |
 | M0.1 | MR5 阶段门禁通过 | 统一诊断 wrapper 保留；W017 持久化活动捕获逐项目拒删，W019 子进程/CLI 重启后先注册再校验捕获 | 真实 Storyforge UI/PNA 等独立边界不以合成测试替代 |
-| M1 | MR2 功能及阶段门禁通过 | W001/002/010/011/016/020 六项失败→通过回归、全量/私有/双平台 CI 通过；W014 必需 spine 完整性门禁保留 | 不声称覆盖全部 EPUB 变体；独立客户端/宿主综合验收仍属 MR6 |
-| M2 | MR1 公开验收通过 | W012 无关顺序边/证据保留，W007 受管理连接替换、热服务/磁盘一致及失败恢复，本机 Windows 与双平台完整 CI 通过；W014 完整性见 M1 | PR 仍 Draft，未合并；该门禁不是跨进程读协调或旧版 Linux WAL 低层机制取证，亦不关闭其余 22 项 |
-| M3 | MR3/MR4 对应阶段门禁通过 | 身份/歧义/增量/评分/字面匹配、支撑窗口及章节位置回归，完整 verify/私有/gold/双平台通过 | 综合客户端/宿主与规模验收仍属 MR6 |
-| M4 | MR4 功能及阶段门禁通过 | W003/004/006/018 四项回归、完整 verify/私有/gold/双平台通过，保留 excerpt-only accounting 与预算/层/pin 优先级 | 外部 tokenizer 仍 not_evaluated；36/42 quote exposure 不冒充整条引文全部露出 |
+| M1 | 本轮 MR2/MR6 相关门禁通过 | 六项文本修复、W014 必需 spine 完整性与真实 SDK 当前来源证据链，完整/私有/双平台验收通过 | 不声称覆盖全部 EPUB 变体 |
+| M2 | 本轮 MR1/MR6 相关门禁通过 | W012 顺序边/证据保留；W007 受管理连接替换、热服务/磁盘一致、失败恢复及 SDK 改稿/重启/删索引重建 | 不是跨进程读协调或旧版 Linux WAL 低层逐调用取证；PR 未合并 |
+| M3 | 本轮 MR3/MR4/MR6 相关门禁通过 | 身份/歧义/增量/评分/窗口/章节位置，完整/private/gold/双平台及超大语料性能门禁通过 | 有限代表性任务不承诺任意查询延迟 |
+| M4 | 本轮 MR4/MR6 相关门禁通过 | 四项修复与 excerpt-only accounting 保留；独立 tiktoken 两种编码对本地冻结完整 packet 的降幅材料门禁通过 | MCP 的估算字段不变；不是模型账单/credits 承诺；36/42 quote exposure 独立保留 |
 | M5 | 进行中（Storyforge 首宿主链已闭环） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归；`CLIENT_SETUP.md` 覆盖 Node 24、pnpm/build、Qoder/Codex stdio 配置、首次调用路由、七类故障、诊断隐私与 v1 边界；Storyforge Host Bridge HB-M0～HB-M6 已完成（最终配对提交：Writing MCP `80ac885` + Storyforge `655ae8e`），真实浏览器链验证证据注入、失败关闭、显式单次绕过与零自动写回 | 真实 InkOS、更多 EPUB 2/3 变体、独立 MCP 客户端安装/连通性验收；外部 tokenizer 结论仍属 M4 独立门禁 |
 
-Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、007～010 的当前门禁；Step 3 已完成中文问句、别名/歧义、稳定排序、输入上限、FTS 降级与检索诊断（提交 `aa84645`）。AUD-018 的旧实现/测试被复审证实只做事后计时且标题错标，现由 `e57264c` 以真实 delayed-source 回归覆盖 explore/context/evaluator、队列占用和 close 等待。AUD-021 SourceSnapshot 双指纹修复保持有效。AUD-005（REVIEW_2026-08-16 P0，提前于 Step 3 剩余项处理）：`requiredRefs` 脱离 search top-50 候选池按 entity/span/document 三级直接解析，池外必选 ref 进 blocks 并计入预算最小值，不存在 ref 以 `not_found` 进 omitted，预算不足触发 `budget_unsatisfiable`；`ContextPacket` 形状与状态词汇未变（M0_CONTRACT 新增 M4 requiredRefs amendment）。M0.1、M1 其余问题和 M3～M5 尚未完成，现有成果不能据此宣称 Writing MCP v1 已完成。
+历史 AUD 路线：Step 1 关闭 AUD-003、006、011、031，Step 2 关闭 AUD-001、002、007～010 的限定门禁；Step 3 完成中文问句、别名/歧义、稳定排序、输入上限、FTS 降级与检索诊断（`aa84645`）。AUD-018 的事后计时/错标测试已由 `e57264c` 的 delayed-source 回归替换，覆盖 explore/context/evaluator、队列占用与 close 等待；SourceSnapshot 双指纹、requiredRefs 池外直解继续保留。本轮 MR1～MR6 关闭的是 25 类独立审查缺陷及约定工程门禁，不据此宣称 M5 所有格式/部署/用户验收或整个 v1 发布完成。
 
 ## 当前测试覆盖
 
@@ -92,9 +92,11 @@ MR3 新增 W013 一项、W005 三项、W008/021/015/024 十项、W009 四项，�
 
 MR4 新增 W003/W004 三项、W006 三项、W018 三项，共九项；完整 verify、私有/gold 与双平台 CI 通过。
 
+MR5 增至 58 文件/408 项，包含真实默认入口/严格状态、Unicode 输入边界、持久化捕获拒删与首调用恢复；MR6 再增一项 SDK 恢复链至 409 项，并补同一 W019 测试的跨项目阴性断言。106 个原名历史缺口和 2 个替代组的逐项本机回执独立登记。
+
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
-- 57 个测试文件 / 396 项测试，本机完整 verify 与双平台 CI 通过；覆盖通用链路、五工具与诊断、Bridge、SourceSnapshot/生命周期、图/索引、适配器及 MR1～MR4 回归。计数和覆盖率不意味着其余五类复审缺陷已修复。
+- 58 个测试文件 / 409 项测试，完整本机链与最终代码 Windows/Linux CI 通过；覆盖 MR1～MR6 与五工具/Bridge/索引/适配器/生命周期。V8 父进程 coverage 不包含真实 CLI 子进程，未降低既有阈值。
 - 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制
@@ -113,7 +115,7 @@ MR4 新增 W003/W004 三项、W006 三项、W018 三项，共九项；完整 ver
 
 ## 下一步
 
-- MR1～MR5 阶段门禁通过，继续 MR6：25 编号证据映射、108 个原始缺口按名称核对、真实 MCP 客户端恢复链、语料及独立 Token 材料复核、契约/状态收口。按既有授权持续执行；仅实质性选择、越界操作或外部阻塞停下，维持 Draft PR，不合并 main。
+- 本轮 MR1～MR6 修复与工程验收已收口；[验收映射](REPAIR_ACCEPTANCE_2026-10-17.md) 记录 25 编号、提交、回归位置、108 缺口迁移与明确边界。现有 Draft PR 可供审阅；main 合并、发布、下一轮功能或真实宿主 UI 测试不在本轮完成声明内。
 
 - Host Bridge：Storyforge 首宿主 HB-M0～HB-M6 已关闭；维持静态单宿主、loopback、显式配对、失败关闭和零自动写回边界，不在本轮扩成动态插件市场。下一步先把真实使用反馈转成协议兼容性回归，再决定第二宿主或可配置端口等扩展。
 - M5 收尾：补真实 InkOS、更多 EPUB 2/3 变体及独立 MCP 客户端安装/连通性验收；`.github/workflows/verify.yml` 已存在并只跑公共 `pnpm verify`，私有验收链永不进 CI。
@@ -193,6 +195,10 @@ MR4 新增 W003/W004 三项、W006 三项、W018 三项，共九项；完整 ver
 - **评估数据（供重构窗口参考）**：src/tests 共 333 行超 160 字符，其中约 200 行集中在 tests/（机械折行即可）；src 巨型函数集中在 store.ts（validateBuiltIndex 1418 字符、rowsForDocuments 876 字符等，多为长 SQL 字符串）、epub.ts 两处遍历循环、server.ts 工具注册块。
 
 ## 可追溯提交清单
+
+- `02eb2b8` — test(bridge)：W019 有效 capture 跨项目使用返回 NOT_FOUND、原 child PID 不变；两条重启用例仍保持首个相关调用未经预热。6 项真实 CLI/JSON 回执、check/lint 通过，最终 Windows/Linux 完整 CI `38935521968` 通过，已推送。
+- `0759c76` — test(mr6)：真实 SDK 五工具/编辑/stale/增量/重建/重启/删索引重建；原文证据、revision/ref 与诊断回归。完整本机等价 verify 58/409、公开 30/30、coverage 91.21%/79.91%，双平台 CI `38934729394` 通过，已推送。
+- `10d5d67` — docs(mr5)：归档五类修复及完整本机/私有/gold/Windows/Linux 门禁，继续 MR6，已推送。
 
 - `6421740` — fix(bridge)，W019：相关请求先恢复 bridge-owned 作品注册，再校验捕获；full-CLI/child 双重启及首个 finish_capture、真实 missing/closed 错误与 PID/锁回归。MR5 完整/私有/gold/双平台门禁通过，已推送。
 
