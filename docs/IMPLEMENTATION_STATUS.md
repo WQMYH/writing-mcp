@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-09-02（可靠性复审指出的五项 core/gate 缺口已在隔离分支实现并逐项提交；整分支自审另发现并修复两项公共门禁缺陷，最终复审通过，等待集成）
-> 当前状态：`fix/reliability-core-gates` 已修复真实查询 deadline、通用文本读取前限额、SQLite/FTS 多进程冷启动、document LIKE 字面匹配和 lint/coverage 门禁漂移；`pnpm coverage` 现会先自行构建，可在干净检出中独立执行，Vitest worker 并发固定上限 4，避免与常驻 IDE/MCP 进程争用虚拟内存。最终 SkillFlow 复审无开放发现，公共 `pnpm verify` 通过：57 文件/287 项、公共基准 30/30、coverage lines 92.68% / branches 78.35%，MCP server branches 60.75%；本批次仍未集成，因此不得沿用“可靠性 Task 1～7 已关闭并合并”的旧声明。Storyforge 首宿主 HB-M0～HB-M6 既有交付状态不变；Writing MCP v1 的 M5 仍缺真实 InkOS、更多 EPUB 2/3 变体和独立客户端安装/连通性验收，外部 tokenizer 仍为 `not_evaluated`。
+> 检查点时间：2026-10-16（25 类独立复审后，用户授权进入 MR1；隔离分支 `fix/mr1-index-graph-epub`）
+> 当前状态：main 基线为 `af78942`，此前可靠性分支已集成，旧“等待集成”声明作废。本轮仅实施 MR1 的 W-MCP-007/012/014，不扩展到其余 22 项。W012 已完成引用刷新清理范围修复：五类非章节资料修改与无引用对照共 6 个回归，通过顺序边/证据、noop、重开及冷建验证；graph/timeline/vocabulary 18 项、check、lint 通过。W007 热重建和 W014 EPUB 静默漏章仍开放。隔离检出修改前全量基线为 57 文件/287 项通过；本轮全量 verify、覆盖率和 Linux 热重建验收尚未运行，不沿用历史绿灯。Storyforge 既有交付不变；M5 真实 InkOS、更多 EPUB 2/3 变体及独立客户端验收仍未完成，外部 tokenizer 为 `not_evaluated`。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -73,7 +73,7 @@ pnpm start
 | M0 | 主体完成 | 版本化协议/存储合同、五工具 schema、统一信封、最小 fixture、30 个任务、Token/事实基线 | 指标含义和实现契约继续校准 |
 | M0.1 | ✅ 完成 | 全工具诊断 wrapper、显式 capture、脱敏与报告哈希、开发捕获有界命中 ref（AUD-023 主体）、general JSONL 串行轮转与并发/写失败护栏（AUD-024 主体）、协议层错误边界（AUD-025 主体） | — |
 | M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB、跨 spine 分段 locator、通用作品边界与 capabilities 实际化（AUD-026 主体）、章节编号语法明确化（AUD-027 主体）、EPUB 资源上限（AUD-028 主体）、snapshot 一致性与文本内存上限（AUD-029 主体）、通用文本在 `readFile` 前按 snapshot 拒绝单文件/累计超限、span 硬上限与 locator 精确规则（AUD-030 主体）、进程生命周期与优雅关闭（AUD-032 主体）、工程硬化门禁与适配器模块抽离（AUD-035 第一/二阶段主体） | AUD-035 格式化阶段（用户决策延后至 M3/M4 语义冻结后的重构窗口再评估） |
-| M2 | ✅ 基础门禁完成 | SQLite/FTS5、schema v4、语义 snapshot、truthful status、revision/事务、原子替换、作品级串行/写锁、恢复、work/document 作用域身份、规范定义晋升、多 mention/关系证据、源顺序图；多进程冷启动通过 WAL 有界 busy 重试与 `BEGIN IMMEDIATE` schema 双检串行化 | 后续只随 M3/M4 查询语义做受控增强 |
+| M2 | MR1 修复中 | SQLite/FTS5、schema v4、revision/事务、写锁、恢复及多进程冷启动既有实现保留；W012 引用刷新保留无关顺序边和逐边证据的针对性门禁通过 | W007 热服务 rebuild 的连接/发布一致性和 Linux 验收仍开放；MR1 全量 verify 未运行 |
 | M3 | 主体完成 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限、document 字面子串查询、0～3 跳 BFS、timeline、词汇表、source-trust、A1 freshness、真实 explore/context/evaluator deadline、确定性两遍 PRF 与 revision-scoped 有界暖缓存；真实长语料性能门禁通过 | 后续仅做受控检索质量增强与重构，不再以未验证的“完整重排”作为完成声明 |
 | M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、AUD-005/AUD-012/AUD-013 的约束与来源装配；`accountingScope: evidence_excerpts_only` 已冻结；Context 内部池 12 且真实长语料 P95 通过；A1、server 响应字节、EPUB/诊断/lifecycle 均完成 | 外部 tokenizer 复核尚未完成；token-evaluation-materials 只提供复核材料，不给出精确 Token 结论 |
 | M5 | 进行中（Storyforge 首宿主链已闭环） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归；`CLIENT_SETUP.md` 覆盖 Node 24、pnpm/build、Qoder/Codex stdio 配置、首次调用路由、七类故障、诊断隐私与 v1 边界；Storyforge Host Bridge HB-M0～HB-M6 已完成（最终配对提交：Writing MCP `80ac885` + Storyforge `655ae8e`），真实浏览器链验证证据注入、失败关闭、显式单次绕过与零自动写回 | 真实 InkOS、更多 EPUB 2/3 变体、独立 MCP 客户端安装/连通性验收；外部 tokenizer 结论仍属 M4 独立门禁 |
@@ -81,6 +81,8 @@ pnpm start
 Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、007～010 的当前门禁；Step 3 已完成中文问句、别名/歧义、稳定排序、输入上限、FTS 降级与检索诊断（提交 `aa84645`）。AUD-018 的旧实现/测试被复审证实只做事后计时且标题错标，现由 `e57264c` 以真实 delayed-source 回归覆盖 explore/context/evaluator、队列占用和 close 等待。AUD-021 SourceSnapshot 双指纹修复保持有效。AUD-005（REVIEW_2026-08-16 P0，提前于 Step 3 剩余项处理）：`requiredRefs` 脱离 search top-50 候选池按 entity/span/document 三级直接解析，池外必选 ref 进 blocks 并计入预算最小值，不存在 ref 以 `not_found` 进 omitted，预算不足触发 `budget_unsatisfiable`；`ContextPacket` 形状与状态词汇未变（M0_CONTRACT 新增 M4 requiredRefs amendment）。M0.1、M1 其余问题和 M3～M5 尚未完成，现有成果不能据此宣称 Writing MCP v1 已完成。
 
 ## 当前测试覆盖
+
+MR1 当前增量：`graph-identity-evidence.test.ts` 新增 6 项，针对性 18 项通过；下列 57/287 是修改前全量基线，待里程碑 verify 后整体替换计数。
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
@@ -102,6 +104,8 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 - `entityRefs`/`documentRefs` 的 pinned 块不参与 evidenceHash 去重（显式请求豁免，与 requiredRefs 一致）；已是搜索命中的 pinned ref 保持搜索命中排名，不再获得 pinned 提升。
 
 ## 下一步
+
+- 当前优先 MR1：继续 W014 EPUB 资源完整性、W007 热重建，补对应失败→通过回归；仅三项均完成且公共 verify/必要平台验收通过后关闭 MR1。其余 22 项按独立复审台账后续推进，不因历史里程碑绿灯提前关闭。
 
 - Host Bridge：Storyforge 首宿主 HB-M0～HB-M6 已关闭；维持静态单宿主、loopback、显式配对、失败关闭和零自动写回边界，不在本轮扩成动态插件市场。下一步先把真实使用反馈转成协议兼容性回归，再决定第二宿主或可配置端口等扩展。
 - M5 收尾：补真实 InkOS、更多 EPUB 2/3 变体及独立 MCP 客户端安装/连通性验收；`.github/workflows/verify.yml` 已存在并只跑公共 `pnpm verify`，私有验收链永不进 CI。

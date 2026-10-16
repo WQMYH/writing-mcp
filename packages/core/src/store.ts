@@ -488,8 +488,8 @@ export class WritingStore {
       const spanRef=String(row.span_ref),documentRef=String(row.document_ref),content=String(row.content);
       db.prepare("DELETE FROM mentions WHERE span_ref=?").run(spanRef);
       db.prepare("DELETE FROM unresolved_mentions WHERE span_ref=?").run(spanRef);
-      db.prepare("DELETE FROM edge_evidence WHERE span_ref=? AND edge_ref IN (SELECT edge_ref FROM edges WHERE kind!='contains')").run(spanRef);
-      db.prepare("DELETE FROM edges WHERE span_ref=? AND kind!='contains'").run(spanRef);
+      db.prepare("DELETE FROM edge_evidence WHERE span_ref=? AND edge_ref IN (SELECT edge_ref FROM edges WHERE kind IN ('appears_in','mentions'))").run(spanRef);
+      db.prepare("DELETE FROM edges WHERE span_ref=? AND kind IN ('appears_in','mentions')").run(spanRef);
       for(const entity of entities){
         const name=String(entity.name);let position=content.indexOf(name);
         const from=entity.valid_from_chapter==null?null:String(entity.valid_from_chapter),to=entity.valid_to_chapter==null?null:String(entity.valid_to_chapter);

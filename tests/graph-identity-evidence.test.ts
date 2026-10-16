@@ -36,6 +36,56 @@ const document = (
 const indexPath = (work: ParsedWork) => join(work.rootPath, ".writing-index", work.workRef.replace(":", "-"), "index.sqlite");
 
 describe("schema v4 graph identity and evidence", () => {
+  test.each([
+    { kind: "character", title: "Iona" },
+    { kind: "foreshadow", title: "Iona" },
+    { kind: "outline", title: "Iona" },
+    { kind: "state", title: "Iona" },
+    { kind: "document", title: "Location: Iona" },
+    { kind: "document", title: "Location: Unreferenced" },
+  ] as const)("preserves chapter sequence after a $kind dossier edit ($title), W-MCP-012", async ({ kind, title }) => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-precedes-edit-"));
+    const ref = stableId("work", "graph-test", root);
+    const dossier = document(ref, "dossier.md", title, kind, `# ${title}\nInitial dossier.`);
+    const work = workAt(root, [
+      dossier,
+      document(ref, "chapter-01.md", "Chapter 1 Dawn", "chapter", "# Chapter 1 Dawn\nThe sky lightens.", 1),
+      document(ref, "chapter-02.md", "Chapter 2 Gate", "chapter", "# Chapter 2 Gate\nIona opens the gate.", 2),
+      document(ref, "chapter-03.md", "Chapter 3 Night", "chapter", "# Chapter 3 Night\nThe lamps go out.", 3),
+    ]);
+    const sequence = async (store: WritingStore) => (await store.explore("timeline", "", 100, 0)).results
+      .filter(item => item.kind === "precedes-relation")
+      .map(item => ({ ref: item.ref, title: item.title }));
+    const store = new WritingStore(work);
+    try {
+      await store.index("incremental");
+      const before = await sequence(store);
+      expect(before.map(item => item.title)).toEqual([
+        "precedes: Chapter 1 Dawn → Chapter 2 Gate",
+        "precedes: Chapter 2 Gate → Chapter 3 Night",
+      ]);
+      dossier.content = `# ${title}\nA revised dossier with a longer biography.`;
+      dossier.sourceSize = Buffer.byteLength(dossier.content);
+      const updated = await store.index("incremental");
+      expect(updated.stats).toMatchObject({ updated: 1, skipped: 3 });
+      expect(await sequence(store)).toEqual(before);
+      const db = new DatabaseSync(indexPath(work), { readOnly: true });
+      try {
+        expect(db.prepare("SELECT COUNT(*) AS count FROM edge_evidence ee JOIN edges e ON e.edge_ref=ee.edge_ref WHERE e.kind='precedes'").get()).toEqual({ count: 2 });
+      } finally { db.close(); }
+      await store.index("incremental");
+      expect(await sequence(store)).toEqual(before);
+      store.close();
+      const reopened = new WritingStore(work);
+      try { expect(await sequence(reopened)).toEqual(before); } finally { reopened.close(); }
+      const cold = new WritingStore(work, join(root, "cold.sqlite"));
+      try {
+        await cold.index("rebuild");
+        expect(await sequence(cold)).toEqual(before);
+      } finally { cold.close(); }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
   test("keeps duplicate chapter titles distinct and orders them by source ordinal", async () => {
     const root = await mkdtemp(join(tmpdir(), "writing-mcp-chapter-identity-"));
     const ref = stableId("work", "graph-test", root);
