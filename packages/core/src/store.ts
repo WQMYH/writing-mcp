@@ -575,24 +575,31 @@ export class WritingStore {
     return map;
   }
 
+  private chapterPositions(db:DatabaseSync):Map<string,number>{
+    const rows=db.prepare(`WITH positions AS (SELECT document_ref,ROW_NUMBER() OVER (ORDER BY source_ordinal,document_ref) position FROM documents WHERE kind='chapter')
+      SELECT p.document_ref,p.position,e.entity_ref FROM positions p LEFT JOIN
+      (SELECT e.entity_ref,s.document_ref FROM entities e JOIN spans s ON s.span_ref=e.span_ref WHERE e.kind='Chapter') e USING(document_ref)`).all() as Array<Record<string,unknown>>;
+    const positions=new Map<string,number>();
+    for(const row of rows){const position=asNumber(row.position);positions.set(String(row.document_ref),position);if(row.entity_ref!=null)positions.set(String(row.entity_ref),position);}
+    return positions;
+  }
+
   private timelineRows(db:DatabaseSync,query:string,limit:number,targetChapter?:number):{rows:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}
   {
     const diagnostics:ExploreResult["diagnostics"]=[];
-    const chapterOrder=new Map<string,number>();
-    const chapters=db.prepare("SELECT e.entity_ref FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.kind='Chapter' ORDER BY d.source_ordinal,s.ordinal,e.entity_ref").all() as Array<Record<string,unknown>>;
-    chapters.forEach((row,index)=>chapterOrder.set(String(row.entity_ref),index));
+    const chapterOrder=this.chapterPositions(db);
     const position=(ref:unknown)=>ref==null?Number.MAX_SAFE_INTEGER:chapterOrder.get(String(ref))??Number.MAX_SAFE_INTEGER;
     // Chapter-tense filtering (AUD-012): a temporal item is valid at the
     // 1-based anchor when from <= anchor <= to; an unbounded from means the
     // book start and an unbounded to means the book end.
-    const anchor=targetChapter==null?null:Math.max(1,Math.trunc(targetChapter))-1;
+    const anchor=targetChapter==null?null:Math.max(1,Math.trunc(targetChapter));
     const validAtAnchor=(row:Record<string,unknown>)=>anchor==null||((row.valid_from_chapter==null?-1:position(row.valid_from_chapter))<=anchor&&(row.valid_to_chapter==null?Number.MAX_SAFE_INTEGER:position(row.valid_to_chapter))>=anchor);
     const normalized=query.normalize("NFKC").trim().toLowerCase(),temporal="(valid_from_chapter IS NOT NULL OR valid_to_chapter IS NOT NULL OR narrative_time IS NOT NULL)";
     const entityRows=db.prepare(`SELECT e.entity_ref ref,e.span_ref,e.name heading,e.kind,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.source_kind,e.confidence,e.revision,e.valid_from_chapter,e.valid_to_chapter,e.narrative_time FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE ${temporal} ORDER BY e.entity_ref`).all() as Array<Record<string,unknown>>;
     const edgeRows=db.prepare(`SELECT e.edge_ref ref,e.span_ref,e.kind||': '||COALESCE(sn.name,e.source_ref)||' → '||COALESCE(tn.name,e.target_ref) heading,e.kind||'-relation' kind,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.source_kind,e.confidence,e.revision,e.valid_from_chapter,e.valid_to_chapter,e.narrative_time FROM edges e LEFT JOIN entities sn ON sn.entity_ref=e.source_ref LEFT JOIN entities tn ON tn.entity_ref=e.target_ref JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.kind='precedes' ORDER BY e.edge_ref`).all() as Array<Record<string,unknown>>;
     const merged=[...entityRows,...edgeRows].filter(row=>validAtAnchor(row)&&(!normalized||String(row.heading).toLowerCase().includes(normalized))).sort((left,right)=>position(left.valid_from_chapter)-position(right.valid_from_chapter)||position(left.valid_to_chapter)-position(right.valid_to_chapter)||compareText(String(left.narrative_time??""),String(right.narrative_time??""))||compareText(String(left.ref),String(right.ref)));
-    if(!merged.length)diagnostics.push({code:"NO_RESULTS",message:anchor==null?"No entity or relation carries temporal attributes (valid_from_chapter, valid_to_chapter, or narrative_time)":`No temporal item is valid at target chapter ${anchor+1}`});
-    else diagnostics.push({code:"TIMELINE_PROJECTION",message:anchor==null?`Timeline projected ${merged.length} temporal item(s) ordered by chapter position, then narrative time, then reference`:`Timeline projected ${merged.length} temporal item(s) valid at target chapter ${anchor+1}, ordered by chapter position, then narrative time, then reference`});
+    if(!merged.length)diagnostics.push({code:"NO_RESULTS",message:anchor==null?"No entity or relation carries temporal attributes (valid_from_chapter, valid_to_chapter, or narrative_time)":`No temporal item is valid at target chapter ${anchor}`});
+    else diagnostics.push({code:"TIMELINE_PROJECTION",message:anchor==null?`Timeline projected ${merged.length} temporal item(s) ordered by chapter position, then narrative time, then reference`:`Timeline projected ${merged.length} temporal item(s) valid at target chapter ${anchor}, ordered by chapter position, then narrative time, then reference`});
     return{rows:merged.slice(0,limit),diagnostics};
   }
 
@@ -729,7 +736,7 @@ export class WritingStore {
     // requiredRefs); a pinned ref already in the kept pool is skipped here and
     // keeps its search-hit rank. Documented in the writing_context description.
     for(const ref of new Set([...entityRefs,...documentRefs])){if(poolRefs.has(ref)||requiredSet.has(ref))continue;if(excludedSet.has(ref)){excluded.push({ref,tokens:0});continue;}const node=this.nodeItem(db,ref,1);if(node){const profile=contextSourceProfile(node.kind,false);pinned.push({...node,layer:profile.layer,tokens:estimateTokens(node.evidence.excerpt),required:false});}else unresolved.push(ref);}
-    const chapterByDoc=new Map<string,number>();if(targetChapter!=null){const docRefs=[...new Set([...kept,...direct,...pinned].map(c=>c.evidence.documentRef))];if(docRefs.length){const placeholders=docRefs.map(()=>"?").join(",");for(const row of db.prepare(`SELECT document_ref,chapter_number FROM documents WHERE document_ref IN (${placeholders})`).all(...docRefs) as Array<Record<string,unknown>>)if(row.chapter_number!=null)chapterByDoc.set(String(row.document_ref),asNumber(row.chapter_number));}}
+    const chapterByDoc=targetChapter==null?new Map<string,number>():this.chapterPositions(db);
     const anchorKey=(c:ContextBlock):[number,number]=>{if(targetChapter==null)return[0,0];const n=chapterByDoc.get(c.evidence.documentRef);if(n==null)return[3,0];if(n===targetChapter)return[0,0];return n<targetChapter?[1,targetChapter-n]:[2,n-targetChapter];};
     const pinnedRefs=new Set(pinned.map(c=>c.ref)),duplicates=folded.filter(c=>!requiredSet.has(c.ref)&&!pinnedRefs.has(c.ref)),byFill=(a:ContextBlock,b:ContextBlock)=>layerRank(a.layer)-layerRank(b.layer)||(pinnedRefs.has(a.ref)?0:1)-(pinnedRefs.has(b.ref)?0:1)||anchorKey(a)[0]-anchorKey(b)[0]||anchorKey(a)[1]-anchorKey(b)[1]||b.score-a.score||contextSourceProfile(a.kind,false).priority-contextSourceProfile(b.kind,false).priority||compareText(a.ref,b.ref);
     const required=[...kept.filter(c=>c.required),...direct],min=required.reduce((n,c)=>n+c.tokens,0);if(min>budgetTokens)return{status:"budget_unsatisfiable",workRef:this.work.workRef,revision:explored.revision,budgetTokens,usedTokens:0,estimated:true,estimator:"mixed-cjk-v1",accountingScope:"evidence_excerpts_only",blocks:[],omitted:[...kept.map(c=>({ref:c.ref,reason:c.required?"required_minimum_exceeds_budget":"budget_limit",tokens:c.tokens})),...direct.map(c=>({ref:c.ref,reason:"required_minimum_exceeds_budget",tokens:c.tokens})),...pinned.map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...duplicates.map(c=>({ref:c.ref,reason:"duplicate_evidence",tokens:c.tokens})),...excluded.map(c=>({ref:c.ref,reason:"excluded",tokens:c.tokens})),...unresolved.map(ref=>({ref,reason:"not_found",tokens:0}))],diagnostics:[]};const optional=[...pinned,...kept.filter(c=>!c.required)].sort(byFill);const blocks:ContextBlock[]=[];let used=0;for(const c of [...required,...optional]){if(blocks.some(b=>b.ref===c.ref))continue;if(used+c.tokens<=budgetTokens){blocks.push(c);used+=c.tokens;}}const omitted=[...excluded.map(c=>({ref:c.ref,reason:"excluded",tokens:c.tokens})),...duplicates.map(c=>({ref:c.ref,reason:"duplicate_evidence",tokens:c.tokens})),...[...pinned,...kept].filter(c=>!c.required&&!blocks.some(b=>b.ref===c.ref)).map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...direct.filter(c=>!blocks.some(b=>b.ref===c.ref)).map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...unresolved.map(ref=>({ref,reason:"not_found",tokens:0}))];return{status:omitted.length?"truncated":"complete",workRef:this.work.workRef,revision:explored.revision,budgetTokens,usedTokens:used,estimated:true,estimator:"mixed-cjk-v1",accountingScope:"evidence_excerpts_only",blocks,omitted,diagnostics:explored.diagnostics};}

@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-17 00:02 +08:00（MR4 W003/W004/W006 针对性门禁通过）
-> 当前状态：MR1～MR3 阶段验收通过，最近完整门禁 57 文件/387 项。MR4 W003/W004（`f70f29d`）遗漏原因/显式 ref 恢复通过；W006 大小写匹配与原文窗口已修复，三个先失败后通过回归覆盖大小写及小写变长前缀，相关 39 项、check/lint 通过。W018 章节位置及 MR4 阶段验收待完成；25 类目标 active，Draft PR 不合并。
+> 检查点时间：2026-10-17 00:07 +08:00（MR4 四项代码及针对性门禁通过，阶段验收中）
+> 当前状态：MR1～MR3 阶段验收通过。MR4 四项代码及针对性门禁通过：W003/W004（`f70f29d`）、W006（`bd592b6`）；W018 统一 context/timeline 的 1-based source-order 位置，三项先失败后通过，相关 32 项及 stdio/协议 7 项、check/lint 通过，工具描述/契约同步。MR4 全量/私有/双平台验收尚待执行；25 类目标 active，Draft PR 不合并。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -76,8 +76,8 @@ pnpm start
 | M0.1 | MR5 待补强 | 全工具诊断 wrapper、显式 capture、脱敏、有界记录及协议错误边界既有实现保留 | W019 捕获恢复顺序与 W017 生产 CLI 活动捕获保护仍待修复 |
 | M1 | MR2 功能及阶段门禁通过 | W001/002/010/011/016/020 六项失败→通过回归、全量/私有/双平台 CI 通过；W014 必需 spine 完整性门禁保留 | 不声称覆盖全部 EPUB 变体；独立客户端/宿主综合验收仍属 MR6 |
 | M2 | MR1 公开验收通过 | W012 无关顺序边/证据保留，W007 受管理连接替换、热服务/磁盘一致及失败恢复，本机 Windows 与双平台完整 CI 通过；W014 完整性见 M1 | PR 仍 Draft，未合并；该门禁不是跨进程读协调或旧版 Linux WAL 低层机制取证，亦不关闭其余 22 项 |
-| M3 | MR3 阶段验收通过，MR4 待实施 | W005/008/009/013/015/021/024 七项回归、完整 verify、私有/gold 及双平台 CI 通过，保留 MR1 顺序边/证据 | W006/018 窗口/章节位置待 MR4，不等于整个 M3 已完成 |
-| M4 | MR4 进行中 | W003 真实遗漏原因、W004 显式 ref 恢复与遗漏互斥、W006 原文大小写支撑窗口的针对性门禁通过，保留 excerpt-only accounting 与预算上限 | W018 章节位置及 MR4 阶段门禁待完成；外部 tokenizer 仍 not_evaluated |
+| M3 | MR3 阶段验收通过，MR4 阶段验收中 | MR3 七项完整 verify/私有/gold/双平台通过；W006/018 窗口/章节位置代码及针对性门禁通过 | MR4 全量/私有/最终 CI 待验收，不等于整个 M3 已完成 |
+| M4 | MR4 阶段验收中 | W003/004/006/018 四项代码及针对性门禁通过，保留 excerpt-only accounting 与预算/层/pin 优先级 | MR4 全量/私有/最终 CI 待验收；外部 tokenizer 仍 not_evaluated |
 | M5 | 进行中（Storyforge 首宿主链已闭环） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归；`CLIENT_SETUP.md` 覆盖 Node 24、pnpm/build、Qoder/Codex stdio 配置、首次调用路由、七类故障、诊断隐私与 v1 边界；Storyforge Host Bridge HB-M0～HB-M6 已完成（最终配对提交：Writing MCP `80ac885` + Storyforge `655ae8e`），真实浏览器链验证证据注入、失败关闭、显式单次绕过与零自动写回 | 真实 InkOS、更多 EPUB 2/3 变体、独立 MCP 客户端安装/连通性验收；外部 tokenizer 结论仍属 M4 独立门禁 |
 
 Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、007～010 的当前门禁；Step 3 已完成中文问句、别名/歧义、稳定排序、输入上限、FTS 降级与检索诊断（提交 `aa84645`）。AUD-018 的旧实现/测试被复审证实只做事后计时且标题错标，现由 `e57264c` 以真实 delayed-source 回归覆盖 explore/context/evaluator、队列占用和 close 等待。AUD-021 SourceSnapshot 双指纹修复保持有效。AUD-005（REVIEW_2026-08-16 P0，提前于 Step 3 剩余项处理）：`requiredRefs` 脱离 search top-50 候选池按 entity/span/document 三级直接解析，池外必选 ref 进 blocks 并计入预算最小值，不存在 ref 以 `not_found` 进 omitted，预算不足触发 `budget_unsatisfiable`；`ContextPacket` 形状与状态词汇未变（M0_CONTRACT 新增 M4 requiredRefs amendment）。M0.1、M1 其余问题和 M3～M5 尚未完成，现有成果不能据此宣称 Writing MCP v1 已完成。
@@ -111,7 +111,7 @@ MR3 新增 W013 一项、W005 三项、W008/021/015/024 十项、W009 四项，�
 
 ## 下一步
 
-- MR3 功能及阶段门禁通过，继续 MR4 的 W003/004/006/018：遗漏原因、显式 ref 恢复、原文支撑窗口和 source-order 章节位置。按既有 MR0～MR6 计划持续执行，仅实质性选择、越界操作或外部阻塞停下；维持 Draft PR，不合并 main。
+- MR4 四项代码/针对性门禁通过，运行完整 verify、gold/private、双平台 CI 后进入 MR5 的 W017/019/022/023/025。按既有 MR0～MR6 计划持续执行，仅实质性选择、越界操作或外部阻塞停下；维持 Draft PR，不合并 main。
 
 - Host Bridge：Storyforge 首宿主 HB-M0～HB-M6 已关闭；维持静态单宿主、loopback、显式配对、失败关闭和零自动写回边界，不在本轮扩成动态插件市场。下一步先把真实使用反馈转成协议兼容性回归，再决定第二宿主或可配置端口等扩展。
 - M5 收尾：补真实 InkOS、更多 EPUB 2/3 变体及独立 MCP 客户端安装/连通性验收；`.github/workflows/verify.yml` 已存在并只跑公共 `pnpm verify`，私有验收链永不进 CI。
@@ -195,6 +195,7 @@ MR3 新增 W013 一项、W005 三项、W008/021/015/024 十项、W009 四项，�
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 > 推送状态校正（2026-09-01）：下方 HB-M0～HB-M3 条目末尾的“本地提交，未推送”保留为当时的历史状态；对应 Writing MCP 提交现已随 `e340961` 进入 `origin/main`。Storyforge 配对提交仍只在本地。
 
+- `bd592b6` — fix(search)，W006：评分大小写一致，窗口直接取原文 Unicode 不区分大小写匹配位置，避免 lowercased 偏移变长；3 项先失败后通过，相关 39 项及 check/lint 通过，已推送。
 - `f70f29d` — fix(context)，W003/W004：预算不可满足时保留各类遗漏原因，显式 required/pin 恢复后不再同时报告 duplicate；三项有效失败→通过回归、相关 24 项、check/lint 通过，已推送。首轮测试并发直调造成的临时句柄干扰不计入产品失败证据，已改顺序调用后确认真实断言失败。
 - `9e1742c` — docs(mr3)：收口七项功能与本机/双平台完整 verify、私有/gold 门禁，继续 MR4，保留九类未完成及 Draft 不合并边界，已推送。
 - `5a117d5` — fix(graph)，W009：按所有旧 alias/定义收集 owner 依赖，统一规范化回扫已解析/未解析引用；新增四项先失败后通过，相关 61 项及 check/lint 通过。MR3 完整 verify 57/387、30/30、lines 93.02%、branches 80.00%，双平台 CI `38927243154` 完整通过，私有 top-20 42/42、required 16/16、gold:gate/check 通过，已推送。
