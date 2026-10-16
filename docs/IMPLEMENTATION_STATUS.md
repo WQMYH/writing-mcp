@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-16 22:59 +08:00（MR1 三项功能修复与公开门禁验收完成，未合并 main）
-> 当前状态：隔离分支 `fix/mr1-index-graph-epub` 的 W-MCP-012（`5890d83`）、014（`a13e659`）、007（`806d942`）均有失败→通过回归。最终代码/测试提交 `0ff98c7` 已推送；本机 verify 通过，[双平台 CI](https://github.com/WQMYH/writing-mcp/actions/runs/38919516032) 在含该代码的 `7ba7a79` 上 Windows/Linux 完整 verify 均通过：57 文件/316 项、公共基准 30/30、coverage lines 92.77% / branches 79.02%，MCP server branches 60.75%。先前直连超时已用本机既有 loopback 系统代理完成单次 Git 推送，无持久配置更改；[首轮 Windows 失败回执](https://github.com/WQMYH/writing-mcp/actions/runs/38917551416) 保留，路径断言由 `0ff98c7` 修正，没有跳过测试或降低门禁。[PR #1](https://github.com/WQMYH/writing-mcp/pull/1) 仍为 Draft，main 保持 `af78942`。其余 22 项待授权实施；私有/宿主/tokenizer 验收及 MR0 的旧版 Linux WAL 低层取证不在本次通过声明内，25 类长期目标未完成。
+> 检查点时间：2026-10-16 23:05 +08:00（MR1 公开验收通过，按用户持续执行授权进入 MR2）
+> 当前状态：MR1 三项修复在本机及 [Windows/Linux CI](https://github.com/WQMYH/writing-mcp/actions/runs/38919516032) 完整通过（57/316、30/30、lines 92.77%、branches 79.02%）；原失败与恢复见提交清单。用户已授权 MR2 并要求按现有计划持续执行，沿用隔离分支及 [Draft PR #1](https://github.com/WQMYH/writing-mcp/pull/1)，不合并 main。MR2 的 W001 已修复普通多行追加前限额，并以语义指纹中的 text-derivation version 使旧分片自动失效重算；新增 7 个失败→通过回归，span/lifecycle/snapshot/TXT 39 项、check、lint 通过。MR2 其余五项及本阶段全量门禁尚未完成，316 是 MR1 的最后全量计数，不冒充当前增量全量结果。25 类长期目标仍 active；私有/宿主/tokenizer 和旧版 Linux WAL 低层取证未由本轮声明关闭。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -68,7 +68,7 @@ pnpm start
 
 ## 里程碑完成度
 
-2026-10-16 的 25 类复审已重新打开下列对应门禁；历史 AUD 关闭记录只证明当时限定范围，不替代 W-MCP-001～025 的处置。当前仅授权 MR1，MR2～MR6 不自动进入实施。
+2026-10-16 的 25 类复审已重新打开下列对应门禁；历史 AUD 关闭记录只证明当时限定范围，不替代 W-MCP-001～025 的处置。用户已授权按既有修复计划持续执行，未授权合并 main；有新实质性选择或越界操作才停下询问。
 
 | 里程碑 | 状态 | 已完成 | 未完成门禁 |
 |---|---|---|---|
@@ -85,6 +85,8 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 ## 当前测试覆盖
 
 MR1 从修改前 287 项增加至 316 项：图回归 6 项、EPUB 21 项、service/snapshot 2 项，并补强失败保存/恢复断言；既有 pre-read 断言只做 realpath 校正，无测试跳过或阈值下调。
+
+MR2 当前新增 W001 七项，针对性 39 项通过；阶段全量 verify 尚待执行，下列完整计数仍指 MR1。
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
@@ -107,7 +109,7 @@ MR1 从修改前 287 项增加至 316 项：图回归 6 项、EPUB 21 项、serv
 
 ## 下一步
 
-- MR1 三项功能与公开门禁已通过，维持 Draft PR，不擅自合并 main。下一实施候选为 MR2：W001/002/010/011/016/020 的分片、Unicode、TXT 定位与 EPUB 正文保真；等待用户授权后按现有修复计划推进，不因目标自动续行扩大产品修改范围。
+- MR1 三项功能与公开门禁已通过，维持 Draft PR，不擅自合并 main。用户已授权 MR2 并要求“持续执行，不要一步步询问”：按既有 MR0～MR6 计划持续推进，无须重复逐阶段询问；仅对实质性选择、越界操作或外部阻塞停下。当前实施 MR2 的 W001/002/010/011/016/020，先处理分片上限与 Unicode，再处理 TXT/EPUB 保真。
 
 - Host Bridge：Storyforge 首宿主 HB-M0～HB-M6 已关闭；维持静态单宿主、loopback、显式配对、失败关闭和零自动写回边界，不在本轮扩成动态插件市场。下一步先把真实使用反馈转成协议兼容性回归，再决定第二宿主或可配置端口等扩展。
 - M5 收尾：补真实 InkOS、更多 EPUB 2/3 变体及独立 MCP 客户端安装/连通性验收；`.github/workflows/verify.yml` 已存在并只跑公共 `pnpm verify`，私有验收链永不进 CI。

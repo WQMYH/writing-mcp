@@ -286,6 +286,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Locator exactness: blank lines trimmed from span edges are excluded from startLine/endLine and all locators; a locator range always covers exactly the lines its content contains.
 - Boundary evidence is contiguous without overlap: adjacent spans tile the document's non-blank content with `next.startLine = previous.endLine + 1` (blank-only gaps excepted), and concatenating span contents reconstructs the trimmed document content. Overlap was evaluated and rejected because duplicating lines double-counts deterministic mentions/edge evidence.
 
+### MR2 text derivation amendment (2026-10-16, W-MCP-001)
+
+- The span cap includes intervening LF separators and is checked before appending an ordinary source line, not after an oversized span has already formed. Existing blank-edge trimming, heading boundaries and source-segment locators remain in force.
+- A text-derivation version participates in each document semantic fingerprint. Upgrading from pre-MR2 fingerprints therefore reports stale and re-derives unchanged documents on the next incremental/query refresh; raw sources are never migrated. This is a derived-data invalidation within schema v4, not a SQLite schema migration.
+- Corrected splitting may change span ordinals/refs. Clients must use the returned revision and re-resolve old refs; a stable source path does not promise an eternal span ordinal. Repeated incremental indexing after the upgrade remains a no-op.
+
 ### M1 process lifecycle amendment (2026-08-17)
 
 - The stdio server shuts down gracefully and deterministically: SIGINT, SIGTERM, and stdin EOF (client disconnect) all route through one shutdown chain — close the MCP server (transport) before closing the `WritingService` — then exit with code 0. A 5-second grace guard forces termination, so a long synchronous SQLite operation that cannot be cancelled can never keep the process alive indefinitely.

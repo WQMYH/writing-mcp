@@ -9,6 +9,8 @@ import { derivePrfTerms, PRODUCTION_PRF_CONFIGURATION, validatePrfConfiguration,
 import type { ContextBlock, ContextOptions, ContextPacket, EntityKind, ExploreItem, ExploreOperation, ExploreResult, IndexResult, ParsedWork, SearchExperimentOptions } from "./types.js";
 
 const SCHEMA_VERSION = 4;
+// Increment when unchanged source must be re-derived under corrected text rules.
+const TEXT_DERIVATION_VERSION = 2;
 const SOFTWARE_VERSION = "0.1.0";
 const MAX_RESPONSE_BYTES = 200_000;
 const CONTEXT_SEARCH_LIMIT = 12;
@@ -285,6 +287,7 @@ export class WritingStore {
     return this.work.documents.map((document, sourceOrdinal) => {
       const contentHash = hash(document.content);
       const semanticHash = hash(json({
+        textDerivationVersion: TEXT_DERIVATION_VERSION,
         documentRef: document.documentRef,
         relativePath: document.relativePath,
         title: document.title,
@@ -337,7 +340,7 @@ export class WritingStore {
         freshness: currentRevision ? (changed ? "stale" : "fresh") : "missing",
         stats: { added, updated, deleted, skipped, ...this.counts(db) },
         contextSources: this.contextSourceCounts(db),
-        diagnostics: changed ? [{ code: "INDEX_SOURCE_CHANGED", message: "Source documents differ from the current valid index revision" }] : diagnostics,
+        diagnostics: changed ? [{ code: "INDEX_SOURCE_CHANGED", message: "Source documents or text derivation rules differ from the current valid index revision" }] : diagnostics,
         elapsedMs: performance.now()-started,
       };
     }

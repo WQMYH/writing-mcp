@@ -47,6 +47,7 @@ export function splitDocument(document: SourceDocument, makeId: (ordinal: number
       buffer = [];
       continue;
     }
+    if (buffer.length && buffer.join("\n").length + 1 + line.length > maxChars) { flush(); start = i; }
     buffer.push(line);
     if (buffer.join("\n").length >= maxChars) flush();
   }
