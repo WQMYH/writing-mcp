@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-16（25 类独立复审后，用户授权进入 MR1；隔离分支 `fix/mr1-index-graph-epub`）
-> 当前状态：main 基线为 `af78942`，此前可靠性分支已集成，旧“等待集成”声明作废。本轮仅实施 MR1 的 W-MCP-007/012/014，不扩展到其余 22 项。W012 已提交 `5890d83`，W014 已提交 `a13e659`。W007 已修复受管理旧 SQLite 连接跨越替换的生命周期：Windows 热 rebuild 从 INDEX_BUSY 转为成功，同一热服务的新/旧正文、context 与独立磁盘读取一致；incremental/rebuild 失败保留旧 revision、状态 stale 且后续可恢复。service/snapshot/lifecycle 34 项、check、lint 通过。W007 Linux 验收、本轮全量 verify/coverage 仍待完成，用户已授权 Draft PR 运行现有双平台 CI，不合并。隔离检出修改前全量基线为 57 文件/287 项通过；不沿用历史绿灯。M5 真实 InkOS、更多 EPUB 2/3 变体及独立客户端验收仍未完成，外部 tokenizer 为 `not_evaluated`。
+> 检查点时间：2026-10-16 22:49 +08:00（MR1 产品修复通过本机门禁，等待推送补丁与 Windows CI 收口）
+> 当前状态：隔离分支 `fix/mr1-index-graph-epub` 已实现 W-MCP-012（`5890d83`）、014（`a13e659`）、007（`806d942`），各有失败→通过回归。最终代码/测试提交 `0ff98c7` 的本机 `pnpm verify` 通过：57 文件/316 项、公共基准 30/30、coverage lines 92.77% / branches 79.02%，MCP server branches 60.75%。[Draft PR #1](https://github.com/WQMYH/writing-mcp/pull/1) 保持草稿且不合并；[首轮 CI](https://github.com/WQMYH/writing-mcp/actions/runs/38917551416) 在 `806d942` 上 Linux 完整 verify 通过，Windows 为 315/316，唯一失败是既有测试比较 TEMP 短路径与 realpath；MR1 三项回归均通过。该断言已由 `0ff98c7` 校正并完整本机复验，但 github.com:443 连接超时导致两次推送失败，远端仍为 `806d942`；不得声称最终双平台 CI 或 MR1 里程碑已关闭。main 保持 `af78942`，其他 22 项未实施；私有验收、真实客户端/宿主和外部 tokenizer 未在本轮重测。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -68,25 +68,27 @@ pnpm start
 
 ## 里程碑完成度
 
+2026-10-16 的 25 类复审已重新打开下列对应门禁；历史 AUD 关闭记录只证明当时限定范围，不替代 W-MCP-001～025 的处置。当前仅授权 MR1，MR2～MR6 不自动进入实施。
+
 | 里程碑 | 状态 | 已完成 | 未完成门禁 |
 |---|---|---|---|
 | M0 | 主体完成 | 版本化协议/存储合同、五工具 schema、统一信封、最小 fixture、30 个任务、Token/事实基线 | 指标含义和实现契约继续校准 |
-| M0.1 | ✅ 完成 | 全工具诊断 wrapper、显式 capture、脱敏与报告哈希、开发捕获有界命中 ref（AUD-023 主体）、general JSONL 串行轮转与并发/写失败护栏（AUD-024 主体）、协议层错误边界（AUD-025 主体） | — |
-| M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB、跨 spine 分段 locator、通用作品边界与 capabilities 实际化（AUD-026 主体）、章节编号语法明确化（AUD-027 主体）、EPUB 资源上限（AUD-028 主体）、snapshot 一致性与文本内存上限（AUD-029 主体）、通用文本在 `readFile` 前按 snapshot 拒绝单文件/累计超限、span 硬上限与 locator 精确规则（AUD-030 主体）、进程生命周期与优雅关闭（AUD-032 主体）、工程硬化门禁与适配器模块抽离（AUD-035 第一/二阶段主体） | AUD-035 格式化阶段（用户决策延后至 M3/M4 语义冻结后的重构窗口再评估） |
-| M2 | MR1 待完整验收 | W012 引用刷新保留无关顺序边/证据；W007 受管理旧连接在替换前释放、失败不提交状态的 Windows 回归通过，既有事务/写锁/恢复保持 | W007 Linux 验收及 MR1 全量 verify/coverage 待完成，不据 Windows 单平台关闭 MR1 |
-| M3 | 主体完成 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限、document 字面子串查询、0～3 跳 BFS、timeline、词汇表、source-trust、A1 freshness、真实 explore/context/evaluator deadline、确定性两遍 PRF 与 revision-scoped 有界暖缓存；真实长语料性能门禁通过 | 后续仅做受控检索质量增强与重构，不再以未验证的“完整重排”作为完成声明 |
-| M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、AUD-005/AUD-012/AUD-013 的约束与来源装配；`accountingScope: evidence_excerpts_only` 已冻结；Context 内部池 12 且真实长语料 P95 通过；A1、server 响应字节、EPUB/诊断/lifecycle 均完成 | 外部 tokenizer 复核尚未完成；token-evaluation-materials 只提供复核材料，不给出精确 Token 结论 |
+| M0.1 | MR5 待补强 | 全工具诊断 wrapper、显式 capture、脱敏、有界记录及协议错误边界既有实现保留 | W019 捕获恢复顺序与 W017 生产 CLI 活动捕获保护仍待修复 |
+| M1 | MR2 待补强 | 授权 roots、适配器 SourceSnapshot、读取前资源门禁、编号/locator、生命周期及工程门禁保留；W014 属性解码与必需 spine 完整性回归通过 | W001/002/010/011/016/020 的分片、Unicode、正文/定位保真仍待 MR2；不声称已有测试覆盖全部 EPUB 变体 |
+| M2 | MR1 待 CI 收口 | W012 引用刷新保留无关顺序边/证据；W007 在替换前释放受管理旧连接，热服务/磁盘一致与失败恢复在本机 Windows、Linux CI 通过 | 最终代码本机 verify 已通过；修正既有 Windows 路径断言的提交未推送，整批次尚未关闭；非跨进程读连接协调 |
+| M3 | MR3/MR4 待补强 | search/entity/neighborhood/document/stats、问句分析、PRF/缓存、BFS/timeline、词汇表、真实 deadline 等既有能力保留 | W005/008/009/013/015/021/024 的身份/歧义/增量/评分/字面匹配，以及 W006/018 证据窗口/章节位置仍待修复；历史私有指标不是本轮新证据 |
+| M4 | MR4 待补强 | ContextPacket、抽取式装配、约束接线、excerpt-only accountingScope、预算与响应限额既有实现保留 | W003/004/006/018 的遗漏/返回互斥/支撑摘录/章节位置待修复；外部 tokenizer 仍 not_evaluated，材料不等于精确 Token 结论 |
 | M5 | 进行中（Storyforge 首宿主链已闭环） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归；`CLIENT_SETUP.md` 覆盖 Node 24、pnpm/build、Qoder/Codex stdio 配置、首次调用路由、七类故障、诊断隐私与 v1 边界；Storyforge Host Bridge HB-M0～HB-M6 已完成（最终配对提交：Writing MCP `80ac885` + Storyforge `655ae8e`），真实浏览器链验证证据注入、失败关闭、显式单次绕过与零自动写回 | 真实 InkOS、更多 EPUB 2/3 变体、独立 MCP 客户端安装/连通性验收；外部 tokenizer 结论仍属 M4 独立门禁 |
 
 Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、007～010 的当前门禁；Step 3 已完成中文问句、别名/歧义、稳定排序、输入上限、FTS 降级与检索诊断（提交 `aa84645`）。AUD-018 的旧实现/测试被复审证实只做事后计时且标题错标，现由 `e57264c` 以真实 delayed-source 回归覆盖 explore/context/evaluator、队列占用和 close 等待。AUD-021 SourceSnapshot 双指纹修复保持有效。AUD-005（REVIEW_2026-08-16 P0，提前于 Step 3 剩余项处理）：`requiredRefs` 脱离 search top-50 候选池按 entity/span/document 三级直接解析，池外必选 ref 进 blocks 并计入预算最小值，不存在 ref 以 `not_found` 进 omitted，预算不足触发 `budget_unsatisfiable`；`ContextPacket` 形状与状态词汇未变（M0_CONTRACT 新增 M4 requiredRefs amendment）。M0.1、M1 其余问题和 M3～M5 尚未完成，现有成果不能据此宣称 Writing MCP v1 已完成。
 
 ## 当前测试覆盖
 
-MR1 当前增量：图回归新增 6 项（相关 18 项通过），EPUB 新增 21 项（相关 32 项通过），service/snapshot 增加 2 项并补强失败断言（相关 34 项通过）；下列 57/287 是修改前全量基线，待里程碑 verify 后整体替换计数。
+MR1 从修改前 287 项增加至 316 项：图回归 6 项、EPUB 21 项、service/snapshot 2 项，并补强失败保存/恢复断言；既有 pre-read 断言只做 realpath 校正，无测试跳过或阈值下调。
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
-- 57 个测试文件 / 287 项测试，覆盖：通用链路、MCP 协议与诊断、真实查询 deadline/队列/关闭等待、M5 客户端文档契约、HB-M0 host-bridge 协议与 Storyforge manifest 冻结、HB-M1 配对/令牌/安全边界/单实例锁/MCP stdio 客户端/CLI 生命周期、HB-M2 快照事务/binding/派生数据删除与 Storyforge 确定性导出、HB-M3 五工具代理路由/工作引用恢复/脱敏诊断与 Storyforge 薄客户端/Settings 开发面/协议 fixture 门禁、HB-M5 联合启动、HB-M6 MCP 子进程维护期重启/递归路径脱敏/真实 Bridge 链、诊断 retention/协作锁、server/core 响应字节上限与 recorder ordering、统一进程关闭链、检索正确性、document LIKE 字面匹配、SQLite/FTS 12 进程冷启动、文本读取前资源门禁、短原词候选保留、revision-scoped 暖查询复用与索引失效、A1 SourceSnapshot/fingerprint、A2 evaluator/gold/private/corpus 只读门禁、两遍 PRF/双字候选/批量频率上限、公开前隐私门禁、上下文装配、BFS、timeline、图词汇、基准、TXT/EPUB/InkOS、路径安全和索引生命周期。
+- 57 个测试文件 / 316 项测试，通过当前分支本机完整 verify；覆盖通用链路、五工具与诊断、Bridge、查询/预算/限额、SourceSnapshot/生命周期、图/索引、适配器及 MR1 新回归。计数和覆盖率不意味着其余 22 类复审缺陷已修复。
 - 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制
@@ -98,24 +100,24 @@ MR1 当前增量：图回归新增 6 项（相关 18 项通过），EPUB 新增 
 - `workRef` 只在当前 server 进程中注册；重启后客户端需重新调用 `writing_resolve`。
 - schema v4 writer lock 是 Writing MCP 进程间的合作式协议，不能强制无关程序释放 SQLite 句柄；此类占用稳定返回 `INDEX_BUSY`。
 - A1 SourceSnapshot/fingerprint 已完成并回归覆盖：未变化时复用 store，来源变化即通过 adapter snapshot 触发一致性重读/索引；保留同 mtime/size 原地替换的明确边界，不再标记为待审阅或待落地。
-- 私有 top-20 当前为 41/42，required 16/16；唯一未命中为 optional `event-004`（probe-100 rank 22）。该产品门禁与 gold @50 候选门禁继续分开报告。
+- 历史私有 top-20 为 41/42、required 16/16，optional `event-004` 未命中（probe-100 rank 22）；MR1 没有重跑私有验收，不将此数视为当前分支新结果。产品 top-20 与 gold @50 继续分开报告。
 - 中文问句分析当前是有界规则与 n-gram，不是通用分词器；问题短语表会继续通过真实调用链回归校准。
 - `stats` 的 content 受 900 字符 excerpt 截断（既有模式，`item()` 切片）；`contextSources` 增大了 stats JSON，现实 kind 数下安全，但 stats 内容截断属潜在坑。
 - `entityRefs`/`documentRefs` 的 pinned 块不参与 evidenceHash 去重（显式请求豁免，与 requiredRefs 一致）；已是搜索命中的 pinned ref 保持搜索命中排名，不再获得 pinned 提升。
 
 ## 下一步
 
-- 当前优先 MR1：继续 W014 EPUB 资源完整性、W007 热重建，补对应失败→通过回归；仅三项均完成且公共 verify/必要平台验收通过后关闭 MR1。其余 22 项按独立复审台账后续推进，不因历史里程碑绿灯提前关闭。
+- 当前优先 MR1：恢复 github.com:443 连通后，先核对远端 head，再推送本地 `0ff98c7` 及状态提交，运行现有 Draft PR 的 Windows/Linux CI；两平台通过后才关闭 MR1。禁止为了绿灯跳过失败测试、降低阈值或擅自合并 main。其余 22 项按复审台账待后续授权。
 
 - Host Bridge：Storyforge 首宿主 HB-M0～HB-M6 已关闭；维持静态单宿主、loopback、显式配对、失败关闭和零自动写回边界，不在本轮扩成动态插件市场。下一步先把真实使用反馈转成协议兼容性回归，再决定第二宿主或可配置端口等扩展。
 - M5 收尾：补真实 InkOS、更多 EPUB 2/3 变体及独立 MCP 客户端安装/连通性验收；`.github/workflows/verify.yml` 已存在并只跑公共 `pnpm verify`，私有验收链永不进 CI。
-- 可靠性复审批次：五项 core/gate 缺口已在 `fix/reliability-core-gates` 逐项提交；SkillFlow 自审发现的 standalone coverage 残留构建依赖与无界 test worker 资源争用，已分别由 `d87f8b4`、`5f5cd58` 修复。最终公共门禁与复审已通过，下一动作仅为集成决策。private/corpus 与外部 tokenizer 不受本批代码触碰，不能用历史结果冒充本轮新鲜证据。
+- 历史可靠性分支已集成到当前 main 基线 `af78942`；不再等待旧集成决策。`d87f8b4` 的独立 coverage 构建及 `5f5cd58` 的 worker 上限保持；本轮 MR1 仍不得用历史 private/corpus/tokenizer 结果替代验收。
 - 批次 C（AUD-026～032 + AUD-035 第一/二阶段）已全部完成并审阅归档。
 - AUD-035 第三阶段（Biome 格式化）已由用户决策延后：store.ts 即将被 M3/M4 修改，现在做巨型函数展开与全量格式化必然返工；正确时机是完整重排落地后（检索侧冻结）的重构窗口，届时再评估格式化是否必要。
-- Corpus 阈值门禁已在 4,789,903 字符《语料B》上重跑并通过：索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；报告与 Token 材料仅留本机。该口径按契约先预热每个冻结任务一次，随后测量 revision-scoped 生产缓存路径。
+- 历史 Corpus 记录：4,789,903 字符《语料B》，索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；MR1 未重跑，报告与 Token 材料仅留本机。该历史口径按契约先预热每个冻结任务一次，随后测量 revision-scoped 缓存路径。
 - **重构窗口按触碰面分流（2026-09-02 校正）**：装配侧 context 的 registry+dedup 已落地，sources/budget/layer 仍只在有功能需求时拆分；`store.ts` 的 oxlint 豁免已由 `5e6f6c1` 移除并以 0 警告进入门禁，不再等待格式化。检索 SQL 抽离与 Biome 全量格式化仍延后，禁止仅为覆盖率或风格指标重写生产结构。
-- M4 剩余：PRF 与真实长语料重测已关闭；仍待外部 tokenizer 对本地材料复核。`mixed-cjk-v1` 继续只是 excerpt-only 启发式估算，不升级为精确 Token 结论。
-- M4 审议：已完成的来源/约束装配、excerpt-only accountingScope、server response-size 与 Task 5 运行时硬化保留；A1 使用 adapter-owned `SourceSnapshot`、一致读取重试、及 `loadedFingerprint`/`indexedFingerprint` 双指纹状态语义。真实长语料已由本轮 `verify:private` 重测，结果见上方 Corpus 门禁；后续不得沿用脱离 revision 的历史数字。
+- M4 剩余按复审更新：W003/004/006/018 与外部 tokenizer 复核；历史 PRF 校准不能关闭本轮这些上下文缺陷。`mixed-cjk-v1` 仍为 excerpt-only 启发式估算。
+- M4 审议：来源/约束装配、accountingScope、response-size、Task 5 硬化及 A1 双指纹既有实现保留；MR1 未运行 `verify:private`，不得沿用脱离 revision 的历史数字。
 
 > 更早阶段（Step 3 / AUD-005～035）的逐条落地叙事已于 2026-08-17 移除：事实由「可追溯提交清单」与 commit message 承载，审阅结论由下节表格承载，不在此重复。
 
@@ -188,6 +190,11 @@ MR1 当前增量：图回归新增 6 项（相关 18 项通过），EPUB 新增 
 
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 > 推送状态校正（2026-09-01）：下方 HB-M0～HB-M3 条目末尾的“本地提交，未推送”保留为当时的历史状态；对应 Writing MCP 提交现已随 `e340961` 进入 `origin/main`。Storyforge 配对提交仍只在本地。
+
+- `0ff98c7` — test(adapter)：修正 Windows CI 的 TEMP 8.3/realpath 误比较，保留单次读取/累计超限行为断言；完整本机 verify 57/316、30/30、lines 92.77%、branches 79.02%。因 github.com:443 超时尚未推送，不把远端首轮失败覆盖为成功。
+- `806d942` — fix(core)，W-MCP-007：受管理旧连接在替换前释放，同一热服务及独立磁盘新旧正文一致，incremental/rebuild 失败保留旧 revision、stale 与恢复；已推送。Linux CI 完整通过；Windows MR1 回归通过，整套被上述既有路径断言阻断。
+- `a13e659` — fix(epub)，W-MCP-014：匹配属性引号、单层 XML 实体→URL/安全路径，必需 spine 缺声明/资源明确拒绝；新增 21 项及 M0 amendment；已推送。
+- `5890d83` — fix(graph)，W-MCP-012：引用刷新只清理 mentions/appears_in 及其证据，保留 precedes；新增五类资料修改/无引用、noop/重开/冷建/证据持久化回归；已推送。
 
 - `5f5cd58` — fix(gates): Vitest worker 并发上限固定为 4；在常驻多组 IDE/MCP 服务、低剩余虚拟内存的 Windows 环境中，消除全量门禁的 `VirtualAlloc` worker 退出；生产逻辑与断言均未改变，57 文件/287 项复验通过。
 - `d87f8b4` — fix(gates): `pnpm coverage` 先构建再运行覆盖率，消除 child-process 集成测试对残留 `dist` 的隐式依赖；独立 coverage 复验 57 文件/287 项、lines 92.68%、branches 78.35%、MCP server branches 60.75%。
