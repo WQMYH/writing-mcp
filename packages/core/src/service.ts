@@ -43,7 +43,13 @@ export class WritingService {
     const candidate=this.candidate(workRef),previous=this.active.get(workRef);
     if(mode==="status"&&previous){const snapshot=await this.snapshotConsistent(candidate);if(previous.loadedFingerprint===snapshot.fingerprint&&previous.indexedFingerprint===snapshot.fingerprint)return previous.store.index(mode);}
     const loaded=await this.loadConsistent(candidate),next=new WritingStore(loaded.work);
-    try{const result=await next.index(mode),indexedFingerprint=mode==="status"&&result.freshness!=="fresh"?previous?.indexedFingerprint:loaded.fingerprint;this.active.set(workRef,{store:next,loadedFingerprint:loaded.fingerprint,indexedFingerprint});previous?.store.close();return result;}catch(error){next.close();throw error;}
+    try{
+      // The managed SQLite reader must not outlive publication of its replacement.
+      previous?.store.close();
+      const result=await next.index(mode),indexedFingerprint=mode==="status"&&result.freshness!=="fresh"?previous?.indexedFingerprint:loaded.fingerprint;
+      this.active.set(workRef,{store:next,loadedFingerprint:loaded.fingerprint,indexedFingerprint});
+      return result;
+    }catch(error){next.close();throw error;}
   }
   private sourceChanged(error:unknown):boolean{const code=typeof error==="object"&&error&&"code" in error?String(error.code):undefined;return code==="SOURCE_SNAPSHOT_CHANGED"||code==="ENOENT"||code==="ENOTDIR";}
   private async snapshotConsistent(candidate:WorkCandidate):Promise<SourceSnapshot>{const adapter=this.adapter(candidate);for(let attempt=0;attempt<2;attempt++){try{return await adapter.snapshot(candidate);}catch(error){if(!this.sourceChanged(error))throw error;}}throw Object.assign(new Error("Source files changed while the work was being read; retry the operation"),{code:"SOURCE_CHANGED_DURING_READ"});}

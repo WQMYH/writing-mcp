@@ -274,6 +274,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Per-work active state separates `loaded` (the parsed work held by the current store) from `indexed` (the source snapshot proven represented by a valid index). Only a successful incremental/rebuild or a fresh status advances `indexed`; stale, missing, and incompatible status may advance `loaded` only. Explore and context re-index whenever `indexed` differs from the current snapshot, while an unchanged indexed snapshot takes the fast path. A failed status/index operation closes the new store and retains the prior usable store and both freshness values.
 - This is metadata freshness, not content-hash freshness. An in-place replacement that preserves both mtime and size can remain undetected until a later source change or process restart; no stronger detection is claimed. Tool shapes and derived-index schema are unchanged.
 
+### MR1 managed connection publication amendment (2026-10-16, W-MCP-007)
+
+- After a consistent source load and before a replacement store indexes, the service closes its previous managed store connection inside the existing per-work serialized operation. No previous managed connection is closed after the new database has been published; this prevents that connection from retaining old-file/sidecar state across replacement.
+- The active store and loaded/indexed fingerprints are still committed only after successful indexing. On failure the previous state is retained, its connection can reopen the preserved database, and changed sources remain stale until a successful refresh. Existing writer-lock/atomic-replacement recovery and external-handle `INDEX_BUSY` behavior are unchanged; this is not cross-process reader coordination.
+- Acceptance checks the same hot service plus an independent read of the published spans, not a newly created service or the `fresh` flag alone. No tool shape or SQLite schema changes.
+
 ### M1 span hard cap amendment (2026-08-17)
 
 - `splitDocument` enforces the span size cap as a hard limit: a single line longer than `maxChars` is hard-split into bounded chunk spans that all share that one source line (startLine = endLine, locators included); no span content can ever exceed `maxChars`.

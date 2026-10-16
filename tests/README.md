@@ -44,7 +44,7 @@
 | `corpus-gate-scripts.test.ts` | corpus 门禁脚本：显式/默认报告目录、暖查询预热/测量轮廓、匿名逐样本耗时、完整 token-evaluation-materials、外部 tokenizer `not_evaluated`、阈值失败与输出目录隔离 |
 | `private-script-mode.test.ts` | 私有验收 report-only 与 enforce 模式边界，已知 required miss 只能在前置测量阶段记录，PRF 完成后 enforce 为硬门禁 |
 | `privacy-gate.test.ts` | 公开前隐私门禁：tracked/历史 blob/commit message 命中检测、history 口径（工作树已删仍被抓）、输出不回显匹配文本、泄露仅存于 refs/remotes 过期缓存不算 FAIL 而同泄露在本地分支必 FAIL |
-| `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见；AUD-018 真实响应 deadline 覆盖 explore/context/evaluator，超时后底层操作仍保持逐作品串行 |
+| `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见；W-MCP-007 热 rebuild 后同一服务新/旧正文、context、磁盘 spans、重复 rebuild 一致；AUD-018 真实响应 deadline 覆盖 explore/context/evaluator，超时后底层操作仍保持逐作品串行 |
 | `source-directory-observable.test.ts` | AUD-012 来源目录可观测：explore stats 的 contextSources（byLayer L1/L2/L3 + byKind）复用 AUD-013 注册表 |
 | `status-fast-path.test.ts` | status mtime/size 快速路径：指纹未变时重复 status 零 adapter.load（计数适配器）且结果与全路径语义一致、源编辑击穿快速路径报 stale、status 返回 contextSources |
 | `context-required-refs.test.ts` | AUD-005 requiredRefs 直接解析：池外 span/entity 强制命中、不存在 ref 进 omitted（not_found）、直解 ref 触发 budget_unsatisfiable、池内去重与优先；所有 ContextPacket 路径声明 excerpt-only accountingScope，usedTokens 等于返回块 tokens 之和 |
@@ -61,7 +61,7 @@
 | `txt-numbering.test.ts` | AUD-027 章节编号语法：罗马数字章节不再被 Number("iv") 丢弃、中文数字支持到九百九十九（百位合成）、罗马数字重置推断新卷、非法罗马数字确定性跳过并入上一章、Markdown 中文数字章名识别为 chapter |
 | `snapshot-consistency.test.ts` | AUD-029 snapshot 一致性：读取期间源持续变化拒绝 `SOURCE_CHANGED_DURING_READ`（有界重试后仍不一致）、一次性写入稳定后有界重试成功、单文件超限 `SOURCE_FILE_TOO_LARGE`、作品总量超限 `SOURCE_TOTAL_TOO_LARGE`、默认上限正常加载 |
 | `adapter-pre-read-limits.test.ts` | AUD-029 读取前资源门禁：单文件 snapshot size 超限时 0 次 `readFile`；累计 size 将越界时不读取下一文件，防止“读入内存后才拒绝” |
-| `source-snapshot-reliability.test.ts` | Task 1 SourceSnapshot：完整相对路径避免重名碰撞、超过 12 层的精确枚举、单文件与增删指纹变化、越界 symlink 拒绝、status stale 后 explore 先增量索引、未变化快路径，以及失败增量不推进 freshness 并可恢复查询 |
+| `source-snapshot-reliability.test.ts` | Task 1 SourceSnapshot：完整相对路径避免重名碰撞、超过 12 层的精确枚举、单文件与增删指纹变化、越界 symlink 拒绝、status stale 后 explore 先增量索引、未变化快路径；W-MCP-007 incremental/rebuild 失败保留旧正文/revision、status stale 且可增量恢复 |
 | `fts-cold-init.test.ts` | R4 SQLite/FTS 冷启动：12 个独立进程经共享屏障并发打开同一新索引，验证 WAL 配置的有界 busy 重试与 `BEGIN IMMEDIATE` schema 双检不会暴露 `database is locked`，最终 schema v4/FTS 表唯一且完整 |
 | `span-hard-split.test.ts` | AUD-030 span 硬上限与边界规则：超长单行硬切为共享同一源行的有界 chunk、locator 不含被裁空行、相邻 span 连续平铺无重叠无遗漏且内容可重组、硬切后后续 span 行号连续、heading 边界 locator 精确 |
 | `lifecycle.test.ts` | AUD-032/Task 5C 进程生命周期：SIGTERM/SIGINT 在时限内终止进程（POSIX 优雅 exit 0 / Windows 信号终止）、stdin EOF 优雅退出 exit 0、完整会话 stdout 只输出 JSON-RPC；runtime/termination promise 身份幂等、server→service 失败后置、5 秒悬挂兜底/成功取消、错误报告失败仍完成且零 stdout 写入 |

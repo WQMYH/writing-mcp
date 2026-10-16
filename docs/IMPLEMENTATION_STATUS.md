@@ -3,7 +3,7 @@
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
 > 检查点时间：2026-10-16（25 类独立复审后，用户授权进入 MR1；隔离分支 `fix/mr1-index-graph-epub`）
-> 当前状态：main 基线为 `af78942`，此前可靠性分支已集成，旧“等待集成”声明作废。本轮仅实施 MR1 的 W-MCP-007/012/014，不扩展到其余 22 项。W012 已提交 `5890d83`：6 个新回归，graph/timeline/vocabulary 18 项、check、lint 通过。W014 已修复属性引号/单层实体解码/必需 spine 完整性；新增 21 项回归，EPUB/资源限额共 32 项、check、lint 通过，稳定错误语义见 M0 amendment。W007 热重建仍开放。隔离检出修改前全量基线为 57 文件/287 项通过；本轮全量 verify、覆盖率和 Linux 热重建验收尚未运行，不沿用历史绿灯。Storyforge 既有交付不变；M5 真实 InkOS、更多 EPUB 2/3 变体及独立客户端验收仍未完成，外部 tokenizer 为 `not_evaluated`。
+> 当前状态：main 基线为 `af78942`，此前可靠性分支已集成，旧“等待集成”声明作废。本轮仅实施 MR1 的 W-MCP-007/012/014，不扩展到其余 22 项。W012 已提交 `5890d83`，W014 已提交 `a13e659`。W007 已修复受管理旧 SQLite 连接跨越替换的生命周期：Windows 热 rebuild 从 INDEX_BUSY 转为成功，同一热服务的新/旧正文、context 与独立磁盘读取一致；incremental/rebuild 失败保留旧 revision、状态 stale 且后续可恢复。service/snapshot/lifecycle 34 项、check、lint 通过。W007 Linux 验收、本轮全量 verify/coverage 仍待完成，用户已授权 Draft PR 运行现有双平台 CI，不合并。隔离检出修改前全量基线为 57 文件/287 项通过；不沿用历史绿灯。M5 真实 InkOS、更多 EPUB 2/3 变体及独立客户端验收仍未完成，外部 tokenizer 为 `not_evaluated`。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -73,7 +73,7 @@ pnpm start
 | M0 | 主体完成 | 版本化协议/存储合同、五工具 schema、统一信封、最小 fixture、30 个任务、Token/事实基线 | 指标含义和实现契约继续校准 |
 | M0.1 | ✅ 完成 | 全工具诊断 wrapper、显式 capture、脱敏与报告哈希、开发捕获有界命中 ref（AUD-023 主体）、general JSONL 串行轮转与并发/写失败护栏（AUD-024 主体）、协议层错误边界（AUD-025 主体） | — |
 | M1 | 补强中 | 授权 roots、realpath/链接防护、InkOS、Markdown/TXT/EPUB、跨 spine 分段 locator、通用作品边界与 capabilities 实际化（AUD-026 主体）、章节编号语法明确化（AUD-027 主体）、EPUB 资源上限（AUD-028 主体）、snapshot 一致性与文本内存上限（AUD-029 主体）、通用文本在 `readFile` 前按 snapshot 拒绝单文件/累计超限、span 硬上限与 locator 精确规则（AUD-030 主体）、进程生命周期与优雅关闭（AUD-032 主体）、工程硬化门禁与适配器模块抽离（AUD-035 第一/二阶段主体） | AUD-035 格式化阶段（用户决策延后至 M3/M4 语义冻结后的重构窗口再评估） |
-| M2 | MR1 修复中 | SQLite/FTS5、schema v4、revision/事务、写锁、恢复及多进程冷启动既有实现保留；W012 引用刷新保留无关顺序边和逐边证据的针对性门禁通过 | W007 热服务 rebuild 的连接/发布一致性和 Linux 验收仍开放；MR1 全量 verify 未运行 |
+| M2 | MR1 待完整验收 | W012 引用刷新保留无关顺序边/证据；W007 受管理旧连接在替换前释放、失败不提交状态的 Windows 回归通过，既有事务/写锁/恢复保持 | W007 Linux 验收及 MR1 全量 verify/coverage 待完成，不据 Windows 单平台关闭 MR1 |
 | M3 | 主体完成 | search/entity/neighborhood/document/stats、中文问句分析、别名/歧义/未解析输出、稳定排序、输入上限、document 字面子串查询、0～3 跳 BFS、timeline、词汇表、source-trust、A1 freshness、真实 explore/context/evaluator deadline、确定性两遍 PRF 与 revision-scoped 有界暖缓存；真实长语料性能门禁通过 | 后续仅做受控检索质量增强与重构，不再以未验证的“完整重排”作为完成声明 |
 | M4 | 进行中（已有纵向切片） | ContextPacket、预算上限、抽取式选择、AUD-005/AUD-012/AUD-013 的约束与来源装配；`accountingScope: evidence_excerpts_only` 已冻结；Context 内部池 12 且真实长语料 P95 通过；A1、server 响应字节、EPUB/诊断/lifecycle 均完成 | 外部 tokenizer 复核尚未完成；token-evaluation-materials 只提供复核材料，不给出精确 Token 结论 |
 | M5 | 进行中（Storyforge 首宿主链已闭环） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归；`CLIENT_SETUP.md` 覆盖 Node 24、pnpm/build、Qoder/Codex stdio 配置、首次调用路由、七类故障、诊断隐私与 v1 边界；Storyforge Host Bridge HB-M0～HB-M6 已完成（最终配对提交：Writing MCP `80ac885` + Storyforge `655ae8e`），真实浏览器链验证证据注入、失败关闭、显式单次绕过与零自动写回 | 真实 InkOS、更多 EPUB 2/3 变体、独立 MCP 客户端安装/连通性验收；外部 tokenizer 结论仍属 M4 独立门禁 |
@@ -82,7 +82,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 ## 当前测试覆盖
 
-MR1 当前增量：图回归新增 6 项（相关 18 项通过），EPUB 新增 21 项（相关 32 项通过）；下列 57/287 是修改前全量基线，待里程碑 verify 后整体替换计数。
+MR1 当前增量：图回归新增 6 项（相关 18 项通过），EPUB 新增 21 项（相关 32 项通过），service/snapshot 增加 2 项并补强失败断言（相关 34 项通过）；下列 57/287 是修改前全量基线，待里程碑 verify 后整体替换计数。
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
