@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-17 00:36 +08:00（MR5 W017 生产捕获保护针对性门禁通过）
-> 当前状态：MR1～MR4 阶段验收通过；MR5 W022/W023/W025 已提交。W017 真实 CLI 活动捕获删数据返回 200 的缺陷先复现，再接入逐项目持久化 activeCaptureCount、异步删除守卫与失败关闭；其他项目可删、MCP 重启保留两个捕获、全部关闭后才可删及真实进程退出已验证，相关 5 文件/32 项、check/lint 通过。W019 捕获首调用恢复及 MR5 完整/私有/双平台阶段验收待完成；25 类目标 active，Draft PR 不合并。
+> 检查点时间：2026-10-17 00:43 +08:00（MR5 本机完整 verify 通过）
+> 当前状态：MR1～MR4 阶段验收通过；MR5 五类功能修复完成针对性回归，本机完整 verify 58 文件/408 项、公开 30/30、coverage lines 91.21%/branches 79.91% 通过，未降低阈值。W019 full-CLI/child restart 首个 explore 与再次重启后首个 finish_capture 可恢复，真实 missing/closed 不重试不重启；真实 CLI 子进程不计入父进程 V8 coverage，覆盖率下降不代表删除回归。私有/gold/双平台验收待完成；25 类目标 active，Draft PR 不合并。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -73,7 +73,7 @@ pnpm start
 | 里程碑 | 状态 | 已完成 | 未完成门禁 |
 |---|---|---|---|
 | M0 | 主体完成 | 版本化协议/存储合同、五工具 schema、统一信封、最小 fixture、30 个任务、Token/事实基线 | 指标含义和实现契约继续校准 |
-| M0.1 | MR5 待补强 | 全工具诊断 wrapper、显式 capture、脱敏、有界记录及协议错误边界既有实现保留 | W019 捕获恢复顺序与 W017 生产 CLI 活动捕获保护仍待修复 |
+| M0.1 | MR5 功能回归通过、阶段门禁待验 | 统一诊断 wrapper 保留；W017 持久化活动捕获逐项目拒删，W019 子进程/CLI 重启后先注册再校验捕获 | MR5 完整/私有/双平台验收待完成 |
 | M1 | MR2 功能及阶段门禁通过 | W001/002/010/011/016/020 六项失败→通过回归、全量/私有/双平台 CI 通过；W014 必需 spine 完整性门禁保留 | 不声称覆盖全部 EPUB 变体；独立客户端/宿主综合验收仍属 MR6 |
 | M2 | MR1 公开验收通过 | W012 无关顺序边/证据保留，W007 受管理连接替换、热服务/磁盘一致及失败恢复，本机 Windows 与双平台完整 CI 通过；W014 完整性见 M1 | PR 仍 Draft，未合并；该门禁不是跨进程读协调或旧版 Linux WAL 低层机制取证，亦不关闭其余 22 项 |
 | M3 | MR3/MR4 对应阶段门禁通过 | 身份/歧义/增量/评分/字面匹配、支撑窗口及章节位置回归，完整 verify/私有/gold/双平台通过 | 综合客户端/宿主与规模验收仍属 MR6 |
@@ -193,6 +193,8 @@ MR4 新增 W003/W004 三项、W006 三项、W018 三项，共九项；完整 ver
 - **评估数据（供重构窗口参考）**：src/tests 共 333 行超 160 字符，其中约 200 行集中在 tests/（机械折行即可）；src 巨型函数集中在 store.ts（validateBuiltIndex 1418 字符、rowsForDocuments 876 字符等，多为长 SQL 字符串）、epub.ts 两处遍历循环、server.ts 工具注册块。
 
 ## 可追溯提交清单
+
+- `1006fdd` — fix(bridge)，W017：生产 CLI 持久化捕获守卫、异步逐项目检查/失败关闭；真实拒删/其他项目可删/重启后关闭/实际 PID 退出，5 文件/32 项及 check/lint 通过，已推送。
 
 - `648895e` — fix(protocol)，W025：Unicode 码点上限贯通 JSON Schema/Zod/SDK/core 与标签持久化；新 4 项真实边界回归及相关 22 项、check/lint 通过，已推送。
 

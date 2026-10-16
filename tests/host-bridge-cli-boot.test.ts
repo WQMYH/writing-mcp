@@ -97,6 +97,66 @@ function bootArgv(root: string, port: number, hostOrigins: string[], mcpEntry = 
 }
 
 describe("host bridge boot wiring (HB-M5)", () => {
+  test.each(["bridge", "mcp"] as const)("first correlated call after %s restart recovers the work registry, not missing or closed captures (W-MCP-019)", async restart => {
+    const root = await mkdtemp(join(tmpdir(), "hb-capture-restart-")), origin = DEV_ORIGINS[0]!;
+    const entry = join(root, "mcp-pid.mjs"), pidPath = join(root, "mcp.pid");
+    await writeFile(entry, `import {writeFileSync} from 'node:fs';writeFileSync(${JSON.stringify(pidPath)},String(process.pid));await import(${JSON.stringify(pathToFileURL(MCP_ENTRY).href)});`);
+    let handle = await boot(bootArgv(root, await freePort(), [origin], entry));
+    const pair = async () => {
+      await handle.waitReady();
+      const paired = await handle.request("/v1/pair", { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ pairingCode: handle.pairingCode() }) });
+      expect(paired.status).toBe(200);
+      return { origin, "content-type": "application/json", authorization: `Bearer ${String((paired.json.data as { token: string }).token)}` };
+    };
+    let headers = await pair();
+    const tool = async (operation: string, args: Record<string, unknown>, project = "captured") => {
+      const response = await handle.request(`/v1/projects/${project}/${operation}`, { method: "POST", headers, body: JSON.stringify({ protocolVersion: 1, arguments: args }) });
+      expect(response.status).toBe(200);
+      return response.json.data as { ok: boolean; data?: Record<string, unknown>; error?: { code: string }; diagnostic?: { persistence: string } };
+    };
+    try {
+      const content = "# First chapter\nScout returns.", documents = [{ relativePath: "chapters/one.md", category: "chapter", mediaType: "text/markdown", content, sha256: computeContentHash(content) }];
+      for (const project of ["captured", "other"]) {
+        expect((await handle.request(`/v1/projects/${project}/snapshot`, { method: "POST", headers, body: JSON.stringify({ protocolVersion: 1, pluginId: "storyforge", hostProjectId: project, documents, chapters: [{ chapterKey: "n:1", ordinal: 1 }], claimedSnapshotHash: computeSnapshotHash(1, documents as never) }) })).status).toBe(200);
+      }
+      const started = await tool("diagnose", { action: "start_capture", purpose: "development" });
+      expect(started.ok).toBe(true);
+      const diagnosticRunRef = started.data!.diagnosticRunRef;
+      const oldPid = Number(await readFile(pidPath, "utf8"));
+      expect(Number.isInteger(oldPid) && oldPid > 0).toBe(true);
+      const restartChild = async () => {
+        if (restart === "bridge") {
+          expect(await handle.shutdown()).toBe(0);
+          handle = await boot(bootArgv(root, await freePort(), [origin], entry));
+          headers = await pair();
+        } else {
+          expect((await handle.request("/v1/projects/other/derived-data", { method: "DELETE", headers })).status).toBe(200);
+        }
+      };
+      await restartChild();
+      expect(() => process.kill(oldPid, 0)).toThrowError(expect.objectContaining({ code: "ESRCH" }));
+      const explored = await tool("explore", { operation: "search", query: "Scout", diagnosticRunRef });
+      expect(explored).toMatchObject({ ok: true, diagnostic: { persistence: "persisted" } });
+      expect(JSON.stringify(explored.data)).toContain("Scout returns");
+      // A second restart makes finish_capture itself the first correlated call.
+      if (restart === "mcp") {
+        // The deleted unrelated project is reactivated before the next maintenance restart.
+        expect((await handle.request("/v1/projects/other/snapshot", { method: "POST", headers, body: JSON.stringify({ protocolVersion: 1, pluginId: "storyforge", hostProjectId: "other", documents, chapters: [{ chapterKey: "n:1", ordinal: 1 }], claimedSnapshotHash: computeSnapshotHash(1, documents as never) }) })).status).toBe(200);
+      }
+      await restartChild();
+      const finished = await tool("diagnose", { action: "finish_capture", purpose: "development", diagnosticRunRef });
+      expect(finished).toMatchObject({ ok: true, data: { diagnosticRunRef, calls: 1 } });
+      const currentPid = Number(await readFile(pidPath, "utf8"));
+      expect(Number.isInteger(currentPid) && currentPid > 0).toBe(true);
+      expect(await tool("explore", { operation: "search", query: "Scout", diagnosticRunRef })).toMatchObject({ ok: false, error: { code: "DIAGNOSTIC_RUN_CLOSED" } });
+      expect(await tool("explore", { operation: "search", query: "Scout", diagnosticRunRef: "diag-" + "0".repeat(24) })).toMatchObject({ ok: false, error: { code: "DIAGNOSTIC_RUN_NOT_FOUND" } });
+      expect(Number(await readFile(pidPath, "utf8"))).toBe(currentPid);
+      expect(await handle.shutdown()).toBe(0);
+      expect(() => process.kill(currentPid, 0)).toThrowError(expect.objectContaining({ code: "ESRCH" }));
+      expect(existsSync(join(root, ".bridge", "instance.lock"))).toBe(false);
+    } finally { await handle.shutdown(); await rm(root, { recursive: true, force: true }); }
+  }, 35_000);
+
   test("real CLI refuses to delete a captured project, permits an unrelated project, then permits the closed capture (W-MCP-017)", async () => {
     const root = await mkdtemp(join(tmpdir(), "hb-cli-capture-")), origin = DEV_ORIGINS[0]!;
     const entry = join(root, "mcp-pid.mjs"), pidPath = join(root, "mcp.pid");

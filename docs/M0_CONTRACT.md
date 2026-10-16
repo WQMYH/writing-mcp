@@ -236,6 +236,16 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - `writing_diagnose` may write disposable diagnostic artifacts but cannot modify source works or index semantics and cannot automatically invoke index repair.
 - Stable diagnostic errors include `INVALID_DIAGNOSTIC_REQUEST`, `DIAGNOSTIC_RUN_NOT_FOUND`, and `DIAGNOSTIC_RUN_CLOSED`. The former hard-cap error `DIAGNOSTIC_STORAGE_LIMIT` is superseded by the 2026-08-21 retention amendment below.
 
+### M0.1 persisted capture inspection amendment (2026-10-17, W-MCP-017)
+
+- `writing_diagnose(inspect)` adds nonnegative integer `activeCaptureCount` in both purposes. It counts this work's persisted active capture metadata, independently of `limit` and rotating event history; a fresh process observes the same unfinished captures. Missing capture directories mean zero, but unreadable, foreign, or malformed native capture metadata causes an error, not a falsely safe zero.
+- The production host-bridge CLI consults that project-scoped count inside the existing deletion mutex. An active capture or unverifiable capture state returns `DERIVED_DATA_BUSY` without deleting project data. Captures in another project do not block deletion; absent project data remains a no-op. This check is not a cross-process transaction between external capture writers and deletion.
+
+### M0.1 bridge capture restart amendment (2026-10-17, W-MCP-019)
+
+- Before forwarding any call carrying `diagnosticRunRef`, the bridge resolves its own project source in the current MCP child. This restores the in-memory work registry before the existing pre-handler capture validation, including when the first call after child/full-CLI restart is `finish_capture`.
+- Browser-provided `workRef`/`sourcePath` never choose that source. The existing single `WORK_REF_NOT_FOUND` recovery stays bounded; `DIAGNOSTIC_RUN_NOT_FOUND` and `DIAGNOSTIC_RUN_CLOSED` are not retry signals and never trigger capture recreation or a child restart.
+
 ### M0.1 capture bounded-refs amendment (2026-08-16)
 
 - Development capture events additionally store a bounded `outputHits` view of which refs a call returned: for `results`/`ambiguous`/`blocks` each entry keeps `ref`, `kind`, `sourceKind`, `score`, a SHA-256 hash of its locators, and for blocks the assembly fields `layer`/`tokens`/`required`; `omitted` entries keep `ref`/`reason`/`tokens`; resolve candidates keep `workRef`/`adapter`.

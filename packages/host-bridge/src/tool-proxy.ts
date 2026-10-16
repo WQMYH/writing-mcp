@@ -109,7 +109,14 @@ export function createProjectToolProxy(options: ProjectToolProxyOptions): Projec
         ));
       };
 
-      let result = await call(await boundWorkRef(hostProjectId, origin));
+      let workRef = await boundWorkRef(hostProjectId, origin);
+      // Capture validation precedes the tool body, so restore its work registry first.
+      if (typeof args.diagnosticRunRef === "string") {
+        const resolved = await resolveWork(hostProjectId, origin);
+        if (!resolved.ok || typeof resolved.data?.workRef !== "string") return browserSafe(resolved);
+        workRef = resolved.data.workRef;
+      }
+      let result = await call(workRef);
       if (!result.ok && result.error?.code === "WORK_REF_NOT_FOUND") {
         const resolved = await resolveWork(hostProjectId, origin);
         const workRef = resolved.ok ? resolved.data?.workRef : undefined;
