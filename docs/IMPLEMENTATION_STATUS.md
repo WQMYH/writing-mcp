@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-16 22:49 +08:00（MR1 产品修复通过本机门禁，等待推送补丁与 Windows CI 收口）
-> 当前状态：隔离分支 `fix/mr1-index-graph-epub` 已实现 W-MCP-012（`5890d83`）、014（`a13e659`）、007（`806d942`），各有失败→通过回归。最终代码/测试提交 `0ff98c7` 的本机 `pnpm verify` 通过：57 文件/316 项、公共基准 30/30、coverage lines 92.77% / branches 79.02%，MCP server branches 60.75%。[Draft PR #1](https://github.com/WQMYH/writing-mcp/pull/1) 保持草稿且不合并；[首轮 CI](https://github.com/WQMYH/writing-mcp/actions/runs/38917551416) 在 `806d942` 上 Linux 完整 verify 通过，Windows 为 315/316，唯一失败是既有测试比较 TEMP 短路径与 realpath；MR1 三项回归均通过。该断言已由 `0ff98c7` 校正并完整本机复验，但 github.com:443 连接超时导致两次推送失败，远端仍为 `806d942`；不得声称最终双平台 CI 或 MR1 里程碑已关闭。main 保持 `af78942`，其他 22 项未实施；私有验收、真实客户端/宿主和外部 tokenizer 未在本轮重测。
+> 检查点时间：2026-10-16 22:59 +08:00（MR1 三项功能修复与公开门禁验收完成，未合并 main）
+> 当前状态：隔离分支 `fix/mr1-index-graph-epub` 的 W-MCP-012（`5890d83`）、014（`a13e659`）、007（`806d942`）均有失败→通过回归。最终代码/测试提交 `0ff98c7` 已推送；本机 verify 通过，[双平台 CI](https://github.com/WQMYH/writing-mcp/actions/runs/38919516032) 在含该代码的 `7ba7a79` 上 Windows/Linux 完整 verify 均通过：57 文件/316 项、公共基准 30/30、coverage lines 92.77% / branches 79.02%，MCP server branches 60.75%。先前直连超时已用本机既有 loopback 系统代理完成单次 Git 推送，无持久配置更改；[首轮 Windows 失败回执](https://github.com/WQMYH/writing-mcp/actions/runs/38917551416) 保留，路径断言由 `0ff98c7` 修正，没有跳过测试或降低门禁。[PR #1](https://github.com/WQMYH/writing-mcp/pull/1) 仍为 Draft，main 保持 `af78942`。其余 22 项待授权实施；私有/宿主/tokenizer 验收及 MR0 的旧版 Linux WAL 低层取证不在本次通过声明内，25 类长期目标未完成。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -75,7 +75,7 @@ pnpm start
 | M0 | 主体完成 | 版本化协议/存储合同、五工具 schema、统一信封、最小 fixture、30 个任务、Token/事实基线 | 指标含义和实现契约继续校准 |
 | M0.1 | MR5 待补强 | 全工具诊断 wrapper、显式 capture、脱敏、有界记录及协议错误边界既有实现保留 | W019 捕获恢复顺序与 W017 生产 CLI 活动捕获保护仍待修复 |
 | M1 | MR2 待补强 | 授权 roots、适配器 SourceSnapshot、读取前资源门禁、编号/locator、生命周期及工程门禁保留；W014 属性解码与必需 spine 完整性回归通过 | W001/002/010/011/016/020 的分片、Unicode、正文/定位保真仍待 MR2；不声称已有测试覆盖全部 EPUB 变体 |
-| M2 | MR1 待 CI 收口 | W012 引用刷新保留无关顺序边/证据；W007 在替换前释放受管理旧连接，热服务/磁盘一致与失败恢复在本机 Windows、Linux CI 通过 | 最终代码本机 verify 已通过；修正既有 Windows 路径断言的提交未推送，整批次尚未关闭；非跨进程读连接协调 |
+| M2 | MR1 公开验收通过 | W012 无关顺序边/证据保留，W007 受管理连接替换、热服务/磁盘一致及失败恢复，本机 Windows 与双平台完整 CI 通过；W014 完整性见 M1 | PR 仍 Draft，未合并；该门禁不是跨进程读协调或旧版 Linux WAL 低层机制取证，亦不关闭其余 22 项 |
 | M3 | MR3/MR4 待补强 | search/entity/neighborhood/document/stats、问句分析、PRF/缓存、BFS/timeline、词汇表、真实 deadline 等既有能力保留 | W005/008/009/013/015/021/024 的身份/歧义/增量/评分/字面匹配，以及 W006/018 证据窗口/章节位置仍待修复；历史私有指标不是本轮新证据 |
 | M4 | MR4 待补强 | ContextPacket、抽取式装配、约束接线、excerpt-only accountingScope、预算与响应限额既有实现保留 | W003/004/006/018 的遗漏/返回互斥/支撑摘录/章节位置待修复；外部 tokenizer 仍 not_evaluated，材料不等于精确 Token 结论 |
 | M5 | 进行中（Storyforge 首宿主链已闭环） | stdio、五工具注册、structuredContent、outputSchema、统一结果/错误/诊断信封、协议测试、单个真实转换型 EPUB 回归；`CLIENT_SETUP.md` 覆盖 Node 24、pnpm/build、Qoder/Codex stdio 配置、首次调用路由、七类故障、诊断隐私与 v1 边界；Storyforge Host Bridge HB-M0～HB-M6 已完成（最终配对提交：Writing MCP `80ac885` + Storyforge `655ae8e`），真实浏览器链验证证据注入、失败关闭、显式单次绕过与零自动写回 | 真实 InkOS、更多 EPUB 2/3 变体、独立 MCP 客户端安装/连通性验收；外部 tokenizer 结论仍属 M4 独立门禁 |
@@ -107,7 +107,7 @@ MR1 从修改前 287 项增加至 316 项：图回归 6 项、EPUB 21 项、serv
 
 ## 下一步
 
-- 当前优先 MR1：恢复 github.com:443 连通后，先核对远端 head，再推送本地 `0ff98c7` 及状态提交，运行现有 Draft PR 的 Windows/Linux CI；两平台通过后才关闭 MR1。禁止为了绿灯跳过失败测试、降低阈值或擅自合并 main。其余 22 项按复审台账待后续授权。
+- MR1 三项功能与公开门禁已通过，维持 Draft PR，不擅自合并 main。下一实施候选为 MR2：W001/002/010/011/016/020 的分片、Unicode、TXT 定位与 EPUB 正文保真；等待用户授权后按现有修复计划推进，不因目标自动续行扩大产品修改范围。
 
 - Host Bridge：Storyforge 首宿主 HB-M0～HB-M6 已关闭；维持静态单宿主、loopback、显式配对、失败关闭和零自动写回边界，不在本轮扩成动态插件市场。下一步先把真实使用反馈转成协议兼容性回归，再决定第二宿主或可配置端口等扩展。
 - M5 收尾：补真实 InkOS、更多 EPUB 2/3 变体及独立 MCP 客户端安装/连通性验收；`.github/workflows/verify.yml` 已存在并只跑公共 `pnpm verify`，私有验收链永不进 CI。
@@ -191,7 +191,8 @@ MR1 从修改前 287 项增加至 316 项：图回归 6 项、EPUB 21 项、serv
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 > 推送状态校正（2026-09-01）：下方 HB-M0～HB-M3 条目末尾的“本地提交，未推送”保留为当时的历史状态；对应 Writing MCP 提交现已随 `e340961` 进入 `origin/main`。Storyforge 配对提交仍只在本地。
 
-- `0ff98c7` — test(adapter)：修正 Windows CI 的 TEMP 8.3/realpath 误比较，保留单次读取/累计超限行为断言；完整本机 verify 57/316、30/30、lines 92.77%、branches 79.02%。因 github.com:443 超时尚未推送，不把远端首轮失败覆盖为成功。
+- `7ba7a79` — docs(status)：保存 MR1 本机结果及当时的推送/Windows CI 阻塞；随后补推成功，双平台 CI `38919516032` 均完整通过，57/316、30/30、lines 92.77%、branches 79.02%。旧阻塞已解除，原始失败回执不覆盖。
+- `0ff98c7` — test(adapter)：修正 Windows CI 的 TEMP 8.3/realpath 误比较，保留单次读取/累计超限行为断言；完整本机 verify 57/316、30/30、lines 92.77%、branches 79.02%；已推送并通过双平台 CI。
 - `806d942` — fix(core)，W-MCP-007：受管理旧连接在替换前释放，同一热服务及独立磁盘新旧正文一致，incremental/rebuild 失败保留旧 revision、stale 与恢复；已推送。Linux CI 完整通过；Windows MR1 回归通过，整套被上述既有路径断言阻断。
 - `a13e659` — fix(epub)，W-MCP-014：匹配属性引号、单层 XML 实体→URL/安全路径，必需 spine 缺声明/资源明确拒绝；新增 21 项及 M0 amendment；已推送。
 - `5890d83` — fix(graph)，W-MCP-012：引用刷新只清理 mentions/appears_in 及其证据，保留 precedes；新增五类资料修改/无引用、noop/重开/冷建/证据持久化回归；已推送。
