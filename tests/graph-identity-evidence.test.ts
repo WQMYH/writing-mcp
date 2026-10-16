@@ -36,6 +36,63 @@ const document = (
 const indexPath = (work: ParsedWork) => join(work.rootPath, ".writing-index", work.workRef.replace(":", "-"), "index.sqlite");
 
 describe("schema v4 graph identity and evidence", () => {
+  test.each(["alice", "ALICE", "aLiCe"])("refreshes unchanged [[%s]] references when owners are added/deleted/renamed (W-MCP-009)", async name => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-owner-refresh-")), ref = stableId("work", "graph-test", root);
+    const character = document(ref, "role.md", "Alice", "character", "# Alice");
+    const chapter = document(ref, "one.md", "Arrival", "chapter", `# Arrival\n[[${name}]] arrives.`, 1);
+    const other = document(ref, "location.md", "Location: ALICE", "document", "# Location: ALICE");
+    const work = workAt(root, [character, chapter]), store = new WritingStore(work);
+    const references = (path: string) => {
+      const db = new DatabaseSync(path, { readOnly: true });
+      try { return {
+        edges: db.prepare("SELECT e.edge_ref,e.source_ref,e.target_ref,e.confidence,ee.span_ref,ee.start_offset,ee.end_offset,ee.evidence_hash FROM edges e JOIN edge_evidence ee ON ee.edge_ref=e.edge_ref WHERE e.kind='mentions' ORDER BY e.edge_ref,ee.span_ref").all(),
+        unresolved: db.prepare("SELECT text,reason FROM unresolved_mentions ORDER BY text,span_ref").all(),
+      }; } finally { db.close(); }
+    };
+    try {
+      await store.index("rebuild");
+      expect(references(indexPath(work)).edges).toHaveLength(1);
+      for (const phase of ["add", "delete", "rename", "restore"]) {
+        if (phase === "add") work.documents.push(other);
+        if (phase === "delete") work.documents.splice(work.documents.indexOf(other), 1);
+        if (phase === "rename" || phase === "restore") {
+          character.title = phase === "rename" ? "Beryl" : "Alice";
+          character.content = `# ${character.title}`; character.sourceSize = Buffer.byteLength(character.content);
+        }
+        await store.index("incremental");
+        const state = references(indexPath(work));
+        if (phase === "add" || phase === "rename") {
+          expect(state.edges).toHaveLength(0);
+          expect(state.unresolved).toEqual([{ text: name, reason: phase === "add" ? "AMBIGUOUS_ALIAS" : "NO_MATCHING_ENTITY" }]);
+        } else { expect(state.edges).toHaveLength(1); expect(state.unresolved).toEqual([]); }
+        const cold = new WritingStore(work, join(root, "cold.sqlite"));
+        try { await cold.index("rebuild"); expect(state).toEqual(references(join(root, "cold.sqlite"))); } finally { cold.close(); }
+        await store.index("incremental"); expect(references(indexPath(work))).toEqual(state);
+      }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("invalidates references to an old persisted alias when its owner disappears (W-MCP-009)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-old-alias-refresh-")), ref = stableId("work", "graph-test", root);
+    const character = document(ref, "role.md", "Alice", "character", "# Alice"), chapter = document(ref, "one.md", "Arrival", "chapter", "# Arrival", 1);
+    const work = workAt(root, [character, chapter]), store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const db = new DatabaseSync(indexPath(work));
+      try {
+        const owner = String(db.prepare("SELECT entity_ref FROM entities WHERE name='Alice'").get()!.entity_ref);
+        db.prepare("INSERT INTO aliases VALUES(?,?,?)").run(owner, "Scout", "scout");
+        chapter.content += "\n[[scout]] arrives."; chapter.sourceSize = Buffer.byteLength(chapter.content);
+        await store.index("incremental");
+        expect(db.prepare("SELECT COUNT(*) count FROM edges WHERE kind='mentions'").get()).toEqual({ count: 1 });
+        character.title = "Beryl"; character.content = "# Beryl"; character.sourceSize = Buffer.byteLength(character.content);
+        await store.index("incremental");
+        expect(db.prepare("SELECT text,reason FROM unresolved_mentions").all()).toEqual([{ text: "scout", reason: "NO_MATCHING_ENTITY" }]);
+        expect(db.prepare("SELECT COUNT(*) count FROM edges WHERE kind='mentions'").get()).toEqual({ count: 0 });
+      } finally { db.close(); }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
   test("normalizes canonical-equivalent entity names and native references consistently (W-MCP-005)", async () => {
     const root = await mkdtemp(join(tmpdir(), "writing-mcp-nfc-owner-")), ref = stableId("work", "graph-test", root);
     const work = workAt(root, [

@@ -10,7 +10,7 @@ import type { ContextBlock, ContextOptions, ContextPacket, EntityKind, ExploreIt
 
 const SCHEMA_VERSION = 4;
 // Increment when unchanged source must be re-derived under corrected text/graph rules.
-const TEXT_DERIVATION_VERSION = 5;
+const TEXT_DERIVATION_VERSION = 6;
 const SOFTWARE_VERSION = "0.1.0";
 const MAX_RESPONSE_BYTES = 200_000;
 const CONTEXT_SEARCH_LIMIT = 12;
@@ -400,7 +400,7 @@ export class WritingStore {
     db.prepare("DELETE FROM documents WHERE document_ref=?").run(ref);
   }
 
-  private entityNamesForDocuments(db:DatabaseSync,refs:Set<string>):Set<string>{if(!refs.size)return new Set();const placeholders=[...refs].map(()=>"?").join(",");const rows=db.prepare(`SELECT DISTINCT e.name FROM entities e JOIN spans s ON s.span_ref=e.span_ref WHERE s.document_ref IN (${placeholders})`).all(...refs) as Array<Record<string,unknown>>;return new Set(rows.map(row=>String(row.name)));}
+  private entityNamesForDocuments(db:DatabaseSync,refs:Set<string>):Set<string>{if(!refs.size)return new Set();const placeholders=[...refs].map(()=>"?").join(",");const rows=db.prepare(`SELECT DISTINCT a.alias name FROM aliases a JOIN entity_definitions ed ON ed.entity_ref=a.entity_ref JOIN spans s ON s.span_ref=ed.span_ref WHERE s.document_ref IN (${placeholders})`).all(...refs) as Array<Record<string,unknown>>;return new Set(rows.map(row=>String(row.name)));}
   private documentsContainKind(db:DatabaseSync,refs:Set<string>,kind:string):boolean{if(!refs.size)return false;const placeholders=[...refs].map(()=>"?").join(",");return asNumber((db.prepare(`SELECT COUNT(*) count FROM documents WHERE document_ref IN (${placeholders}) AND kind=?`).get(...refs,kind) as Record<string,unknown>).count)>0;}
   private rowsForDocuments(db:DatabaseSync,refs?:Set<string>):Array<Record<string,unknown>>{if(!refs)return db.prepare("SELECT s.span_ref,s.ordinal span_ordinal,s.heading,s.content,d.document_ref,d.kind,d.chapter_number,d.volume_number,d.local_chapter_number,d.source_ordinal FROM spans s JOIN documents d ON d.document_ref=s.document_ref ORDER BY d.source_ordinal,s.ordinal,s.span_ref").all() as Array<Record<string,unknown>>;if(!refs.size)return[];const placeholders=[...refs].map(()=>"?").join(",");return db.prepare(`SELECT s.span_ref,s.ordinal span_ordinal,s.heading,s.content,d.document_ref,d.kind,d.chapter_number,d.volume_number,d.local_chapter_number,d.source_ordinal FROM spans s JOIN documents d ON d.document_ref=s.document_ref WHERE d.document_ref IN (${placeholders}) ORDER BY d.source_ordinal,s.ordinal,s.span_ref`).all(...refs) as Array<Record<string,unknown>>;}
   private rebuildEntities(db:DatabaseSync,revision:number){
@@ -420,16 +420,10 @@ export class WritingStore {
     const rowsByRef=new Map(changedRows.map(row=>[String(row.span_ref),row]));
     if(affectedNames.size){
       const normalizedNames=new Set([...affectedNames].map(normalizeEntityName));
-      const allRows=this.rowsForDocuments(db),allRowsByRef=new Map(allRows.map(row=>[String(row.span_ref),row]));
-      for(const row of allRows){
-        const content=String(row.content);
-        if([...affectedNames].some(name=>content.includes(name)))rowsByRef.set(String(row.span_ref),row);
-      }
-      for(const row of db.prepare("SELECT DISTINCT span_ref,text FROM unresolved_mentions").all() as Array<Record<string,unknown>>){
-        if(normalizedNames.has(normalizeEntityName(String(row.text)))){
-          const match=allRowsByRef.get(String(row.span_ref));
-          if(match)rowsByRef.set(String(match.span_ref),match);
-        }
+      // Resolved and unresolved references share the same normalized invalidation path.
+      for(const row of this.rowsForDocuments(db)){
+        const content=normalizeEntityName(String(row.content));
+        if([...normalizedNames].some(name=>content.includes(name)))rowsByRef.set(String(row.span_ref),row);
       }
     }
     this.refreshReferencesForRows(db,[...rowsByRef.values()],revision);
