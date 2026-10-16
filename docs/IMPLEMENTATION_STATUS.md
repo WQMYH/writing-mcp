@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-17 01:45 +08:00（W017 再开修复通过本机完整门禁，双平台待验）
-> 当前状态：先前 W017 全面关闭声明由真实同 Bridge 反例推翻，已补最小修复：maintenance 封 admission/drain 后通过存活独占 child 再检查，拒删保留原 child；删除先赢时新捕获按已有 503/MCP_UNAVAILABLE 拒绝。两个 barrier 回归先失败后通过，相关 24 项/check/lint 通过，完整 pnpm verify 58 文件/411 项、公开 30/30、coverage lines 91.32%/branches 80.16% 通过，无阈值放宽。反例和历史指标保留，最新双平台 CI 与 PR 正文同步待完成；不以旧版 409 项绿灯关闭新反例，Draft 不合并，私有材料不上传。
+> 检查点时间：2026-10-17 01:51 +08:00（W017 再开修复与最新双平台门禁收口）
+> 当前状态：先前 W017 全面关闭声明由真实同 Bridge 反例推翻，已由 `9d3ada3` 更正：maintenance 封 admission/drain 后通过存活独占 child 再检查，拒删保留原 child；删除先赢时新捕获按既有 503/MCP_UNAVAILABLE 拒绝。两个 barrier 回归先失败后通过，相关 24 项/check/lint 和完整 pnpm verify 58 文件/411 项、公开 30/30、coverage lines 91.32%/branches 80.16% 通过，无阈值放宽；该代码对应 Windows/Linux CI `38942293970` 均 completed/success。PR 正文已同步本轮更正、MR1～MR6 证据与未测边界，并读回确认不再写 MR2 in progress、仍 Draft。其余既有修复保留，反例不抹去；未更改检索，不重复私有/语料/tokenizer 测量，旧数值仍绑定旧提交。不合 main、不上传私有材料，不宣称跨进程事务、超时 RPC 取消或全面发布。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -73,7 +73,7 @@ pnpm start
 | 里程碑 | 状态 | 已完成 | 未完成门禁 |
 |---|---|---|---|
 | M0 | 主体完成 | 版本化协议/存储合同、五工具 schema、统一信封、最小 fixture、30 个任务、Token/事实基线 | 指标含义和实现契约继续校准 |
-| M0.1 | W017 再开修复本机通过、双平台待验 | 统一诊断 wrapper 保留；逐项目持久化捕获检查 + 封 admission/drain 后最终检查；W019 首调用恢复保持 | 最新 CI 待验；真实 UI/PNA 不以合成测试替代 |
+| M0.1 | W017 再开修复与双平台门禁通过 | 统一诊断 wrapper 保留；逐项目持久化捕获检查 + 封 admission/drain 后最终检查；W019 首调用恢复保持 | 不新增超时 RPC 取消/跨进程事务保证；真实 UI/PNA 不以合成测试替代 |
 | M1 | 本轮 MR2/MR6 相关门禁通过 | 六项文本修复、W014 必需 spine 完整性与真实 SDK 当前来源证据链，完整/私有/双平台验收通过 | 不声称覆盖全部 EPUB 变体 |
 | M2 | 本轮 MR1/MR6 相关门禁通过 | W012 顺序边/证据保留；W007 受管理连接替换、热服务/磁盘一致、失败恢复及 SDK 改稿/重启/删索引重建 | 不是跨进程读协调或旧版 Linux WAL 低层逐调用取证；PR 未合并 |
 | M3 | 本轮 MR3/MR4/MR6 相关门禁通过 | 身份/歧义/增量/评分/窗口/章节位置，完整/private/gold/双平台及超大语料性能门禁通过 | 有限代表性任务不承诺任意查询延迟 |
@@ -96,7 +96,7 @@ MR5 增至 58 文件/408 项，包含真实默认入口/严格状态、Unicode �
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
-- 58 个测试文件 / 411 项测试，W017 再开后的完整本机链通过，新增两项真实交错回归，最新 Windows/Linux CI 待验；V8 父进程 coverage 不包含真实 CLI 子进程，未降低既有阈值。
+- 58 个测试文件 / 411 项测试，W017 再开后的完整本机链和 `9d3ada3` Windows/Linux CI 均通过，新增两项真实交错回归；V8 父进程 coverage 不包含真实 CLI 子进程，未降低既有阈值。
 - 关键门禁：30/30 公共基准；无分词中文问句命中；重复 Chapter 身份独立；源变化 status 转 stale；未变化源零重载；删除索引可完整重建。
 
 ## 已知限制
@@ -115,7 +115,7 @@ MR5 增至 58 文件/408 项，包含真实默认入口/严格状态、Unicode �
 
 ## 下一步
 
-- W017 再开修复已通过本机门禁，继续最新双平台 CI、PR 正文与最终证据收口；[验收映射](REPAIR_ACCEPTANCE_2026-10-17.md) 保留初次验收与反例补遗。main 合并、发布、下一轮功能或真实 UI 测试不在本轮范围。
+- W017 再开后的本机/双平台门禁与 PR 正文同步已收口；[验收映射](REPAIR_ACCEPTANCE_2026-10-17.md) 保留初次验收、反例及修复补遗，供独立复核。main 合并、发布、下一轮功能或真实 UI 测试不在本轮范围。
 
 - Host Bridge：Storyforge 首宿主 HB-M0～HB-M6 已关闭；维持静态单宿主、loopback、显式配对、失败关闭和零自动写回边界，不在本轮扩成动态插件市场。下一步先把真实使用反馈转成协议兼容性回归，再决定第二宿主或可配置端口等扩展。
 - M5 收尾：补真实 InkOS、更多 EPUB 2/3 变体及独立 MCP 客户端安装/连通性验收；`.github/workflows/verify.yml` 已存在并只跑公共 `pnpm verify`，私有验收链永不进 CI。
@@ -195,6 +195,9 @@ MR5 增至 58 文件/408 项，包含真实默认入口/严格状态、Unicode �
 - **评估数据（供重构窗口参考）**：src/tests 共 333 行超 160 字符，其中约 200 行集中在 tests/（机械折行即可）；src 巨型函数集中在 store.ts（validateBuiltIndex 1418 字符、rowsForDocuments 876 字符等，多为长 SQL 字符串）、epub.ts 两处遍历循环、server.ts 工具注册块。
 
 ## 可追溯提交清单
+
+- `9d3ada3` — fix(bridge)：重新打开 W017 后，通过真实 inspect/barrier 复现 capture 成功落盘后仍被删除；封 admission/drain 后独占活 child 复查，拒删保留 project/index/meta/child，反向请求 503，其他项目 capture 保留；24 项针对性与完整 58/411、30/30、coverage 91.32%/80.16%，双平台 CI `38942293970` 通过，PR 正文已修正，已推送。
+- `d457e07` — docs(mr6)：初次固定验收归档；后来 W017 同 Bridge 反例推翻了当时的全面关闭声明，原证据保留并由本轮补遗更正。
 
 - `02eb2b8` — test(bridge)：W019 有效 capture 跨项目使用返回 NOT_FOUND、原 child PID 不变；两条重启用例仍保持首个相关调用未经预热。6 项真实 CLI/JSON 回执、check/lint 通过，最终 Windows/Linux 完整 CI `38935521968` 通过，已推送。
 - `0759c76` — test(mr6)：真实 SDK 五工具/编辑/stale/增量/重建/重启/删索引重建；原文证据、revision/ref 与诊断回归。完整本机等价 verify 58/409、公开 30/30、coverage 91.21%/79.91%，双平台 CI `38934729394` 通过，已推送。

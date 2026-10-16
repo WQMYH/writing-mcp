@@ -53,7 +53,8 @@
 - 根因是第一次数量检查早于 maintenance admission 关闭。HTTP 工具调用不经过 DELETE 的项目 mutex，因此“只有独立外部 writer 不受保护”的原说明不足以覆盖这个同 Bridge 反例。
 - 修复复用现有 maintenance：关闭 admission → drain 已接纳调用 → 通过仍存活的独占 child 再 inspect → 无捕获才 stop/remove/restart。最终检查发现活动捕获或失败时不停止旧 child，释放 admission、返回 `DERIVED_DATA_BUSY`。CLI 直接使用该独占 invoker，避免回到普通 admission 造成自锁；代码有对应 why 注释。
 - `tests/host-bridge-e2e.test.ts:172` 覆盖上述捕获先完成交错，要求 HTTP 409、project/index/meta/原 child 全保留并可 finish。`:137` 覆盖删除先封 admission，要求新 start_capture 返回既有 HTTP 503 / `BRIDGE_MCP_UNAVAILABLE`，其他项目已活动的捕获不误挡删除、重启后仍可 finish。两项先失败再修复；第二项还复现并修正了 admission 错误被 HTTP 层误标 500/SNAPSHOT_INVALID。
-- 不修改检索/排序/预算，未重复私有、超大语料或 tokenizer 测量；上文数值仍绑定原提交，不声称这轮重测。新完整门禁、代码提交及双平台 CI 的最终结论由唯一状态文件登记。没有新增工具、依赖、锁框架、自动重试或超时 RPC 服务端取消保证。
+- 修复提交 `9d3ada3`：针对性 24 项与完整 pnpm verify 58 文件/411 项、公开 30/30、coverage lines 91.32%/branches 80.16% 通过；[CI 38942293970](https://github.com/WQMYH/writing-mcp/actions/runs/38942293970) 的 Windows/Linux 均 completed/success，绑定该代码提交，不复用旧 409 项结果。PR 正文已同步并读回确认仍 Draft、旧 MR2 in progress 已清除。
+- 不修改检索/排序/预算，未重复私有、超大语料或 tokenizer 测量；上文数值仍绑定原提交，不声称这轮重测。没有新增工具、依赖、锁框架、自动重试或超时 RPC 服务端取消保证。
 
 ## 保留边界
 
