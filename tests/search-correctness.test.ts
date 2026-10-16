@@ -15,6 +15,74 @@ const makeWork=(rootPath:string):ParsedWork=>{
 };
 
 describe("M3 deterministic query analysis",()=>{
+  test.each([1, 2, 100])("does not hide same-name owner ambiguity at limit %i (W-MCP-008)", async limit => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-owner-limit-")), work = makeWork(root);
+    work.documents.push({ ...work.documents[1]!, documentRef: stableId("doc", work.workRef, "other-volume.md"), relativePath: "other-volume.md", content: "# 第一章\nAnother volume." });
+    const store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const result = await store.explore("neighborhood", "第一章", limit, 2);
+      expect(result.diagnostics.map(item => item.code)).toContain("AMBIGUOUS_ENTITY");
+      expect(result.results.length).toBeLessThanOrEqual(limit);
+      expect(result.metrics.maxActualHops).toBe(0);
+      expect(result.results.every(item => !item.pathEvidence?.length)).toBe(true);
+      const explicit = await store.explore("neighborhood", result.results[0]!.ref, 20, 1);
+      expect(explicit.diagnostics.map(item => item.code)).not.toContain("AMBIGUOUS_ENTITY");
+      expect(explicit.metrics.maxActualHops).toBe(1);
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("counts distinct alias owners before limiting, without inventing owners from multiple aliases (W-MCP-008/021)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-alias-owner-")), work = makeWork(root), store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const db = new DatabaseSync(join(root, ".writing-index", work.workRef.replace(":", "-"), "index.sqlite"));
+      const owner = String(db.prepare("SELECT entity_ref FROM entities WHERE name='语笙'").get()!.entity_ref);
+      try {
+        for (const alias of ["语笙-旧名", "语笙-昵称"]) db.prepare("INSERT INTO aliases VALUES(?,?,?)").run(owner, alias, alias);
+        const one = await store.explore("neighborhood", "语笙", 20, 1);
+        expect(one.diagnostics.map(item => item.code)).not.toContain("AMBIGUOUS_ENTITY");
+        expect(one.results.filter(item => item.ref === owner)).toHaveLength(1);
+        expect(one.metrics.maxActualHops).toBe(1);
+        const chapter = String(db.prepare("SELECT entity_ref FROM entities WHERE kind='Chapter'").get()!.entity_ref);
+        for (const ref of [owner, chapter]) db.prepare("INSERT INTO aliases VALUES(?,?,?)").run(ref, "共同名字", "共同名字");
+        const many = await store.explore("neighborhood", "共同名字", 1, 1);
+        expect(many.diagnostics.map(item => item.code)).toContain("AMBIGUOUS_ENTITY");
+        expect(many.metrics.maxActualHops).toBe(0);
+      } finally { db.close(); }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("assigns exact/partial entity scores so a graph neighbor cannot displace its named seed (W-MCP-015)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-seed-score-")), work = makeWork(root), store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const exact = await store.explore("entity", "语笙", 20, 0), seed = exact.results[0]!;
+      expect(seed.score).toBe(2);
+      expect((await store.explore("entity", "语", 20, 0)).results[0]!.score).toBe(1);
+      for (const query of ["语笙", seed.ref, work.documents[1]!.documentRef]) for (const limit of [1, 2]) {
+        const result = await store.explore("neighborhood", query, limit, 1);
+        expect(result.results[0]!.ref).toBe(query === work.documents[1]!.documentRef ? query : seed.ref);
+        expect(result.results[0]!.score).toBe(2);
+        if (limit === 2) expect(result.results[1]!.score).toBe(0.5);
+      }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test.each([
+    { query: "Sun\\Moon", want: ["Sun\\Moon"] }, { query: "SunMoon", want: ["SunMoon"] },
+    { query: "%", want: ["Sun%_\\Moon"] }, { query: "_", want: ["Sun%_\\Moon"] },
+    { query: "Sun%_\\Moon", want: ["Sun%_\\Moon"] },
+  ])("matches literal entity-name punctuation: $query (W-MCP-024)", async ({ query, want }) => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-entity-like-")), work = makeWork(root);
+    work.documents = ["Sun\\Moon", "SunMoon", "Sun%_\\Moon"].map((title, index) => ({
+      documentRef: stableId("doc", work.workRef, String(index)), relativePath: `${index}.md`, absolutePath: `${index}.md`, title, kind: "character", content: `# ${title}`, sourceMtimeMs: 1, sourceSize: title.length + 2,
+    }));
+    const store = new WritingStore(work);
+    try { await store.index("rebuild"); expect((await store.explore("entity", query, 20, 0)).results.map(item => item.title)).toEqual(want); }
+    finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
   test.each(["😀", "𠀀"])("preserves %s through SQLite, excerpt windows and graph evidence (W-MCP-002)", async glyph => {
     const root = await mkdtemp(join(tmpdir(), "writing-mcp-unicode-evidence-")), workRef = stableId("work", "unicode-evidence", root);
     const document = (path: string, title: string, kind: SourceDocument["kind"], content: string): SourceDocument => ({

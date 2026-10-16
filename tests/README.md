@@ -36,7 +36,7 @@
 | `path-security.test.ts` | 授权 roots 缺失/越界、symlink/junction 越界、service 层强制 roots |
 | `resolve-matrix.test.ts` | 作品识别矩阵：空目录、不支持扩展名、多书歧义、同目录直接文件隔离、InkOS 新旧结构 |
 | `response-limits.test.ts` | Task 4 server 最终响应门禁：中文 UTF-8 byte accounting、8,192-byte 诊断预留、explore/context/resolve/diagnose/index 确定性 reducer、完整 L3→L2→L1→optional L0 次序、budget-unsatisfiable required 事实保护、真实 WritingStore→server omission 守恒、recorder 只见最终 data/error、动态 Markdown 防 CR/LF/控制字符伪造与 16,384-byte 上限、输出 schema 保真 |
-| `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限、短原词候选、revision 缓存/重建失效、UTF-8 响应预裁剪；W002 SQLite 往返、直接摘录、命中/回退窗口、BFS pathEvidence 与 context 的代理对保真 |
+| `search-correctness.test.ts` | 检索正确性：中文问句/诊断、替代定义/未解析引用、稳定排序/缓存、输入/UTF-8 上限及短词候选；W002 SQLite/摘录/BFS/context 代理对保真；W008 limit 1/2/100 不隐藏真实歧义，W021 多别名单 owner 去重/共同别名多 owner 保护，W015 精确/部分/稳定 seed 评分及 limit 1/2，W024 反斜杠/%/_ 字面名称匹配 |
 | `document-literal-search.test.ts` | document 查询字面子串语义：`%`、`_`、`\` 在相对路径和标题中仅匹配自身，不得被 SQLite LIKE 解释为通配符或转义符 |
 | `search-prf.test.ts` | Task 6 PRF 纯逻辑：冻结生产配置 `12/8/0.35`、原词/别名/停用词/单字/单 span 过滤、双字/三字/四字候选、bytewise tie-break、128 预频率池与单批调用、非法网格拒绝 |
 | `evaluator-isolation.test.ts` | evaluator-only 搜索隔离：环境变量不影响生产查询、调用级 ablation/PRF 不重建索引且不污染普通路径、生产配置与显式评测一致、非法网格拒绝、重复双字中文词可扩展真实候选 |

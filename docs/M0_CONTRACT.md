@@ -52,6 +52,12 @@ Moving a work or document intentionally changes its reference. Editing content w
 - `timeline` is an independent deterministic projection, not full-text search: it returns entities carrying temporal attributes (`valid_from_chapter`, `valid_to_chapter`, or `narrative_time`) plus `precedes` sequence relations, ordered by chapter position, then `valid_to_chapter` position, then `narrative_time`, then reference. An optional query filters the projection by name substring. Results report `TIMELINE_PROJECTION`; an empty projection reports `NO_RESULTS`.
 - Chapter-tense filtering against a target chapter anchor is deferred until the target-chapter input exists (AUD-012); no new public parameter is introduced by this amendment.
 
+### MR3 entity-owner lookup amendment (2026-10-16, W008/W015/W021/W024)
+
+- Matching aliases are grouped by entity identity before ranking or display limits. Multiple aliases for one owner produce one result; exact-name/alias owner counts are computed before `limit`, so `AMBIGUOUS_ENTITY` and the refusal to expand an ambiguous neighborhood do not disappear at `limit=1`. Displayed ambiguous candidates remain bounded by the requested limit.
+- Exact canonical/alias matches score 2, partial matches score 1; an explicit stable entity/document neighborhood seed scores 2. Existing graph scores remain 0.5 for the first hop, with no generic seed-first override or change to search ranking.
+- Name lookup treats backslash, percent and underscore literally using the same escaped LIKE policy as document lookup. Stable refs still let callers select a particular owner explicitly.
+
 ### MR3 entity-name normalization amendment (2026-10-16, W005)
 
 - Entity identity keys, exact/partial entity lookup and native/unresolved bracket-reference matching share NFC + trim + JavaScript lowercase. Canonically equivalent NFC/NFD spellings share an identity and retain alternative source definitions; compatibility-distinct spellings (for example `Alice` and `Ａlice`) remain distinct owners. Entity lookup no longer applies NFKC to choose a different identity silently. Search's separate linguistic analysis is unchanged.

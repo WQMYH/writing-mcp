@@ -604,17 +604,23 @@ export class WritingStore {
 
   private entityRows(db:DatabaseSync,query:string,limit:number,allowStableNeighborhoodSeed=false):{rows:Array<Record<string,unknown>>;ambiguous:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}{
     const directEntity=allowStableNeighborhoodSeed?db.prepare("SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.entity_ref=?").get(query) as Record<string,unknown>|undefined:undefined;
-    if(directEntity)return{rows:[directEntity],ambiguous:[],diagnostics:[]};
+    if(directEntity)return{rows:[{...directEntity,score:2}],ambiguous:[],diagnostics:[]};
     // Graph documents are valid neighborhood seeds too. They are not named
     // entities, so resolve the stable documentRef directly rather than asking
     // callers to infer a surrogate Chapter entity.
     const directDocument=allowStableNeighborhoodSeed?db.prepare("SELECT d.document_ref ref,s.span_ref,d.kind,d.title heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,'native' source_kind,1 confidence,(SELECT revision FROM index_revisions WHERE status='valid' ORDER BY revision DESC LIMIT 1) revision FROM documents d JOIN spans s ON s.document_ref=d.document_ref WHERE d.document_ref=? ORDER BY s.ordinal LIMIT 1").get(query) as Record<string,unknown>|undefined:undefined;
-    if(directDocument)return{rows:[directDocument],ambiguous:[],diagnostics:[]};
-    const normalized=normalizeEntityName(query),pattern=`%${normalized.replaceAll("%","\\%").replaceAll("_","\\_")}%`;
+    if(directDocument)return{rows:[{...directDocument,score:2}],ambiguous:[],diagnostics:[]};
+    const normalized=normalizeEntityName(query),pattern=literalLikePattern(normalized);
     if(!normalized)return{rows:[],ambiguous:[],diagnostics:[{code:"NO_MATCHING_TERMS",message:"The entity query contains no searchable name"}]};
-    const rows=db.prepare(`SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE a.normalized_alias LIKE ? ESCAPE '\\' ORDER BY CASE WHEN a.normalized_alias=? THEN 0 ELSE 1 END,e.normalized_name,e.entity_ref LIMIT ?`).all(pattern,normalized,limit) as Array<Record<string,unknown>>;
-    const exact=rows.filter(row=>String(row.normalized_name)===normalized),ambiguous:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
-    if(exact.length>1){ambiguous.push(...exact);diagnostics.push({code:"AMBIGUOUS_ENTITY",message:`${exact.length} entities share the requested canonical name; no candidate was selected automatically`});}
+    const rows=db.prepare(`WITH matched AS (
+      SELECT e.entity_ref,MAX(CASE WHEN a.normalized_alias=? THEN 2 ELSE 1 END) score
+      FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref WHERE a.normalized_alias LIKE ? ESCAPE '\\' GROUP BY e.entity_ref
+    ), owners AS (SELECT *,COUNT(*) OVER (PARTITION BY score) owner_count FROM matched)
+    SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision,o.score,o.owner_count
+    FROM owners o JOIN entities e ON e.entity_ref=o.entity_ref JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref
+    ORDER BY o.score DESC,e.normalized_name,e.entity_ref LIMIT ?`).all(normalized,pattern,limit) as Array<Record<string,unknown>>;
+    const exact=rows.filter(row=>asNumber(row.score)===2),ownerCount=asNumber(exact[0]?.owner_count),ambiguous:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
+    if(ownerCount>1){ambiguous.push(...exact);diagnostics.push({code:"AMBIGUOUS_ENTITY",message:`${ownerCount} entities share the requested canonical name or alias; no candidate was selected automatically`});}
     for(const row of rows){
       const alternatives=db.prepare(`SELECT ed.definition_ref ref,ed.span_ref,ed.name heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,ed.kind||'Definition' kind,ed.source_kind,ed.confidence,ed.evidence_hash,ed.revision FROM entity_definitions ed JOIN entities e ON e.entity_ref=ed.entity_ref JOIN spans s ON s.span_ref=ed.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE ed.entity_ref=? AND ed.span_ref!=e.span_ref ORDER BY ed.source_ordinal,ed.span_ordinal,ed.definition_ref`).all(String(row.ref)) as Array<Record<string,unknown>>;
       ambiguous.push(...alternatives);
