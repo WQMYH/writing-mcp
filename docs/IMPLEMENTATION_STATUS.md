@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-16 23:16 +08:00（MR2 W001/W002 针对性门禁通过）
-> 当前状态：MR1 三项修复的双平台完整 verify 已通过，57/316 为该阶段计数，见提交清单与 CI。MR2 持续实施中：W001（`38ab81d`）多行上限及旧派生指纹失效已提交；W002 的 UTF-16 安全切片已贯通硬切、SQLite、直接/搜索/BFS/context 摘录及 EPUB fallback 标题，新增 10 项（含 BMP 对照），相关 55 项、check、lint 通过。派生规则版本随之更新，使旧损坏片段不因原文未变而保留。W010/011/016/020 及 MR2 完整验收仍待完成；25 类目标保持 active。沿用隔离分支及 Draft PR #1，main 不合并，阶段之间不重复询问。
+> 检查点时间：2026-10-16 23:20 +08:00（MR2 W001/W002/W010 针对性门禁通过）
+> 当前状态：MR1 三项修复的双平台完整 verify 已通过，57/316 为该阶段计数，见提交清单。MR2 持续实施中：W001（`38ab81d`）修复多行上限与旧派生失效，W002（`0f246b0`）贯通硬切/SQLite/摘录/EPUB 标题的 UTF-16 保真；W010 已修复 TXT 前言 trim 后起始行号，新增 12 项 LF/CRLF/BOM/空行回归，TXT/编号/span 35 项、check、lint 通过。W011/016/020 与 MR2 完整验收仍待完成；25 类目标保持 active，Draft PR 不合并，按计划持续推进。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -86,7 +86,7 @@ Step 1 已关闭 AUD-003、006、011、031；Step 2 已关闭 AUD-001、002、00
 
 MR1 从修改前 287 项增加至 316 项：图回归 6 项、EPUB 21 项、service/snapshot 2 项，并补强失败保存/恢复断言；既有 pre-read 断言只做 realpath 校正，无测试跳过或阈值下调。
 
-MR2 当前新增 W001 七项、W002 十项，分别针对性 39/55 项通过；阶段全量 verify 尚待执行，下列完整计数仍指 MR1。
+MR2 当前新增 W001 七项、W002 十项、W010 十二项，分别针对性 39/55/35 项通过；阶段全量 verify 尚待执行，下列完整计数仍指 MR1。
 
 > 详细清单（测试文件 → 主题映射、按能力域的覆盖条目）见 [`tests/README.md`](../tests/README.md)。本段只保留概述，细节以测试清单为准。
 
@@ -193,6 +193,8 @@ MR2 当前新增 W001 七项、W002 十项，分别针对性 39/55 项通过；�
 > 本清单是计划 §13.3 检查点的唯一宿主（原计划内副本已移除）。按时间倒序（各阶段提交哈希在下一阶段入清单）：
 > 推送状态校正（2026-09-01）：下方 HB-M0～HB-M3 条目末尾的“本地提交，未推送”保留为当时的历史状态；对应 Writing MCP 提交现已随 `e340961` 进入 `origin/main`。Storyforge 配对提交仍只在本地。
 
+- `0f246b0` — fix(text)，W002：共享 UTF-16 边界切片贯通分片、SQLite、直接/搜索/BFS/context 证据与 EPUB 标题，派生版本更新；新增 10 项（9 项先失败、BMP 对照通过），相关 55 项及 check/lint 通过，已推送。
+- `38ab81d` — fix(text)，W001：多行追加前计入 LF，派生版本加入 semantic fingerprint；新增 7 项边界/旧指纹增量升级回归，相关 39 项及 check/lint 通过；已推送，双平台 CI `38921958856` 完整通过。
 - `7ba7a79` — docs(status)：保存 MR1 本机结果及当时的推送/Windows CI 阻塞；随后补推成功，双平台 CI `38919516032` 均完整通过，57/316、30/30、lines 92.77%、branches 79.02%。旧阻塞已解除，原始失败回执不覆盖。
 - `0ff98c7` — test(adapter)：修正 Windows CI 的 TEMP 8.3/realpath 误比较，保留单次读取/累计超限行为断言；完整本机 verify 57/316、30/30、lines 92.77%、branches 79.02%；已推送并通过双平台 CI。
 - `806d942` — fix(core)，W-MCP-007：受管理旧连接在替换前释放，同一热服务及独立磁盘新旧正文一致，incremental/rebuild 失败保留旧 revision、stale 与恢复；已推送。Linux CI 完整通过；Windows MR1 回归通过，整套被上述既有路径断言阻断。

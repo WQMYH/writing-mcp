@@ -298,6 +298,11 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - A clipped excerpt omits a partially intersecting boundary code point; a hard-split source span instead carries the entire code point into the next span, so concatenating same-line chunks preserves the source. A custom cap too small for the next code point fails with RangeError rather than dropping data or looping; MCP uses its unchanged 2400-unit default.
 - The text-derivation fingerprint advances for corrected hard splitting; existing indices re-derive as specified above. Raw source text is not repaired, replaced or rewritten.
 
+### MR2 TXT preface locator amendment (2026-10-16, W-MCP-010)
+
+- Trimming a chaptered TXT preface retains the original line offset of its first nonblank source line. Span start/end and nested source locators use that offset; BOM removal and CRLF normalization do not invent or remove source lines.
+- Preface/chapter content and document identity rules are unchanged. The corrected sourceStartLine participates in the existing semantic fingerprint, so affected prefaces refresh without rewriting the source file.
+
 ### M1 process lifecycle amendment (2026-08-17)
 
 - The stdio server shuts down gracefully and deterministically: SIGINT, SIGTERM, and stdin EOF (client disconnect) all route through one shutdown chain — close the MCP server (transport) before closing the `WritingService` — then exit with code 0. A 5-second grace guard forces termination, so a long synchronous SQLite operation that cannot be cancelled can never keep the process alive indefinitely.

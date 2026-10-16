@@ -15,7 +15,7 @@
 | `epub.test.ts` | EPUB：正常双章节 spine、元数据、封面过滤、跨 spine 续章、独立作品引用；W-MCP-014 属性匹配引号/引号内 >、XML 单层实体与 URL 编码、container/spine id 解码、章节顺序/search/context/locator；缺失必需声明/资源拒绝部分 fresh，非线性/nav/cover/空内容过滤及无可读内容、路径/属性错误；W002 heading/正文 fallback 标题在 100-unit 边界不切断代理对 |
 | `epub-resource-limits.test.ts` | AUD-028/Task 5A EPUB 资源上限：entry 数超限 `EPUB_TOO_MANY_ENTRIES`、OPF/单 spine/累计 spine 按解码 UTF-8 bytes 的中文多字节精确边界、总量超限 `EPUB_TOTAL_TOO_LARGE`（均可经构造器注入）、EPUB 2.0 包在默认上限下正常加载 |
 | `explore-bfs.test.ts` | 0~3 跳 BFS、fan-out/全局上限、逐边 pathEvidence、截断 |
-| `generic-txt.test.ts` | TXT：GBK/GB18030 解码、章节切分、章节编号重置推断新卷、原始文件行号偏移 |
+| `generic-txt.test.ts` | TXT：GBK/GB18030 解码、章节/分卷；W010 前言 trim 后原始行号，0/1/3 个前导空行 × LF/CRLF × BOM，主/子 locator 及后续章节定位 |
 | `host-bridge-protocol.test.ts` | HB-M0 协议冻结：strict 拒绝未知字段、hostProjectId 字符集、chapter ordinal 连续/唯一（与 chapterKey 值解耦）、relativePath 逃逸拒绝（Unicode 合法）、sha256/协议版本/pluginId 校验、鉴权矩阵仅 OPTIONS/health/pair 免 Bearer、错误码/限额/超时/桥常量与规范 fixture 一致、computeProjectKey/computeContentHash/computeSnapshotHash 独立向量与顺序稳定性、规范快照 draft fixture 解析 |
 | `host-bridge-auth.test.ts` | HB-M1 配对与令牌：初始 code ≥128-bit 熵、错误 code 拒绝、code 单次使用且成功/过期/unpair 后轮换、过期 code 返回 EXPIRED、60 分钟 token TTL 边界（差 1ms）、双标签页独立 token、unpair 仅吊销当前会话、revoked 全部吊销、缺失/畸形 Bearer 冻结错误、日志只含 hash 前缀 |
 | `host-bridge-lifecycle.test.ts` | HB-M1 安全边界与生命周期：loopback 分类器、health 免 Bearer 且投影进程/配对状态、伪造 Host（node:http）与错误/缺失 Origin 的冻结错误码、PNA 预检仅按请求回显、pair 校验/大小限制 413、业务路由先 Bearer 后 404、单实例锁（活 pid 拒绝/死 pid 同内容清理/不可解析不清理）、CLI stdin EOF 幂等关机与锁释放且 health 不泄露 code、MCP 子进程异常死亡转 degraded 不假 ready、runCli 锁占用退出码 3 |

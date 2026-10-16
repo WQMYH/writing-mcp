@@ -16,7 +16,13 @@ export function txtDocuments(file:string,root:string,workRef:string,content:stri
   for(let line=0;line<lines.length;line++){const title=lines[line]!.trim(),match=/^(?:第([零〇○Ｏ０一二三四五六七八九十两百两\d]+)(?:章|回|节)|chapter\s+(\d+|[ivxlcdm]+))(?:\s+.*)?$/i.exec(title);if(!match)continue;const local=chapterNumber(match[1]??match[2]!);if(!local)continue;if(previous&&local<=previous)volume++;headings.push({line,local,volume,title});previous=local;}
   if(!headings.length)return[];
   const rel=relative(root,file).replaceAll("\\","/"),documents:SourceDocument[]=[];
-  if(headings[0]!.line>0){const preface=lines.slice(0,headings[0]!.line).join("\n").trim();if(preface)documents.push({documentRef:stableId("doc",workRef,rel,"preface"),relativePath:`${rel}#preface`,absolutePath:file,title:`${basename(file,extname(file))} preface`,kind:"document",content:preface,sourceStartLine:1,sourceMtimeMs:mtimeMs,sourceSize:Buffer.byteLength(preface)});}
+  if(headings[0]!.line>0){
+    const prefaceLines=lines.slice(0,headings[0]!.line),first=prefaceLines.findIndex(line=>line.trim());
+    if(first>=0){
+      const preface=prefaceLines.slice(first).join("\n").trim();
+      documents.push({documentRef:stableId("doc",workRef,rel,"preface"),relativePath:`${rel}#preface`,absolutePath:file,title:`${basename(file,extname(file))} preface`,kind:"document",content:preface,sourceStartLine:first+1,sourceMtimeMs:mtimeMs,sourceSize:Buffer.byteLength(preface)});
+    }
+  }
   for(let index=0;index<headings.length;index++){const heading=headings[index]!,end=headings[index+1]?.line??lines.length,piece=lines.slice(heading.line,end).join("\n").trimEnd(),locator=`v${heading.volume}-c${heading.local}`;documents.push({documentRef:stableId("doc",workRef,rel,locator),relativePath:`${rel}#${locator}`,absolutePath:file,title:heading.title,kind:"chapter",content:piece,chapterNumber:index+1,volumeNumber:heading.volume,localChapterNumber:heading.local,sourceStartLine:heading.line+1,sourceMtimeMs:mtimeMs,sourceSize:Buffer.byteLength(piece)});}
   return documents;
 }
