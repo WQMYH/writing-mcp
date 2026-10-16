@@ -124,6 +124,8 @@ describe("host bridge boot wiring (HB-M5)", () => {
       const diagnosticRunRef = started.data!.diagnosticRunRef;
       const oldPid = Number(await readFile(pidPath, "utf8"));
       expect(Number.isInteger(oldPid) && oldPid > 0).toBe(true);
+      expect(await tool("explore", { operation: "search", query: "Scout", diagnosticRunRef }, "other")).toMatchObject({ ok: false, error: { code: "DIAGNOSTIC_RUN_NOT_FOUND" } });
+      expect(Number(await readFile(pidPath, "utf8"))).toBe(oldPid);
       const restartChild = async () => {
         if (restart === "bridge") {
           expect(await handle.shutdown()).toBe(0);
