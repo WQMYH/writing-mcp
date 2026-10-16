@@ -15,6 +15,28 @@ const makeWork=(rootPath:string):ParsedWork=>{
 };
 
 describe("M3 deterministic query analysis",()=>{
+  test.each([
+    { marker: "RAVEN", prefix: "x".repeat(1200), name: "uppercase" },
+    { marker: "Raven", prefix: "x".repeat(1200), name: "mixed case" },
+    { marker: "RAVEN", prefix: "İ".repeat(600) + "x".repeat(600), name: "length-changing lowercase prefix" },
+  ])("exposes the original unique proper noun with $name (W-MCP-006)", async ({ marker, prefix }) => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-case-window-")), work = makeWork(root);
+    const content = prefix + ` ${marker} ` + "z".repeat(600);
+    work.documents = [{ ...work.documents[0]!, title: "Evidence", kind: "document", content, sourceSize: Buffer.byteLength(content) }];
+    const store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const result = await store.explore("search", "raven", 20, 0), item = result.results[0]!;
+      expect(item.evidence.excerpt).toContain(marker);
+      expect(item.sourceKind).toBe("deterministic");
+      expect(item.evidence.excerpt.split("\n…\n").every(part => content.includes(part))).toBe(true);
+      expect(item.evidence.excerpt.length).toBeLessThanOrEqual(900);
+      expect((await store.explore("search", "RAVEN", 20, 0)).results).toEqual(result.results);
+      const packet = await store.context("raven", 10_000);
+      expect(packet.blocks[0]!.evidence.excerpt).toContain(marker);
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
   test.each([1, 2, 100])("does not hide same-name owner ambiguity at limit %i (W-MCP-008)", async limit => {
     const root = await mkdtemp(join(tmpdir(), "writing-mcp-owner-limit-")), work = makeWork(root);
     work.documents.push({ ...work.documents[1]!, documentRef: stableId("doc", work.workRef, "other-volume.md"), relativePath: "other-volume.md", content: "# 第一章\nAnother volume." });

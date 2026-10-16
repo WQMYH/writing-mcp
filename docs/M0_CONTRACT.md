@@ -30,6 +30,7 @@ Moving a work or document intentionally changes its reference. Editing content w
 - MVP neighborhood expansion: maximum `limit - 1` adjacent results.
 - Initial ranking: exact entity match 2; partial entity match 1; FTS uses BM25; graph expansion result 0.5.
 - Source trust order: native > deterministic > heuristic.
+- Candidate scoring compares lowercased query terms and source text consistently. Evidence windows locate case-insensitive literal matches in the original text using original UTF-16 offsets (not offsets from a lowercased copy whose length may differ); returned excerpts preserve source spelling/case. This corrects the single-proper-noun support-window failure without changing candidate generation, PRF configuration, or promising general transliteration/compatibility normalization (MR4 W006, 2026-10-17).
 
 ### M3 query-limit amendment (2026-08-14)
 
