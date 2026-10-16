@@ -36,6 +36,59 @@ const document = (
 const indexPath = (work: ParsedWork) => join(work.rootPath, ".writing-index", work.workRef.replace(":", "-"), "index.sqlite");
 
 describe("schema v4 graph identity and evidence", () => {
+  test("normalizes canonical-equivalent entity names and native references consistently (W-MCP-005)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-nfc-owner-")), ref = stableId("work", "graph-test", root);
+    const work = workAt(root, [
+      document(ref, "a.md", "Café", "character", "# Café\nFirst definition."),
+      document(ref, "b.md", "Cafe\u0301", "character", "# Cafe\u0301\nSecond definition."),
+      document(ref, "one.md", "Arrival", "chapter", "# Arrival\n[[CAFE\u0301]] arrives.", 1),
+    ]);
+    const store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const db = new DatabaseSync(indexPath(work), { readOnly: true });
+      try {
+        expect(db.prepare("SELECT name,normalized_name FROM entities WHERE kind='Character'").all()).toEqual([{ name: "Café", normalized_name: "café" }]);
+        expect(db.prepare("SELECT COUNT(*) count FROM edges WHERE kind='mentions' AND source_ref=?").get(work.documents[2]!.documentRef)).toEqual({ count: 1 });
+      } finally { db.close(); }
+      for (const query of ["Café", "Cafe\u0301", "CAFÉ"]) {
+        const result = await store.explore("entity", query, 20, 0);
+        expect(result.results.map(item => item.title)).toEqual(["Café"]);
+        expect(result.ambiguous.map(item => item.title)).toEqual(["Cafe\u0301"]);
+      }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("keeps compatibility-distinct owners addressable by their original names and stable refs (W-MCP-005)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-compat-owner-")), ref = stableId("work", "graph-test", root);
+    const work = workAt(root, [document(ref, "ascii.md", "Alice", "character", "# Alice"), document(ref, "wide.md", "Ａlice", "character", "# Ａlice")]);
+    const store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const db = new DatabaseSync(indexPath(work), { readOnly: true });
+      let owners: Array<{ entity_ref: string; name: string }>;
+      try { owners = db.prepare("SELECT entity_ref,name FROM entities WHERE kind='Character'").all() as typeof owners; } finally { db.close(); }
+      expect(owners).toHaveLength(2);
+      for (const owner of owners) {
+        expect((await store.explore("entity", owner.name, 20, 0)).results.map(item => item.ref)).toEqual([owner.entity_ref]);
+        expect((await store.explore("neighborhood", owner.entity_ref, 20, 0)).results.map(item => item.title)).toEqual([owner.name]);
+      }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("finds canonically equivalent unresolved references without rewriting source evidence (W-MCP-005)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-unresolved-nfc-")), ref = stableId("work", "graph-test", root);
+    const work = workAt(root, [document(ref, "one.md", "Waiting", "chapter", "# Waiting\n[[E\u0301LODIE]] is unknown.", 1)]), store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const result = await store.explore("entity", "Élodie", 20, 0);
+      expect(result.results).toHaveLength(0);
+      expect(result.diagnostics.map(item => item.code)).toContain("UNRESOLVED_REFERENCE");
+      expect(result.ambiguous.map(item => item.title)).toEqual(["E\u0301LODIE"]);
+      expect(result.ambiguous[0]!.evidence.excerpt).toContain("[[E\u0301LODIE]]");
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
   test("recomputes Chapter title aliases without dropping other persisted aliases (W-MCP-013)", async () => {
     const root = await mkdtemp(join(tmpdir(), "writing-mcp-title-alias-")), ref = stableId("work", "graph-test", root);
     const chapter = document(ref, "one.md", "Opening Gate", "chapter", "# Opening Gate\nDawn.", 1);

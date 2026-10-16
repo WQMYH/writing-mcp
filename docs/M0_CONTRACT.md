@@ -52,6 +52,11 @@ Moving a work or document intentionally changes its reference. Editing content w
 - `timeline` is an independent deterministic projection, not full-text search: it returns entities carrying temporal attributes (`valid_from_chapter`, `valid_to_chapter`, or `narrative_time`) plus `precedes` sequence relations, ordered by chapter position, then `valid_to_chapter` position, then `narrative_time`, then reference. An optional query filters the projection by name substring. Results report `TIMELINE_PROJECTION`; an empty projection reports `NO_RESULTS`.
 - Chapter-tense filtering against a target chapter anchor is deferred until the target-chapter input exists (AUD-012); no new public parameter is introduced by this amendment.
 
+### MR3 entity-name normalization amendment (2026-10-16, W005)
+
+- Entity identity keys, exact/partial entity lookup and native/unresolved bracket-reference matching share NFC + trim + JavaScript lowercase. Canonically equivalent NFC/NFD spellings share an identity and retain alternative source definitions; compatibility-distinct spellings (for example `Alice` and `Ａlice`) remain distinct owners. Entity lookup no longer applies NFKC to choose a different identity silently. Search's separate linguistic analysis is unchanged.
+- Display names, source text, native reference offsets and evidence remain verbatim. Corrected identity derivations invalidate legacy caches; named entity refs may change for previously unnormalized names, while document-scoped Chapter refs remain stable. No raw-source migration occurs.
+
 ### MR3 Chapter title-alias lifecycle amendment (2026-10-16, W013)
 
 - Chapter identity remains document-scoped across title edits. Its automatic alias is derived from the current canonical title, not a cumulative history of former titles. Incremental indexing, noop/reopen and cold rebuild therefore agree on current Chapter aliases and native references.

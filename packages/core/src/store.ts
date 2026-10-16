@@ -10,7 +10,7 @@ import type { ContextBlock, ContextOptions, ContextPacket, EntityKind, ExploreIt
 
 const SCHEMA_VERSION = 4;
 // Increment when unchanged source must be re-derived under corrected text/graph rules.
-const TEXT_DERIVATION_VERSION = 4;
+const TEXT_DERIVATION_VERSION = 5;
 const SOFTWARE_VERSION = "0.1.0";
 const MAX_RESPONSE_BYTES = 200_000;
 const CONTEXT_SEARCH_LIMIT = 12;
@@ -30,6 +30,7 @@ function pretrimExploreCollections(results:ExploreItem[],ambiguous:ExploreItem[]
 }
 const asNumber = (value: unknown) => typeof value === "bigint" ? Number(value) : Number(value ?? 0);
 const compareText = (left:string,right:string) => left < right ? -1 : left > right ? 1 : 0;
+const normalizeEntityName = (value:string) => value.normalize("NFC").trim().toLowerCase();
 const literalLikePattern = (value: string): string =>
   `%${value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
 
@@ -93,6 +94,7 @@ export class WritingStore {
     const db = new DatabaseSync(this.indexPath!);
     try {
       db.exec(`PRAGMA busy_timeout=${SQLITE_BUSY_TIMEOUT_MS};`);
+      db.function("normalize_entity_name",{deterministic:true},value=>normalizeEntityName(String(value)));
       await this.configureConnection(db);
       this.schemaVersionOnDisk = this.readSchemaVersion(db);
       if (this.schemaVersionOnDisk !== 0 && this.schemaVersionOnDisk !== SCHEMA_VERSION) {
@@ -417,14 +419,14 @@ export class WritingStore {
     const affectedNames=new Set([...previousEntityNames,...currentEntityNames]);
     const rowsByRef=new Map(changedRows.map(row=>[String(row.span_ref),row]));
     if(affectedNames.size){
-      const normalizedNames=new Set([...affectedNames].map(name=>name.toLowerCase()));
+      const normalizedNames=new Set([...affectedNames].map(normalizeEntityName));
       const allRows=this.rowsForDocuments(db),allRowsByRef=new Map(allRows.map(row=>[String(row.span_ref),row]));
       for(const row of allRows){
         const content=String(row.content);
         if([...affectedNames].some(name=>content.includes(name)))rowsByRef.set(String(row.span_ref),row);
       }
       for(const row of db.prepare("SELECT DISTINCT span_ref,text FROM unresolved_mentions").all() as Array<Record<string,unknown>>){
-        if(normalizedNames.has(String(row.text).toLowerCase())){
+        if(normalizedNames.has(normalizeEntityName(String(row.text)))){
           const match=allRowsByRef.get(String(row.span_ref));
           if(match)rowsByRef.set(String(match.span_ref),match);
         }
@@ -437,7 +439,7 @@ export class WritingStore {
   private insertEntitiesForRows(db:DatabaseSync,rows:Array<Record<string,unknown>>,revision:number):Set<string>{
     const insertedNames=new Set<string>();
     const insertEntity=(kind:EntityKind,name:string,row:Record<string,unknown>,sourceKind="native",properties:Record<string,unknown>={})=>{
-      const normalized=name.toLowerCase(),spanRef=String(row.span_ref),documentRef=String(row.document_ref);
+      const normalized=normalizeEntityName(name),spanRef=String(row.span_ref),documentRef=String(row.document_ref);
       const ref=kind==="Chapter"?stableId("entity",this.work.workRef,kind,documentRef):stableId("entity",this.work.workRef,kind,normalized);
       const definitionRef=stableId("entity-definition",ref,spanRef),evidenceHash=hash(String(row.content));
       db.prepare("INSERT OR REPLACE INTO entity_definitions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(definitionRef,ref,kind,name,normalized,sourceKind,1,spanRef,asNumber(row.source_ordinal),asNumber(row.span_ordinal),evidenceHash,json(properties),revision);
@@ -485,7 +487,7 @@ export class WritingStore {
     // becoming a deterministic-looking false fact.
     const aliasesByName=new Map<string,Array<Record<string,unknown>>>();
     for(const entity of db.prepare("SELECT a.normalized_alias,e.entity_ref,e.name,e.normalized_name,e.valid_from_chapter,e.valid_to_chapter FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref ORDER BY a.normalized_alias,e.entity_ref").all() as Array<Record<string,unknown>>){
-      const alias=String(entity.normalized_alias);
+      const alias=normalizeEntityName(String(entity.normalized_alias));
       const owners=aliasesByName.get(alias);
       if(owners)owners.push(entity);else aliasesByName.set(alias,[entity]);
     }
@@ -507,7 +509,7 @@ export class WritingStore {
         }
       }
       for(const match of content.matchAll(/\[\[([^[\]\n]{1,100})\]\]/g)){
-        const captured=match[1]!,text=captured.trim(),owners=aliasesByName.get(text.toLowerCase())??[];
+        const captured=match[1]!,text=captured.trim(),owners=aliasesByName.get(normalizeEntityName(text))??[];
         if(owners.length!==1){const reason=owners.length?"AMBIGUOUS_ALIAS":"NO_MATCHING_ENTITY";db.prepare("INSERT OR IGNORE INTO unresolved_mentions VALUES(?,?,?,?,?)").run(stableId("unresolved",spanRef,text,String(match.index)),text,spanRef,reason,revision);continue;}
         const entity=owners[0]!,entityRef=String(entity.entity_ref),tokenStart=(match.index??0)+2+(captured.length-captured.trimStart().length),from=entity.valid_from_chapter==null?null:String(entity.valid_from_chapter),to=entity.valid_to_chapter==null?null:String(entity.valid_to_chapter);
         const tokenEnd=tokenStart+text.length,evidenceHash=hash(content.slice(tokenStart,tokenEnd)),edgeRef=stableId("edge",documentRef,entityRef,"mentions"),identityHash=hash(`${documentRef}\0${entityRef}\0mentions`);
@@ -608,7 +610,7 @@ export class WritingStore {
     // callers to infer a surrogate Chapter entity.
     const directDocument=allowStableNeighborhoodSeed?db.prepare("SELECT d.document_ref ref,s.span_ref,d.kind,d.title heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,'native' source_kind,1 confidence,(SELECT revision FROM index_revisions WHERE status='valid' ORDER BY revision DESC LIMIT 1) revision FROM documents d JOIN spans s ON s.document_ref=d.document_ref WHERE d.document_ref=? ORDER BY s.ordinal LIMIT 1").get(query) as Record<string,unknown>|undefined:undefined;
     if(directDocument)return{rows:[directDocument],ambiguous:[],diagnostics:[]};
-    const normalized=query.normalize("NFKC").trim().toLowerCase(),pattern=`%${normalized.replaceAll("%","\\%").replaceAll("_","\\_")}%`;
+    const normalized=normalizeEntityName(query),pattern=`%${normalized.replaceAll("%","\\%").replaceAll("_","\\_")}%`;
     if(!normalized)return{rows:[],ambiguous:[],diagnostics:[{code:"NO_MATCHING_TERMS",message:"The entity query contains no searchable name"}]};
     const rows=db.prepare(`SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE a.normalized_alias LIKE ? ESCAPE '\\' ORDER BY CASE WHEN a.normalized_alias=? THEN 0 ELSE 1 END,e.normalized_name,e.entity_ref LIMIT ?`).all(pattern,normalized,limit) as Array<Record<string,unknown>>;
     const exact=rows.filter(row=>String(row.normalized_name)===normalized),ambiguous:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
@@ -618,7 +620,7 @@ export class WritingStore {
       ambiguous.push(...alternatives);
     }
     if(!rows.length){
-      const unresolved=db.prepare(`SELECT u.mention_ref ref,u.span_ref,u.text heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,'unresolved' kind,'deterministic' source_kind,1 confidence,u.revision FROM unresolved_mentions u JOIN spans s ON s.span_ref=u.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE lower(u.text)=? ORDER BY d.source_ordinal,s.ordinal,u.mention_ref LIMIT ?`).all(normalized,limit) as Array<Record<string,unknown>>;
+      const unresolved=db.prepare(`SELECT u.mention_ref ref,u.span_ref,u.text heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,'unresolved' kind,'deterministic' source_kind,1 confidence,u.revision FROM unresolved_mentions u JOIN spans s ON s.span_ref=u.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE normalize_entity_name(u.text)=? ORDER BY d.source_ordinal,s.ordinal,u.mention_ref LIMIT ?`).all(normalized,limit) as Array<Record<string,unknown>>;
       if(unresolved.length){ambiguous.push(...unresolved);diagnostics.push({code:"UNRESOLVED_REFERENCE",message:"Matching source references exist but do not resolve to a canonical entity"});}
       else diagnostics.push({code:"NO_RESULTS",message:"No entity, alias, or unresolved reference matched the query"});
     }
