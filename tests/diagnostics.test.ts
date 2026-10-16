@@ -5,6 +5,22 @@ import { describe, expect, test } from "vitest";
 import { DiagnosticRecorder } from "../packages/mcp-server/src/diagnostics.js";
 
 describe("diagnostic recorder", () => {
+  test("inspect counts persisted active captures independently of event history and refuses corrupt metadata (W-MCP-017)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-capture-count-")), workRef = "work:test";
+    const directory = join(root, "diagnostics");
+    const recorder = new DiagnosticRecorder(ref => ref === workRef ? directory : undefined);
+    try {
+      expect((await recorder.inspect(workRef, "usage", 1)).activeCaptureCount).toBe(0);
+      const first = await recorder.startCapture(workRef), second = await recorder.startCapture(workRef);
+      const restored = new DiagnosticRecorder(ref => ref === workRef ? directory : undefined);
+      expect(await restored.inspect(workRef, "usage", 1)).toMatchObject({ activeCaptureCount: 2, eventHistoryAvailable: false, recentEvents: [] });
+      await restored.finishCapture(workRef, first.diagnosticRunRef);
+      expect((await restored.inspect(workRef, "development", 1)).activeCaptureCount).toBe(1);
+      await writeFile(join(directory, "runs", `${second.diagnosticRunRef}.meta.json`), "{}");
+      await expect(restored.inspect(workRef, "development", 1)).rejects.toMatchObject({ code: "DIAGNOSTIC_RUN_NOT_FOUND" });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   test("writes redacted per-call reports and deterministic capture artifacts", async () => {
     const root = await mkdtemp(join(tmpdir(), "writing-mcp-diagnostics-"));
     const workRef = "work:test";

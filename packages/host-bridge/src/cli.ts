@@ -7,7 +7,7 @@ import { acquireInstanceLock, InstanceLockError } from "./instance-lock.js";
 import { createRestartableMcpClient } from "./mcp-client.js";
 import { createPluginRegistry } from "./plugins.js";
 import { createBridgeServer } from "./server.js";
-import { createSnapshotPipeline } from "./snapshot.js";
+import { BridgeError, createSnapshotPipeline } from "./snapshot.js";
 import { createBridgeState } from "./state.js";
 import { createProjectToolProxy } from "./tool-proxy.js";
 
@@ -133,6 +133,14 @@ export async function runCli(argv: string[] = process.argv.slice(2), io: CliIo =
     state,
     mcp,
     mcpMaintenance: mcp,
+    hasActiveCapture: async (hostProjectId, origin): Promise<boolean> => {
+      const result = await toolProxy.invoke("diagnose", hostProjectId, origin, { action: "inspect", purpose: "development", limit: 1 }) as { ok?: boolean; data?: { activeCaptureCount?: unknown } };
+      const count = result.data?.activeCaptureCount;
+      if (!result.ok || typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
+        throw new BridgeError("DERIVED_DATA_BUSY", "capture state could not be verified");
+      }
+      return count > 0;
+    },
     log: (line) => io.stderr.write(`writing-mcp-host-bridge: ${line}\n`),
   });
   await pipeline.restoreFromManifests();

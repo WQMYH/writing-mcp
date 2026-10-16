@@ -76,4 +76,18 @@ describe("host bridge derived data deletion (HB-M2)", () => {
       await stack.cleanup();
     }
   });
+
+  test("capture inspection failure preserves existing data but does not block an absent project (W-MCP-017)", async () => {
+    const stack = await makeStack(), origin = "http://localhost:1111";
+    try {
+      await stack.pipeline.activate("123", origin, draft([doc("a.md", "unchanged")]));
+      const guarded = createSnapshotPipeline({ bridgeRoot: stack.bridgeRoot, registry: stack.registry, state: stack.state, mcp: freshMcp, hasActiveCapture: async (project, receivedOrigin) => {
+        expect([project, receivedOrigin]).toEqual(["123", origin]);
+        throw new Error("capture state unavailable");
+      } });
+      await expect(guarded.deleteDerivedData("123", origin)).rejects.toMatchObject({ code: "DERIVED_DATA_BUSY" });
+      expect(await readFile(join(stack.bridgeRoot, "projects", stack.pipeline.projectKey("123", origin), "source", "a.md"), "utf8")).toBe("unchanged");
+      await expect(guarded.deleteDerivedData("999", origin)).resolves.toEqual({ bindingState: "empty" });
+    } finally { await stack.cleanup(); }
+  });
 });
