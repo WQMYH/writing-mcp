@@ -84,6 +84,8 @@
 
 ## 覆盖清单（按能力域）
 
+MR6 的 `mcp-stdio.test.ts` 另从真实 SDK 子进程执行 source edit → status stale → incremental → current evidence/context → rebuild → restart/resolve → 删除自有索引后重建，逐次检查 revision、稳定 ref、原文证据与诊断，非 store 直调替代。
+
 ### 通用文本链路
 
 - resolve → rebuild index → 中文搜索 → context → 无变化索引 → entity/neighborhood → 单章增量更新。
