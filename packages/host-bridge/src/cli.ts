@@ -133,8 +133,10 @@ export async function runCli(argv: string[] = process.argv.slice(2), io: CliIo =
     state,
     mcp,
     mcpMaintenance: mcp,
-    hasActiveCapture: async (hostProjectId, origin): Promise<boolean> => {
-      const result = await toolProxy.invoke("diagnose", hostProjectId, origin, { action: "inspect", purpose: "development", limit: 1 }) as { ok?: boolean; data?: { activeCaptureCount?: unknown } };
+    hasActiveCapture: async (hostProjectId, origin, invoker = mcp): Promise<boolean> => {
+      // Maintenance supplies its live child; using the normal proxy here would hit our own closed admission.
+      const inspector = createProjectToolProxy({ bridgeRoot: args.root, mcp: invoker, pipeline, isPluginAvailable: () => registry.isAvailable() });
+      const result = await inspector.invoke("diagnose", hostProjectId, origin, { action: "inspect", purpose: "development", limit: 1 }) as { ok?: boolean; data?: { activeCaptureCount?: unknown } };
       const count = result.data?.activeCaptureCount;
       if (!result.ok || typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
         throw new BridgeError("DERIVED_DATA_BUSY", "capture state could not be verified");

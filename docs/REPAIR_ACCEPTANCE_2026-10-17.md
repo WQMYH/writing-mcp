@@ -1,6 +1,6 @@
 # W-MCP-001～025 修复验收证据映射
 
-本文是 2026-10-17 的固定验收记录，不是第二份进度表。实时状态只读 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)。原始独立审查针对 `af78942`；产品修复分阶段提交，MR6 客户端验收代码为 `0759c76`，最终跨项目捕获断言为 `02eb2b8`。原始材料、私有报告和完整 Token 输入只留本机，不随本文件提交。
+本文记录 2026-10-17 的初次验收及后续复核补遗，不是第二份进度表。实时状态只读 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)。原始独立审查针对 `af78942`；初次 MR6 客户端验收代码为 `0759c76`、跨项目断言为 `02eb2b8`；后续在 `d457e07` 复现 W017 同 Bridge 竞态，撤回其全面关闭声明，见下方补遗。原始材料、私有报告和完整 Token 输入只留本机，不随本文件提交。
 
 ## 25 项最小闭环
 
@@ -24,13 +24,13 @@
 | 014 | href XML 实体/异引号导致静默漏章；引号匹配与单层属性解码，缺必需 spine 明确失败 | `a13e659` | `adapter-generic/epub.ts`；`tests/epub.test.ts:105`、`:131`、`:143`、`:161`、`:171` |
 | 015 | entity score 缺省 0 导致邻居挤 seed；命名精确 2/部分 1，稳定 ref seed 2 | `7682cc7` | `core/store.ts`；`tests/search-correctness.test.ts:78`，limit=1/2；不是通用 seed-first 排序 |
 | 016 | 有普通属性的 br 被删后正文拼接；各合法闭合/引号/属性形式保持换行 | `8595bee` | `adapter-generic/epub.ts`；`tests/epub.test.ts:38` |
-| 017 | 实际 CLI 未接 capture callback，活动捕获删数据返回 200；持久化逐项目计数与异步失败关闭守卫 | `1006fdd` | `mcp-server/diagnostics.ts`、`host-bridge/cli.ts`、`host-bridge/snapshot.ts`；`tests/host-bridge-cli-boot.test.ts:162`、`tests/diagnostics.test.ts:8`、`tests/host-bridge-derived-data.test.ts:80` |
+| 017 | 初次修复实际 CLI 未接 capture callback；同 Bridge 在初查后落盘的竞态仍可删数据，另见补遗与最终检查 | 初次 `1006fdd`，后续提交见唯一状态 | `mcp-server/diagnostics.ts`、`host-bridge/cli.ts`、`host-bridge/snapshot.ts`、`host-bridge/mcp-client.ts`；`tests/host-bridge-cli-boot.test.ts:162`、`tests/host-bridge-e2e.test.ts:137`、`:172` |
 | 018 | context 用显示 chapter_number、timeline 用位置；统一 1-based 源章节序，保留 layer/pin 优先级 | `ef21164` | `core/store.ts`、MCP 描述/M0；`tests/context-constraint-wiring.test.ts:42`，10/20 编号、重置与非章节穿插 |
 | 019 | 重启后捕获校验先于注册，绕过恢复；相关请求先 resolve bridge-owned 作品，真 missing/closed 不重试 | `6421740` | `host-bridge/tool-proxy.ts`；`tests/host-bridge-cli-boot.test.ts:100`，child/full CLI 首个 explore、再次重启首个 finish、PID 与退出/锁证据 |
 | 020 | 引号内 > 提前结束标签，属性残片混入正文；正文/标题/过滤元素按匹配引号移除标签 | `8595bee` | `adapter-generic/epub.ts`；`tests/epub.test.ts:43` |
 | 021 | 多别名 JOIN 把同 owner 计成歧义；先按身份聚合，再判 owner 数与展示 LIMIT | `7682cc7` | `core/store.ts`；`tests/search-correctness.test.ts:57` |
 | 022 | 默认 CLI entry 少一级目录；编译布局默认/显式入口 × 仓库/其他 cwd 均 ready/EOF/exit0/释放锁 | `8af5dfb` | `host-bridge/cli.ts`；`tests/host-bridge-lifecycle.test.ts:215`，无空 PID 集合关闭证明 |
-| 023 | status 展开内部 indexRevision，不合 strict schema；只投影既有公开字段，不放松 schema | `8af5dfb` | `host-bridge/snapshot.ts`；`tests/host-bridge-e2e.test.ts:147`、`:192`，fresh/restore HTTP data |
+| 023 | status 展开内部 indexRevision，不合 strict schema；只投影既有公开字段，不放松 schema | `8af5dfb` | `host-bridge/snapshot.ts`；`tests/host-bridge-e2e.test.ts:228`、`:273`，fresh/restore HTTP data（位置随补遗新增测试后更新） |
 | 024 | entity LIKE 未转义反斜杠；复用 literalLikePattern，%、_、反斜杠匹配字面量且 owner 独立 | `7682cc7` | `core/store.ts`；`tests/search-correctness.test.ts:98` |
 | 025 | JSON Schema 码点与 Zod/core UTF-16 长度分歧；统一 query/taskType/label/四份 refs 的码点域 | `648895e` | `core/text.ts`、`core/store.ts`、`mcp-server/server.ts`、`mcp-server/diagnostics.ts`；`tests/unicode-input-limits.test.ts:17`、`:60`，真实 SDK BMP/补充/混合下界/恰好/超一 |
 
@@ -46,6 +46,14 @@
 本机未跟踪的工作区 `reports/2026-10-16-writing-mcp-independent-review/` 保存：`mr6-vitest.json`（完整原生回执）、`mr6-capture-boundary-vitest.json`（最终捕获补强）、`mr6-original-gaps-reconciled.json`（全部原名与两个明确替代组）、`mr5-gold-gate.json`/`mr5-gold-check.json`/`mr5-private-gate.json`（产品代码不再变化后的私有结果）、`mr6-corpus/corpus-benchmark-report.json`/`token-evaluation-materials.json` 与 `mr6-external-token-report.json`。最后三份材料不上传，公开记录只包含汇总数值。
 
 既有 `writing-mcp-plan` 本机执行技能仅校准文档路由、授权连续执行与实际工作树解释，增加 MR0～MR6 计划/本记录入口；入口缺失先验证失败，修正后路径与单一状态源检查通过，UTF-8 模式的官方 quick_validate 通过。没有新增技能框架、子智能体行为评测或额外治理服务。
+
+## 独立复核补遗：W017 同 Bridge 交错
+
+- 在 `d457e07` 上用真实 restartable MCP child、pipeline、proxy、HTTP 调用和真实 inspect，仅读后 barrier 固定交错：inspect 返回 0 → 同项目 start_capture 成功且读回 active meta → 释放 barrier → DELETE 返回 200，project/index/meta 全消失且 child 被替换。本机原生失败回执为 `w017-race-red.json`，不是静态可达性或假 count 的断言。
+- 根因是第一次数量检查早于 maintenance admission 关闭。HTTP 工具调用不经过 DELETE 的项目 mutex，因此“只有独立外部 writer 不受保护”的原说明不足以覆盖这个同 Bridge 反例。
+- 修复复用现有 maintenance：关闭 admission → drain 已接纳调用 → 通过仍存活的独占 child 再 inspect → 无捕获才 stop/remove/restart。最终检查发现活动捕获或失败时不停止旧 child，释放 admission、返回 `DERIVED_DATA_BUSY`。CLI 直接使用该独占 invoker，避免回到普通 admission 造成自锁；代码有对应 why 注释。
+- `tests/host-bridge-e2e.test.ts:172` 覆盖上述捕获先完成交错，要求 HTTP 409、project/index/meta/原 child 全保留并可 finish。`:137` 覆盖删除先封 admission，要求新 start_capture 返回既有 HTTP 503 / `BRIDGE_MCP_UNAVAILABLE`，其他项目已活动的捕获不误挡删除、重启后仍可 finish。两项先失败再修复；第二项还复现并修正了 admission 错误被 HTTP 层误标 500/SNAPSHOT_INVALID。
+- 不修改检索/排序/预算，未重复私有、超大语料或 tokenizer 测量；上文数值仍绑定原提交，不声称这轮重测。新完整门禁、代码提交及双平台 CI 的最终结论由唯一状态文件登记。没有新增工具、依赖、锁框架、自动重试或超时 RPC 服务端取消保证。
 
 ## 保留边界
 

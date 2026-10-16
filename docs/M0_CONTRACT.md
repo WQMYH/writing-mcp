@@ -241,6 +241,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - `writing_diagnose(inspect)` adds nonnegative integer `activeCaptureCount` in both purposes. It counts this work's persisted active capture metadata, independently of `limit` and rotating event history; a fresh process observes the same unfinished captures. Missing capture directories mean zero, but unreadable, foreign, or malformed native capture metadata causes an error, not a falsely safe zero.
 - The production host-bridge CLI consults that project-scoped count inside the existing deletion mutex. An active capture or unverifiable capture state returns `DERIVED_DATA_BUSY` without deleting project data. Captures in another project do not block deletion; absent project data remains a no-op. This check is not a cross-process transaction between external capture writers and deletion.
 
+### M0.1 same-bridge capture/deletion ordering amendment (2026-10-17, W-MCP-017 reopened)
+
+- The initial capture count is only an early rejection. After maintenance admission closes and all admitted MCP calls drain, deletion rechecks the count through the still-live, exclusively held child before stopping it or mutating project files. A capture persisted in the first-read window causes `DERIVED_DATA_BUSY`; the project, index, metadata and original child remain available and the capture can still finish.
+- If deletion seals admission first, new tool requests are rejected with the existing HTTP 503 / `BRIDGE_MCP_UNAVAILABLE`, without starting a capture. They are not generic snapshot-validation failures. A final-check failure releases admission without stopping/replacing the child; normal calls can continue.
+- The final check is project-scoped: another project's active capture survives maintenance and does not veto deletion. The same-Bridge race is covered; only independent external writers remain outside this process-local ordering boundary.
+
 ### M0.1 bridge capture restart amendment (2026-10-17, W-MCP-019)
 
 - Before forwarding any call carrying `diagnosticRunRef`, the bridge resolves its own project source in the current MCP child. This restores the in-memory work registry before the existing pre-handler capture validation, including when the first call after child/full-CLI restart is `finish_capture`.

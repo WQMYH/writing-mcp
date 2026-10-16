@@ -47,9 +47,9 @@ export interface SnapshotPipelineOptions {
   registry: PluginRegistry;
   state: BridgeState;
   mcp: ToolInvoker;
-  mcpMaintenance?: { restartAround<T>(operation: () => Promise<T>): Promise<T> };
+  mcpMaintenance?: { restartAround<T>(operation: () => Promise<T>, beforeStop?: (mcp: ToolInvoker) => Promise<void>): Promise<T> };
   pluginId?: string;
-  hasActiveCapture?: (hostProjectId: string, origin: string) => boolean | Promise<boolean>;
+  hasActiveCapture?: (hostProjectId: string, origin: string, mcp?: ToolInvoker) => boolean | Promise<boolean>;
   renameFn?: (from: string, to: string) => Promise<void>;
   log?: (line: string) => void;
 }
@@ -303,12 +303,14 @@ export function createSnapshotPipeline(options: SnapshotPipelineOptions) {
           state.setProjectBinding(hostProjectId, "empty");
           return { bindingState: "empty" as const };
         }
-        if (options.hasActiveCapture) {
+        const assertNoActiveCapture = async (mcp?: ToolInvoker): Promise<void> => {
+          if (!options.hasActiveCapture) return;
           let active: boolean;
-          try { active = await options.hasActiveCapture(hostProjectId, origin); }
+          try { active = await options.hasActiveCapture(hostProjectId, origin, mcp); }
           catch { throw new BridgeError("DERIVED_DATA_BUSY", "capture state could not be verified"); }
           if (active) throw new BridgeError("DERIVED_DATA_BUSY", "a diagnostic capture is active");
-        }
+        };
+        await assertNoActiveCapture();
         const deleteRoot = join(options.bridgeRoot, ".staging", key, `delete-${randomUUID()}`);
         const quarantinedProject = join(deleteRoot, "project");
         const removeWhileStopped = async () => {
@@ -333,7 +335,8 @@ export function createSnapshotPipeline(options: SnapshotPipelineOptions) {
           }
           log?.(`derived data deleted project=${key.slice(0, 8)}`);
         };
-        if (options.mcpMaintenance) await options.mcpMaintenance.restartAround(removeWhileStopped);
+        // The first read can race with admitted captures; recheck after admission closes and drains.
+        if (options.mcpMaintenance) await options.mcpMaintenance.restartAround(removeWhileStopped, assertNoActiveCapture);
         else await removeWhileStopped();
         return { bindingState: "empty" as const };
       });

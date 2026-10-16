@@ -25,7 +25,7 @@
 | `host-bridge-derived-data.test.ts` | HB-M2 派生数据删除：删 source/项目 .bridge/.writing-index 且保留全局 plugin-state.json、状态转 empty、active capture 守卫返回 DERIVED_DATA_BUSY 且不改动、未知项目 no-op 成功；W017 异步项目级捕获检查失败关闭且保留数据 |
 | `host-bridge-tools.test.ts` | HB-M3/HB-M6 五工具代理：五个 Bearer 项目路由与 strict proxy envelope、独立 `BRIDGE_TOOL_REQUEST_INVALID`；Bridge 强制项目 sourcePath/workRef、`WORK_REF_NOT_FOUND` 单次 resolve+retry、index 120 秒与其余工具 15 秒、所有返回层级递归移除本机路径字段；真实 MCP stdio 子进程完成 resolve→index→explore→context→diagnose 全链 fixture |
 | `host-bridge-cli-boot.test.ts` | HB-M5 真实编译 CLI 子进程接线：`--host-origin` 精确 loopback 校验/退出码 2、配对 Origin 白名单、冷启动插件注册；W017 两个活动捕获拒删/其他项目可删/关闭后可删；W019 full-CLI 与 child 重启后首个相关 explore、再次重启后首个 finish_capture、真实 missing/closed 不重试不重启；真实 PID 退出/EOF/锁释放 |
-| `host-bridge-e2e.test.ts` | Bridge 真实链：配对/快照/五工具/证据、重启/回滚/SQLite 维护删除/重建/授权负矩阵；W023 fresh 与 restored HTTP status 均按严格公开 schema 校验，内部 indexRevision 不泄漏 |
+| `host-bridge-e2e.test.ts` | Bridge 真实链：配对/快照/五工具/证据、重启/回滚/SQLite 维护删除/重建/授权负矩阵；W023 strict HTTP status；W017 race 真实 inspect 后 barrier 固定同 Bridge 捕获落盘后拒删/保留 index+meta+child，反向最终检查已封 admission 拒绝新捕获为 503、其他项目活动捕获不误挡且可关闭 |
 | `host-plugin-manifest.test.ts` | HB-M0 插件 manifest 冻结：七字段（id/apiVersion/hostCompatibility/minimumPermissions/exportCategories/license/testMatrix）齐全且 strict、错误身份/apiVersion/枚举/空权限拒绝、最小权限词表冻结并覆盖 fixture、生成 fixture 与运行期注册常量一致 |
 | `graph-identity-evidence.test.ts` | schema v4 图：Chapter 身份/顺序、规范定义、多次 mention/关系证据；W012 非章节编辑保留 precedes/证据；W013 当前标题别名与冷建一致且保留其他别名；W005 NFC/NFD 身份/定义/引用一致，兼容 owner 不误选、未解析证据保真；W009 大小写引用在 owner 新增/删除/改名/恢复后与冷建一致，旧持久化别名依赖也失效 |
 | `index-lifecycle.test.ts` | 索引生命周期：不兼容 schema 只读报告/显式重建、失败事务保留上一 revision、未解析引用入库、status stale 语义、源顺序 snapshot、中断恢复、writer lock、增量影响范围、实体变化刷新引用 |

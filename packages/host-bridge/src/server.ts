@@ -214,6 +214,9 @@ export function createBridgeServer({ auth, state, config, pipeline, toolProxy, l
         return sendJson(res, 404, { error: "not_found" });
       } catch (error) {
         if (error instanceof BridgeError) return fail(res, bridgeStatus(error.code), error.code, error.message);
+        if (error && typeof error === "object" && "code" in error && error.code === "BRIDGE_MCP_UNAVAILABLE") {
+          return fail(res, 503, "BRIDGE_MCP_UNAVAILABLE", "MCP child is temporarily unavailable");
+        }
         throw error;
       }
     }
