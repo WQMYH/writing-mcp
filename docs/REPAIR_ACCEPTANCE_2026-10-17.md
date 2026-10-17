@@ -62,4 +62,4 @@
 - mtime/size 都未变化的原地改写仍是 freshness 明示边界；外部/非合作 SQLite 占用仍可能 `INDEX_BUSY`；不宣称任意跨进程快照事务。
 - 捕获计数来自持久元数据，坏元数据失败关闭。Bridge 删除与独立外部 capture writer 之间不提供跨进程事务；不得将一次顺序检查声称为全局并发互斥。
 - Storyforge 实际 UI、浏览器 PNA、Windows junction、macOS 与完整 EPUB 2/3/DRM 变体不是这些合成/双平台测试的通过项。SDK/HTTP/CLI 工程验收不等于小说内容质量或用户最终使用验收。
-- Draft PR 保持不合并 main；完整本地证据、机器回执与报告路径由唯一状态文件引用。
+- 初次归档时 PR 保持 Draft；2026-10-17 用户明确授权后，已通过 `e0d8ee1` 保留历史合并 PR #1，旧“不合并 main”限制不再适用。完整本地证据、机器回执、报告路径及当前集成状态由唯一状态文件引用。

@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-17 01:51 +08:00（W017 再开修复与最新双平台门禁收口）
-> 当前状态：先前 W017 全面关闭声明由真实同 Bridge 反例推翻，已由 `9d3ada3` 更正：maintenance 封 admission/drain 后通过存活独占 child 再检查，拒删保留原 child；删除先赢时新捕获按既有 503/MCP_UNAVAILABLE 拒绝。两个 barrier 回归先失败后通过，相关 24 项/check/lint 和完整 pnpm verify 58 文件/411 项、公开 30/30、coverage lines 91.32%/branches 80.16% 通过，无阈值放宽；该代码对应 Windows/Linux CI `38942293970` 均 completed/success。PR 正文已同步本轮更正、MR1～MR6 证据与未测边界，并读回确认不再写 MR2 in progress、仍 Draft。其余既有修复保留，反例不抹去；未更改检索，不重复私有/语料/tokenizer 测量，旧数值仍绑定旧提交。不合 main、不上传私有材料，不宣称跨进程事务、超时 RPC 取消或全面发布。
+> 检查点时间：2026-10-17 09:49 +08:00（PR #1 合并 main、合并结果验收与 worktree 清理）
+> 当前状态：按用户最新明确授权，[PR #1](https://github.com/WQMYH/writing-mcp/pull/1) 已由 merge commit `e0d8ee1` 保留完整阶段历史合入 main 并推送；GitHub 已读回 `MERGED`，本地 main 与 origin/main 一致。MR1～MR6 的 25 类修复、W017 再开后的 `9d3ada3`、契约、回归、经批准的黄金基线校准及验收映射均已核对进入 main。合并前本机 58 文件/411 项通过；合并后重新执行完整 `pnpm verify`，隐私/check/lint、58 文件/411 项、公开 30/30、coverage lines 91.32%/branches 80.16% 全部通过，无阈值放宽。PR 最终头 `4356552` 的 Windows/Linux CI `38942991163` 均已成功。本仓库三个完全合并且无未提交内容的 worktree 已清除，Git worktree 登记仅余 main；依赖 junction 只解绑，不遍历目标，清理后 main 依赖导入正常。未改产品代码、未重测私有/语料/tokenizer，既有证据仍绑定原被测提交；私有材料、本地报告和分支引用保留，不宣称发布或真实宿主 UI 验收。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -115,17 +115,17 @@ MR5 增至 58 文件/408 项，包含真实默认入口/严格状态、Unicode �
 
 ## 下一步
 
-- W017 再开后的本机/双平台门禁与 PR 正文同步已收口；[验收映射](REPAIR_ACCEPTANCE_2026-10-17.md) 保留初次验收、反例及修复补遗，供独立复核。main 合并、发布、下一轮功能或真实 UI 测试不在本轮范围。
+- MR1～MR6、W017 再开修复及 main 集成已收口；[验收映射](REPAIR_ACCEPTANCE_2026-10-17.md) 保留初次验收、反例及修复补遗。此前 Draft/不合 main 的限制已由本次用户明确合并授权取代；发布、下一轮功能和真实 UI 测试未在本次集成中执行。
 
 - Host Bridge：Storyforge 首宿主 HB-M0～HB-M6 已关闭；维持静态单宿主、loopback、显式配对、失败关闭和零自动写回边界，不在本轮扩成动态插件市场。下一步先把真实使用反馈转成协议兼容性回归，再决定第二宿主或可配置端口等扩展。
 - M5 收尾：补真实 InkOS、更多 EPUB 2/3 变体及独立 MCP 客户端安装/连通性验收；`.github/workflows/verify.yml` 已存在并只跑公共 `pnpm verify`，私有验收链永不进 CI。
-- 历史可靠性分支已集成到当前 main 基线 `af78942`；不再等待旧集成决策。`d87f8b4` 的独立 coverage 构建及 `5f5cd58` 的 worker 上限保持；本轮 MR1 仍不得用历史 private/corpus/tokenizer 结果替代验收。
+- 历史可靠性分支已集成到原基线 `af78942`；本轮 MR1～MR6 经 `e0d8ee1` 集成，不再等待旧集成决策。`d87f8b4` 的独立 coverage 构建及 `5f5cd58` 的 worker 上限保持；不得用脱离被测版本的历史结果替代验收。
 - 批次 C（AUD-026～032 + AUD-035 第一/二阶段）已全部完成并审阅归档。
 - AUD-035 第三阶段（Biome 格式化）已由用户决策延后：store.ts 即将被 M3/M4 修改，现在做巨型函数展开与全量格式化必然返工；正确时机是完整重排落地后（检索侧冻结）的重构窗口，届时再评估格式化是否必要。
-- 历史 Corpus 记录：4,789,903 字符《语料B》，索引 11.92s/百万字符、暖 Explore P95 4.42ms、暖 Context P95 4.76ms；MR1 未重跑，报告与 Token 材料仅留本机。该历史口径按契约先预热每个冻结任务一次，随后测量 revision-scoped 缓存路径。
+- 语料和外部 tokenizer 的 MR6 被测版本、有限任务集合、结果及序列化边界见[验收映射](REPAIR_ACCEPTANCE_2026-10-17.md)；原始报告与 Token 材料仅留本机。本次纯集成未重复测量，不把历史性能或 Token 数值改记到 merge commit。
 - **重构窗口按触碰面分流（2026-09-02 校正）**：装配侧 context 的 registry+dedup 已落地，sources/budget/layer 仍只在有功能需求时拆分；`store.ts` 的 oxlint 豁免已由 `5e6f6c1` 移除并以 0 警告进入门禁，不再等待格式化。检索 SQL 抽离与 Biome 全量格式化仍延后，禁止仅为覆盖率或风格指标重写生产结构。
-- M4 剩余按复审更新：W003/004/006/018 与外部 tokenizer 复核；历史 PRF 校准不能关闭本轮这些上下文缺陷。`mixed-cjk-v1` 仍为 excerpt-only 启发式估算。
-- M4 审议：来源/约束装配、accountingScope、response-size、Task 5 硬化及 A1 双指纹既有实现保留；MR1 未运行 `verify:private`，不得沿用脱离 revision 的历史数字。
+- 本轮 M4 的 W003/004/006/018 回归及三项非空上下文的外部 tokenizer 复核已收口，见验收映射；不再保留为待修项。`mixed-cjk-v1` 仍为 excerpt-only 启发式估算，外部材料比较不代表完整 Agent 账单或 credits。
+- M4 来源/约束装配、accountingScope、response-size、Task 5 硬化及 A1 双指纹实现保留；私有/gold 门禁与 MR6 语料/tokenizer 原始回执均只在本机，按验收映射绑定各自被测提交。
 
 > 更早阶段（Step 3 / AUD-005～035）的逐条落地叙事已于 2026-08-17 移除：事实由「可追溯提交清单」与 commit message 承载，审阅结论由下节表格承载，不在此重复。
 
@@ -196,6 +196,7 @@ MR5 增至 58 文件/408 项，包含真实默认入口/严格状态、Unicode �
 
 ## 可追溯提交清单
 
+- `e0d8ee1` — merge(PR #1)：保留 MR1～MR6、W017 再开修复及验收记录的全部提交历史；合并树与 PR 最终头内容一致，合并后完整 verify 58/411、公开 30/30、coverage 91.32%/80.16% 通过，已推送并读回 GitHub MERGED；main 的 [CI 38992198751](https://github.com/WQMYH/writing-mcp/actions/runs/38992198751) Windows/Linux 均 completed/success。确认祖先关系、干净状态及无独有本地材料后，清除 `wm-publish-verify`、`writing-mcp-canary-m5`、`writing-mcp-mr1` 三个 worktree；main 依赖、分支引用及工作区私有证据保留。
 - `9d3ada3` — fix(bridge)：重新打开 W017 后，通过真实 inspect/barrier 复现 capture 成功落盘后仍被删除；封 admission/drain 后独占活 child 复查，拒删保留 project/index/meta/child，反向请求 503，其他项目 capture 保留；24 项针对性与完整 58/411、30/30、coverage 91.32%/80.16%，双平台 CI `38942293970` 通过，PR 正文已修正，已推送。
 - `d457e07` — docs(mr6)：初次固定验收归档；后来 W017 同 Bridge 反例推翻了当时的全面关闭声明，原证据保留并由本轮补遗更正。
 
