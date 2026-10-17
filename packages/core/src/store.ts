@@ -2,13 +2,15 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdir, open as openFile, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { splitDocument, estimateTokens } from "./text.js";
+import { splitDocument, estimateTokens, sliceText, exceedsCodePointLimit } from "./text.js";
 import { stableId } from "./ids.js";
 import { contextSourceProfile, dedupByEvidence, layerRank } from "./context-assembly.js";
 import { derivePrfTerms, PRODUCTION_PRF_CONFIGURATION, validatePrfConfiguration, type WeightedPrfTerm } from "./search-prf.js";
 import type { ContextBlock, ContextOptions, ContextPacket, EntityKind, ExploreItem, ExploreOperation, ExploreResult, IndexResult, ParsedWork, SearchExperimentOptions } from "./types.js";
 
 const SCHEMA_VERSION = 4;
+// Increment when unchanged source must be re-derived under corrected text/graph rules.
+const TEXT_DERIVATION_VERSION = 6;
 const SOFTWARE_VERSION = "0.1.0";
 const MAX_RESPONSE_BYTES = 200_000;
 const CONTEXT_SEARCH_LIMIT = 12;
@@ -28,6 +30,7 @@ function pretrimExploreCollections(results:ExploreItem[],ambiguous:ExploreItem[]
 }
 const asNumber = (value: unknown) => typeof value === "bigint" ? Number(value) : Number(value ?? 0);
 const compareText = (left:string,right:string) => left < right ? -1 : left > right ? 1 : 0;
+const normalizeEntityName = (value:string) => value.normalize("NFC").trim().toLowerCase();
 const literalLikePattern = (value: string): string =>
   `%${value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
 
@@ -91,6 +94,7 @@ export class WritingStore {
     const db = new DatabaseSync(this.indexPath!);
     try {
       db.exec(`PRAGMA busy_timeout=${SQLITE_BUSY_TIMEOUT_MS};`);
+      db.function("normalize_entity_name",{deterministic:true},value=>normalizeEntityName(String(value)));
       await this.configureConnection(db);
       this.schemaVersionOnDisk = this.readSchemaVersion(db);
       if (this.schemaVersionOnDisk !== 0 && this.schemaVersionOnDisk !== SCHEMA_VERSION) {
@@ -285,6 +289,7 @@ export class WritingStore {
     return this.work.documents.map((document, sourceOrdinal) => {
       const contentHash = hash(document.content);
       const semanticHash = hash(json({
+        textDerivationVersion: TEXT_DERIVATION_VERSION,
         documentRef: document.documentRef,
         relativePath: document.relativePath,
         title: document.title,
@@ -337,7 +342,7 @@ export class WritingStore {
         freshness: currentRevision ? (changed ? "stale" : "fresh") : "missing",
         stats: { added, updated, deleted, skipped, ...this.counts(db) },
         contextSources: this.contextSourceCounts(db),
-        diagnostics: changed ? [{ code: "INDEX_SOURCE_CHANGED", message: "Source documents differ from the current valid index revision" }] : diagnostics,
+        diagnostics: changed ? [{ code: "INDEX_SOURCE_CHANGED", message: "Source documents or text derivation rules differ from the current valid index revision" }] : diagnostics,
         elapsedMs: performance.now()-started,
       };
     }
@@ -395,7 +400,7 @@ export class WritingStore {
     db.prepare("DELETE FROM documents WHERE document_ref=?").run(ref);
   }
 
-  private entityNamesForDocuments(db:DatabaseSync,refs:Set<string>):Set<string>{if(!refs.size)return new Set();const placeholders=[...refs].map(()=>"?").join(",");const rows=db.prepare(`SELECT DISTINCT e.name FROM entities e JOIN spans s ON s.span_ref=e.span_ref WHERE s.document_ref IN (${placeholders})`).all(...refs) as Array<Record<string,unknown>>;return new Set(rows.map(row=>String(row.name)));}
+  private entityNamesForDocuments(db:DatabaseSync,refs:Set<string>):Set<string>{if(!refs.size)return new Set();const placeholders=[...refs].map(()=>"?").join(",");const rows=db.prepare(`SELECT DISTINCT a.alias name FROM aliases a JOIN entity_definitions ed ON ed.entity_ref=a.entity_ref JOIN spans s ON s.span_ref=ed.span_ref WHERE s.document_ref IN (${placeholders})`).all(...refs) as Array<Record<string,unknown>>;return new Set(rows.map(row=>String(row.name)));}
   private documentsContainKind(db:DatabaseSync,refs:Set<string>,kind:string):boolean{if(!refs.size)return false;const placeholders=[...refs].map(()=>"?").join(",");return asNumber((db.prepare(`SELECT COUNT(*) count FROM documents WHERE document_ref IN (${placeholders}) AND kind=?`).get(...refs,kind) as Record<string,unknown>).count)>0;}
   private rowsForDocuments(db:DatabaseSync,refs?:Set<string>):Array<Record<string,unknown>>{if(!refs)return db.prepare("SELECT s.span_ref,s.ordinal span_ordinal,s.heading,s.content,d.document_ref,d.kind,d.chapter_number,d.volume_number,d.local_chapter_number,d.source_ordinal FROM spans s JOIN documents d ON d.document_ref=s.document_ref ORDER BY d.source_ordinal,s.ordinal,s.span_ref").all() as Array<Record<string,unknown>>;if(!refs.size)return[];const placeholders=[...refs].map(()=>"?").join(",");return db.prepare(`SELECT s.span_ref,s.ordinal span_ordinal,s.heading,s.content,d.document_ref,d.kind,d.chapter_number,d.volume_number,d.local_chapter_number,d.source_ordinal FROM spans s JOIN documents d ON d.document_ref=s.document_ref WHERE d.document_ref IN (${placeholders}) ORDER BY d.source_ordinal,s.ordinal,s.span_ref`).all(...refs) as Array<Record<string,unknown>>;}
   private rebuildEntities(db:DatabaseSync,revision:number){
@@ -414,17 +419,11 @@ export class WritingStore {
     const affectedNames=new Set([...previousEntityNames,...currentEntityNames]);
     const rowsByRef=new Map(changedRows.map(row=>[String(row.span_ref),row]));
     if(affectedNames.size){
-      const normalizedNames=new Set([...affectedNames].map(name=>name.toLowerCase()));
-      const allRows=this.rowsForDocuments(db),allRowsByRef=new Map(allRows.map(row=>[String(row.span_ref),row]));
-      for(const row of allRows){
-        const content=String(row.content);
-        if([...affectedNames].some(name=>content.includes(name)))rowsByRef.set(String(row.span_ref),row);
-      }
-      for(const row of db.prepare("SELECT DISTINCT span_ref,text FROM unresolved_mentions").all() as Array<Record<string,unknown>>){
-        if(normalizedNames.has(String(row.text).toLowerCase())){
-          const match=allRowsByRef.get(String(row.span_ref));
-          if(match)rowsByRef.set(String(match.span_ref),match);
-        }
+      const normalizedNames=new Set([...affectedNames].map(normalizeEntityName));
+      // Resolved and unresolved references share the same normalized invalidation path.
+      for(const row of this.rowsForDocuments(db)){
+        const content=normalizeEntityName(String(row.content));
+        if([...normalizedNames].some(name=>content.includes(name)))rowsByRef.set(String(row.span_ref),row);
       }
     }
     this.refreshReferencesForRows(db,[...rowsByRef.values()],revision);
@@ -434,7 +433,7 @@ export class WritingStore {
   private insertEntitiesForRows(db:DatabaseSync,rows:Array<Record<string,unknown>>,revision:number):Set<string>{
     const insertedNames=new Set<string>();
     const insertEntity=(kind:EntityKind,name:string,row:Record<string,unknown>,sourceKind="native",properties:Record<string,unknown>={})=>{
-      const normalized=name.toLowerCase(),spanRef=String(row.span_ref),documentRef=String(row.document_ref);
+      const normalized=normalizeEntityName(name),spanRef=String(row.span_ref),documentRef=String(row.document_ref);
       const ref=kind==="Chapter"?stableId("entity",this.work.workRef,kind,documentRef):stableId("entity",this.work.workRef,kind,normalized);
       const definitionRef=stableId("entity-definition",ref,spanRef),evidenceHash=hash(String(row.content));
       db.prepare("INSERT OR REPLACE INTO entity_definitions VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(definitionRef,ref,kind,name,normalized,sourceKind,1,spanRef,asNumber(row.source_ordinal),asNumber(row.span_ordinal),evidenceHash,json(properties),revision);
@@ -462,6 +461,8 @@ export class WritingStore {
       db.prepare("DELETE FROM aliases WHERE entity_ref=?").run(entityRef);
       db.prepare("DELETE FROM entities WHERE entity_ref=?").run(entityRef);
     }
+    // Chapter aliases are current-title derivations, not a title-history store.
+    db.exec("DELETE FROM aliases WHERE entity_ref IN (SELECT entity_ref FROM entities WHERE kind='Chapter')");
     for(const [entityRef,definition] of canonical){
       const kind=String(definition.kind),spanRef=String(definition.span_ref),identityHash=hash(`${this.work.workRef}\0${kind}\0${entityRef}`),evidenceHash=String(definition.evidence_hash);
       const chapterRef=kind==="Chapter"?entityRef:null;
@@ -480,7 +481,7 @@ export class WritingStore {
     // becoming a deterministic-looking false fact.
     const aliasesByName=new Map<string,Array<Record<string,unknown>>>();
     for(const entity of db.prepare("SELECT a.normalized_alias,e.entity_ref,e.name,e.normalized_name,e.valid_from_chapter,e.valid_to_chapter FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref ORDER BY a.normalized_alias,e.entity_ref").all() as Array<Record<string,unknown>>){
-      const alias=String(entity.normalized_alias);
+      const alias=normalizeEntityName(String(entity.normalized_alias));
       const owners=aliasesByName.get(alias);
       if(owners)owners.push(entity);else aliasesByName.set(alias,[entity]);
     }
@@ -488,8 +489,8 @@ export class WritingStore {
       const spanRef=String(row.span_ref),documentRef=String(row.document_ref),content=String(row.content);
       db.prepare("DELETE FROM mentions WHERE span_ref=?").run(spanRef);
       db.prepare("DELETE FROM unresolved_mentions WHERE span_ref=?").run(spanRef);
-      db.prepare("DELETE FROM edge_evidence WHERE span_ref=? AND edge_ref IN (SELECT edge_ref FROM edges WHERE kind!='contains')").run(spanRef);
-      db.prepare("DELETE FROM edges WHERE span_ref=? AND kind!='contains'").run(spanRef);
+      db.prepare("DELETE FROM edge_evidence WHERE span_ref=? AND edge_ref IN (SELECT edge_ref FROM edges WHERE kind IN ('appears_in','mentions'))").run(spanRef);
+      db.prepare("DELETE FROM edges WHERE span_ref=? AND kind IN ('appears_in','mentions')").run(spanRef);
       for(const entity of entities){
         const name=String(entity.name);let position=content.indexOf(name);
         const from=entity.valid_from_chapter==null?null:String(entity.valid_from_chapter),to=entity.valid_to_chapter==null?null:String(entity.valid_to_chapter);
@@ -502,7 +503,7 @@ export class WritingStore {
         }
       }
       for(const match of content.matchAll(/\[\[([^[\]\n]{1,100})\]\]/g)){
-        const captured=match[1]!,text=captured.trim(),owners=aliasesByName.get(text.toLowerCase())??[];
+        const captured=match[1]!,text=captured.trim(),owners=aliasesByName.get(normalizeEntityName(text))??[];
         if(owners.length!==1){const reason=owners.length?"AMBIGUOUS_ALIAS":"NO_MATCHING_ENTITY";db.prepare("INSERT OR IGNORE INTO unresolved_mentions VALUES(?,?,?,?,?)").run(stableId("unresolved",spanRef,text,String(match.index)),text,spanRef,reason,revision);continue;}
         const entity=owners[0]!,entityRef=String(entity.entity_ref),tokenStart=(match.index??0)+2+(captured.length-captured.trimStart().length),from=entity.valid_from_chapter==null?null:String(entity.valid_from_chapter),to=entity.valid_to_chapter==null?null:String(entity.valid_to_chapter);
         const tokenEnd=tokenStart+text.length,evidenceHash=hash(content.slice(tokenStart,tokenEnd)),edgeRef=stableId("edge",documentRef,entityRef,"mentions"),identityHash=hash(`${documentRef}\0${entityRef}\0mentions`);
@@ -539,7 +540,7 @@ export class WritingStore {
     return {byLayer,byKind};
   }
 
-  async explore(operation:ExploreOperation,query="",limit=20,maxHops=2,targetChapter?:number):Promise<ExploreResult>{if(query.length>2048)throw codedError("QUERY_TOO_LARGE","Query exceeds the 2048-character deterministic limit");const started=performance.now(),db=await this.open();const revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);limit=Math.max(1,Math.min(100,Math.trunc(limit)));maxHops=Math.max(0,Math.min(3,maxHops));let rows:Array<Record<string,unknown>>=[],ambiguousRows:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
+  async explore(operation:ExploreOperation,query="",limit=20,maxHops=2,targetChapter?:number):Promise<ExploreResult>{if(exceedsCodePointLimit(query,2048))throw codedError("QUERY_TOO_LARGE","Query exceeds the 2048-character deterministic limit");const started=performance.now(),db=await this.open();const revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);limit=Math.max(1,Math.min(100,Math.trunc(limit)));maxHops=Math.max(0,Math.min(3,maxHops));let rows:Array<Record<string,unknown>>=[],ambiguousRows:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
     if(operation==="stats"){const c={...this.counts(db),contextSources:this.contextSourceCounts(db)};rows=[{span_ref:"stats",heading:"Index statistics",content:json(c),relative_path:".writing-index",start_line:1,end_line:1,score:1,kind:"stats"}];}
     else if(operation==="entity"||operation==="neighborhood"){const lookup=this.entityRows(db,query,limit,operation==="neighborhood");rows=lookup.rows;ambiguousRows=lookup.ambiguous;diagnostics=lookup.diagnostics;}
     else if(operation==="document"){
@@ -561,10 +562,10 @@ export class WritingStore {
     }
     return {workRef:this.work.workRef,revision,freshness:"fresh",operation,results:returned,ambiguous,truncated,metrics:{candidateCount,returnedCount:returned.length,visitedNodes,maxActualHops,omittedEstimate,elapsedMs:performance.now()-started},diagnostics};}
   /** Evaluator-only entry point. Production explore never accepts experiment options. */
-  async evaluateSearch(query:string,limit:number,options:SearchExperimentOptions):Promise<ExploreResult>{if(query.length>2048)throw codedError("QUERY_TOO_LARGE","Query exceeds the 2048-character deterministic limit");const started=performance.now(),db=await this.open(),revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);limit=Math.max(1,Math.min(100,Math.trunc(limit)));const searched=this.searchRows(db,query,limit,options),locatorsBySpan=this.locatorMap(db,searched.rows.map(row=>String(row.span_ref))),results=searched.rows.map(row=>this.item({...row,revision,locators:locatorsBySpan.get(String(row.span_ref))})),cap=this.maxResponseBytes;
+  async evaluateSearch(query:string,limit:number,options:SearchExperimentOptions):Promise<ExploreResult>{if(exceedsCodePointLimit(query,2048))throw codedError("QUERY_TOO_LARGE","Query exceeds the 2048-character deterministic limit");const started=performance.now(),db=await this.open(),revision=asNumber((db.prepare("SELECT COALESCE(MAX(revision),0) revision FROM index_revisions").get() as Record<string,unknown>).revision);limit=Math.max(1,Math.min(100,Math.trunc(limit)));const searched=this.searchRows(db,query,limit,options),locatorsBySpan=this.locatorMap(db,searched.rows.map(row=>String(row.span_ref))),results=searched.rows.map(row=>this.item({...row,revision,locators:locatorsBySpan.get(String(row.span_ref))})),cap=this.maxResponseBytes;
     if(Buffer.byteLength(JSON.stringify({results,ambiguous:[]}),"utf8")>cap){const trimmed=pretrimExploreCollections(results,[],cap);return{workRef:this.work.workRef,revision,freshness:"fresh",operation:"search",results:trimmed.results,ambiguous:trimmed.ambiguous,truncated:true,metrics:{candidateCount:results.length,returnedCount:trimmed.results.length,visitedNodes:results.length,maxActualHops:0,omittedEstimate:trimmed.dropped,elapsedMs:performance.now()-started},diagnostics:[...searched.diagnostics,{code:"RESPONSE_TRUNCATED",message:`Serialized response exceeded the ${cap}-byte deterministic limit; ${trimmed.dropped} item(s) were dropped`} ]};}
     return{workRef:this.work.workRef,revision,freshness:"fresh",operation:"search",results,ambiguous:[],truncated:false,metrics:{candidateCount:results.length,returnedCount:results.length,visitedNodes:results.length,maxActualHops:0,omittedEstimate:0,elapsedMs:performance.now()-started},diagnostics:searched.diagnostics};}
-  private item(r:Record<string,unknown>):ExploreItem{const sourceKind=String(r.source_kind??"deterministic"),excerpt=String(r.content).slice(0,900),locators=Array.isArray(r.locators)?r.locators as ExploreItem["evidence"]["locators"]:undefined;return {ref:String(r.ref??r.span_ref),kind:String(r.kind??"span"),title:String(r.heading),score:Number(r.score??0),sourceKind:sourceKind==="native"||sourceKind==="heuristic"?sourceKind:"deterministic",confidence:Number(r.confidence??1),evidence:{documentRef:String(r.document_ref??r.span_ref),relativePath:String(r.relative_path),startLine:asNumber(r.start_line),endLine:asNumber(r.end_line),excerpt,evidenceHash:hash(excerpt),revision:asNumber(r.revision),...(locators?.length?{locators}:{})}};}
+  private item(r:Record<string,unknown>):ExploreItem{const sourceKind=String(r.source_kind??"deterministic"),excerpt=sliceText(String(r.content),0,900),locators=Array.isArray(r.locators)?r.locators as ExploreItem["evidence"]["locators"]:undefined;return {ref:String(r.ref??r.span_ref),kind:String(r.kind??"span"),title:String(r.heading),score:Number(r.score??0),sourceKind:sourceKind==="native"||sourceKind==="heuristic"?sourceKind:"deterministic",confidence:Number(r.confidence??1),evidence:{documentRef:String(r.document_ref??r.span_ref),relativePath:String(r.relative_path),startLine:asNumber(r.start_line),endLine:asNumber(r.end_line),excerpt,evidenceHash:hash(excerpt),revision:asNumber(r.revision),...(locators?.length?{locators}:{})}};}
 
   private spanLocators(db:DatabaseSync,spanRef:string){return (db.prepare("SELECT relative_path,start_line,end_line FROM span_locators WHERE span_ref=? ORDER BY ordinal").all(spanRef) as Array<Record<string,unknown>>).map(row=>({relativePath:String(row.relative_path),startLine:asNumber(row.start_line),endLine:asNumber(row.end_line)}));}
 
@@ -574,46 +575,59 @@ export class WritingStore {
     return map;
   }
 
+  private chapterPositions(db:DatabaseSync):Map<string,number>{
+    const rows=db.prepare(`WITH positions AS (SELECT document_ref,ROW_NUMBER() OVER (ORDER BY source_ordinal,document_ref) position FROM documents WHERE kind='chapter')
+      SELECT p.document_ref,p.position,e.entity_ref FROM positions p LEFT JOIN
+      (SELECT e.entity_ref,s.document_ref FROM entities e JOIN spans s ON s.span_ref=e.span_ref WHERE e.kind='Chapter') e USING(document_ref)`).all() as Array<Record<string,unknown>>;
+    const positions=new Map<string,number>();
+    for(const row of rows){const position=asNumber(row.position);positions.set(String(row.document_ref),position);if(row.entity_ref!=null)positions.set(String(row.entity_ref),position);}
+    return positions;
+  }
+
   private timelineRows(db:DatabaseSync,query:string,limit:number,targetChapter?:number):{rows:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}
   {
     const diagnostics:ExploreResult["diagnostics"]=[];
-    const chapterOrder=new Map<string,number>();
-    const chapters=db.prepare("SELECT e.entity_ref FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.kind='Chapter' ORDER BY d.source_ordinal,s.ordinal,e.entity_ref").all() as Array<Record<string,unknown>>;
-    chapters.forEach((row,index)=>chapterOrder.set(String(row.entity_ref),index));
+    const chapterOrder=this.chapterPositions(db);
     const position=(ref:unknown)=>ref==null?Number.MAX_SAFE_INTEGER:chapterOrder.get(String(ref))??Number.MAX_SAFE_INTEGER;
     // Chapter-tense filtering (AUD-012): a temporal item is valid at the
     // 1-based anchor when from <= anchor <= to; an unbounded from means the
     // book start and an unbounded to means the book end.
-    const anchor=targetChapter==null?null:Math.max(1,Math.trunc(targetChapter))-1;
+    const anchor=targetChapter==null?null:Math.max(1,Math.trunc(targetChapter));
     const validAtAnchor=(row:Record<string,unknown>)=>anchor==null||((row.valid_from_chapter==null?-1:position(row.valid_from_chapter))<=anchor&&(row.valid_to_chapter==null?Number.MAX_SAFE_INTEGER:position(row.valid_to_chapter))>=anchor);
     const normalized=query.normalize("NFKC").trim().toLowerCase(),temporal="(valid_from_chapter IS NOT NULL OR valid_to_chapter IS NOT NULL OR narrative_time IS NOT NULL)";
     const entityRows=db.prepare(`SELECT e.entity_ref ref,e.span_ref,e.name heading,e.kind,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.source_kind,e.confidence,e.revision,e.valid_from_chapter,e.valid_to_chapter,e.narrative_time FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE ${temporal} ORDER BY e.entity_ref`).all() as Array<Record<string,unknown>>;
     const edgeRows=db.prepare(`SELECT e.edge_ref ref,e.span_ref,e.kind||': '||COALESCE(sn.name,e.source_ref)||' → '||COALESCE(tn.name,e.target_ref) heading,e.kind||'-relation' kind,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.source_kind,e.confidence,e.revision,e.valid_from_chapter,e.valid_to_chapter,e.narrative_time FROM edges e LEFT JOIN entities sn ON sn.entity_ref=e.source_ref LEFT JOIN entities tn ON tn.entity_ref=e.target_ref JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.kind='precedes' ORDER BY e.edge_ref`).all() as Array<Record<string,unknown>>;
     const merged=[...entityRows,...edgeRows].filter(row=>validAtAnchor(row)&&(!normalized||String(row.heading).toLowerCase().includes(normalized))).sort((left,right)=>position(left.valid_from_chapter)-position(right.valid_from_chapter)||position(left.valid_to_chapter)-position(right.valid_to_chapter)||compareText(String(left.narrative_time??""),String(right.narrative_time??""))||compareText(String(left.ref),String(right.ref)));
-    if(!merged.length)diagnostics.push({code:"NO_RESULTS",message:anchor==null?"No entity or relation carries temporal attributes (valid_from_chapter, valid_to_chapter, or narrative_time)":`No temporal item is valid at target chapter ${anchor+1}`});
-    else diagnostics.push({code:"TIMELINE_PROJECTION",message:anchor==null?`Timeline projected ${merged.length} temporal item(s) ordered by chapter position, then narrative time, then reference`:`Timeline projected ${merged.length} temporal item(s) valid at target chapter ${anchor+1}, ordered by chapter position, then narrative time, then reference`});
+    if(!merged.length)diagnostics.push({code:"NO_RESULTS",message:anchor==null?"No entity or relation carries temporal attributes (valid_from_chapter, valid_to_chapter, or narrative_time)":`No temporal item is valid at target chapter ${anchor}`});
+    else diagnostics.push({code:"TIMELINE_PROJECTION",message:anchor==null?`Timeline projected ${merged.length} temporal item(s) ordered by chapter position, then narrative time, then reference`:`Timeline projected ${merged.length} temporal item(s) valid at target chapter ${anchor}, ordered by chapter position, then narrative time, then reference`});
     return{rows:merged.slice(0,limit),diagnostics};
   }
 
   private entityRows(db:DatabaseSync,query:string,limit:number,allowStableNeighborhoodSeed=false):{rows:Array<Record<string,unknown>>;ambiguous:Array<Record<string,unknown>>;diagnostics:ExploreResult["diagnostics"]}{
     const directEntity=allowStableNeighborhoodSeed?db.prepare("SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision FROM entities e JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE e.entity_ref=?").get(query) as Record<string,unknown>|undefined:undefined;
-    if(directEntity)return{rows:[directEntity],ambiguous:[],diagnostics:[]};
+    if(directEntity)return{rows:[{...directEntity,score:2}],ambiguous:[],diagnostics:[]};
     // Graph documents are valid neighborhood seeds too. They are not named
     // entities, so resolve the stable documentRef directly rather than asking
     // callers to infer a surrogate Chapter entity.
     const directDocument=allowStableNeighborhoodSeed?db.prepare("SELECT d.document_ref ref,s.span_ref,d.kind,d.title heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,'native' source_kind,1 confidence,(SELECT revision FROM index_revisions WHERE status='valid' ORDER BY revision DESC LIMIT 1) revision FROM documents d JOIN spans s ON s.document_ref=d.document_ref WHERE d.document_ref=? ORDER BY s.ordinal LIMIT 1").get(query) as Record<string,unknown>|undefined:undefined;
-    if(directDocument)return{rows:[directDocument],ambiguous:[],diagnostics:[]};
-    const normalized=query.normalize("NFKC").trim().toLowerCase(),pattern=`%${normalized.replaceAll("%","\\%").replaceAll("_","\\_")}%`;
+    if(directDocument)return{rows:[{...directDocument,score:2}],ambiguous:[],diagnostics:[]};
+    const normalized=normalizeEntityName(query),pattern=literalLikePattern(normalized);
     if(!normalized)return{rows:[],ambiguous:[],diagnostics:[{code:"NO_MATCHING_TERMS",message:"The entity query contains no searchable name"}]};
-    const rows=db.prepare(`SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE a.normalized_alias LIKE ? ESCAPE '\\' ORDER BY CASE WHEN a.normalized_alias=? THEN 0 ELSE 1 END,e.normalized_name,e.entity_ref LIMIT ?`).all(pattern,normalized,limit) as Array<Record<string,unknown>>;
-    const exact=rows.filter(row=>String(row.normalized_name)===normalized),ambiguous:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
-    if(exact.length>1){ambiguous.push(...exact);diagnostics.push({code:"AMBIGUOUS_ENTITY",message:`${exact.length} entities share the requested canonical name; no candidate was selected automatically`});}
+    const rows=db.prepare(`WITH matched AS (
+      SELECT e.entity_ref,MAX(CASE WHEN a.normalized_alias=? THEN 2 ELSE 1 END) score
+      FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref WHERE a.normalized_alias LIKE ? ESCAPE '\\' GROUP BY e.entity_ref
+    ), owners AS (SELECT *,COUNT(*) OVER (PARTITION BY score) owner_count FROM matched)
+    SELECT e.entity_ref ref,e.span_ref,e.name heading,e.normalized_name,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,e.kind,e.source_kind,e.confidence,e.evidence_hash,e.revision,o.score,o.owner_count
+    FROM owners o JOIN entities e ON e.entity_ref=o.entity_ref JOIN spans s ON s.span_ref=e.span_ref JOIN documents d ON d.document_ref=s.document_ref
+    ORDER BY o.score DESC,e.normalized_name,e.entity_ref LIMIT ?`).all(normalized,pattern,limit) as Array<Record<string,unknown>>;
+    const exact=rows.filter(row=>asNumber(row.score)===2),ownerCount=asNumber(exact[0]?.owner_count),ambiguous:Array<Record<string,unknown>>=[],diagnostics:ExploreResult["diagnostics"]=[];
+    if(ownerCount>1){ambiguous.push(...exact);diagnostics.push({code:"AMBIGUOUS_ENTITY",message:`${ownerCount} entities share the requested canonical name or alias; no candidate was selected automatically`});}
     for(const row of rows){
       const alternatives=db.prepare(`SELECT ed.definition_ref ref,ed.span_ref,ed.name heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,ed.kind||'Definition' kind,ed.source_kind,ed.confidence,ed.evidence_hash,ed.revision FROM entity_definitions ed JOIN entities e ON e.entity_ref=ed.entity_ref JOIN spans s ON s.span_ref=ed.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE ed.entity_ref=? AND ed.span_ref!=e.span_ref ORDER BY ed.source_ordinal,ed.span_ordinal,ed.definition_ref`).all(String(row.ref)) as Array<Record<string,unknown>>;
       ambiguous.push(...alternatives);
     }
     if(!rows.length){
-      const unresolved=db.prepare(`SELECT u.mention_ref ref,u.span_ref,u.text heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,'unresolved' kind,'deterministic' source_kind,1 confidence,u.revision FROM unresolved_mentions u JOIN spans s ON s.span_ref=u.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE lower(u.text)=? ORDER BY d.source_ordinal,s.ordinal,u.mention_ref LIMIT ?`).all(normalized,limit) as Array<Record<string,unknown>>;
+      const unresolved=db.prepare(`SELECT u.mention_ref ref,u.span_ref,u.text heading,s.content,s.document_ref,d.relative_path,s.start_line,s.end_line,'unresolved' kind,'deterministic' source_kind,1 confidence,u.revision FROM unresolved_mentions u JOIN spans s ON s.span_ref=u.span_ref JOIN documents d ON d.document_ref=s.document_ref WHERE normalize_entity_name(u.text)=? ORDER BY d.source_ordinal,s.ordinal,u.mention_ref LIMIT ?`).all(normalized,limit) as Array<Record<string,unknown>>;
       if(unresolved.length){ambiguous.push(...unresolved);diagnostics.push({code:"UNRESOLVED_REFERENCE",message:"Matching source references exist but do not resolve to a canonical entity"});}
       else diagnostics.push({code:"NO_RESULTS",message:"No entity, alias, or unresolved reference matched the query"});
     }
@@ -642,7 +656,7 @@ export class WritingStore {
       addLikeCandidates(likeOriginalTerms,expansionCandidateLimit);
       if(!indexedOriginalTerms.length||candidates.size<candidateLimit)addLikeCandidates(shortExpansionTerms,expansionCandidateLimit);
       const expansionMaximum=expansionTerms.reduce((maximum,item)=>Math.max(maximum,item.weight),0);
-      return [...candidates.values()].map((row):Record<string,unknown>=>{const heading=String(row.heading),content=String(row.content),matched=terms.filter(term=>heading.includes(term)||content.includes(term)),aliasMatched=aliasTerms.filter(term=>heading.includes(term)||content.includes(term)),expansionMatched=expansionTerms.filter(item=>heading.includes(item.term)||content.includes(item.term)),excerpt=this.bestEvidenceWindow(content,[...matched,...aliasMatched,...expansionMatched.map(item=>item.term)]),coverage=disabled.has("coverage")?0:Math.min(1,matched.reduce((sum,term)=>sum+[...term].length,0)/12),aliasBoost=disabled.has("alias")?0:Math.min(.75,aliasMatched.length*.5),headingMatches=disabled.has("heading")?0:matched.filter(term=>heading.includes(term)).length,proximity=disabled.has("proximity")?0:this.termProximity(content,[...matched,...aliasMatched]),trustBonus=disabled.has("trust")?0:matched.length?.25:0,expansionBoost=prf&&expansionMaximum?prf.weight*expansionMatched.reduce((maximum,item)=>Math.max(maximum,item.weight),0)/expansionMaximum:0;return{...row,content:excerpt,source_kind:matched.length?"deterministic":"heuristic",score:coverage*4+aliasBoost+proximity+headingMatches*.5+(disabled.has("bm25Term")?0:Math.min(1,Number(row.bm25_score??0)/10))+trustBonus+expansionBoost};}).sort((left,right)=>Number(right.score)-Number(left.score)||compareText(String(left.relative_path),String(right.relative_path))||asNumber(left.start_line)-asNumber(right.start_line)||compareText(String(left.span_ref),String(right.span_ref))).slice(0,passLimit);
+      return [...candidates.values()].map((row):Record<string,unknown>=>{const heading=String(row.heading).toLowerCase(),content=String(row.content).toLowerCase(),matched=terms.filter(term=>heading.includes(term)||content.includes(term)),aliasMatched=aliasTerms.filter(term=>heading.includes(term)||content.includes(term)),expansionMatched=expansionTerms.filter(item=>heading.includes(item.term)||content.includes(item.term)),excerpt=this.bestEvidenceWindow(String(row.content),[...matched,...aliasMatched,...expansionMatched.map(item=>item.term)]),coverage=disabled.has("coverage")?0:Math.min(1,matched.reduce((sum,term)=>sum+[...term].length,0)/12),aliasBoost=disabled.has("alias")?0:Math.min(.75,aliasMatched.length*.5),headingMatches=disabled.has("heading")?0:matched.filter(term=>heading.includes(term)).length,proximity=disabled.has("proximity")?0:this.termProximity(content,[...matched,...aliasMatched]),trustBonus=disabled.has("trust")?0:matched.length?.25:0,expansionBoost=prf&&expansionMaximum?prf.weight*expansionMatched.reduce((maximum,item)=>Math.max(maximum,item.weight),0)/expansionMaximum:0;return{...row,content:excerpt,source_kind:matched.length?"deterministic":"heuristic",score:coverage*4+aliasBoost+proximity+headingMatches*.5+(disabled.has("bm25Term")?0:Math.min(1,Number(row.bm25_score??0)/10))+trustBonus+expansionBoost};}).sort((left,right)=>Number(right.score)-Number(left.score)||compareText(String(left.relative_path),String(right.relative_path))||asNumber(left.start_line)-asNumber(right.start_line)||compareText(String(left.span_ref),String(right.span_ref))).slice(0,passLimit);
     };
     const diagnostics:ExploreResult["diagnostics"]=[{code:"QUERY_ANALYZED",message:`Deterministic query analysis produced ${terms.length} term(s)`}];
     const baseline=runPass([],prf?Math.max(limit,prf.topK):limit);
@@ -682,7 +696,8 @@ export class WritingStore {
   }
 
   private bestEvidenceWindow(content:string,terms:string[],width=900):string{
-    if(content.length<=width)return content;const occurrences=new Map<string,number[]>(),anchors:number[]=[];for(const term of terms){const positions:number[]=[];let position=content.indexOf(term);while(position>=0){positions.push(position);anchors.push(position);position=content.indexOf(term,position+Math.max(1,term.length));}occurrences.set(term,positions);}if(!anchors.length)return content.slice(0,width);const separator="\n…\n",chunkCount=3,chunkWidth=Math.floor((width-separator.length*(chunkCount-1))/chunkCount),ranked=anchors.map(anchor=>{const start=Math.max(0,Math.min(content.length-chunkWidth,anchor-Math.floor(chunkWidth/2))),end=start+chunkWidth,near=[...occurrences.values()].flatMap(positions=>{const inside=positions.filter(position=>position>=start&&position<end);return inside.length?[inside.reduce((best,position)=>Math.abs(position-anchor)<Math.abs(best-anchor)?position:best)]:[];}),spread=near.length?Math.max(...near)-Math.min(...near):chunkWidth;return{start,coverage:near.length,spread};}).sort((left,right)=>right.coverage-left.coverage||left.spread-right.spread||left.start-right.start),selected:Array<{start:number;coverage:number;spread:number}>=[];for(const candidate of ranked){if(selected.every(existing=>Math.abs(existing.start-candidate.start)>=chunkWidth)){selected.push(candidate);if(selected.length===chunkCount)break;}}while(selected.length<chunkCount){const fallback=Math.floor((content.length-chunkWidth)*selected.length/(chunkCount-1));if(selected.every(existing=>Math.abs(existing.start-fallback)>=chunkWidth/2))selected.push({start:fallback,coverage:0,spread:chunkWidth});else break;}return selected.sort((a,b)=>a.start-b.start).map(candidate=>content.slice(candidate.start,candidate.start+chunkWidth)).join(separator);
+    // Match original offsets: lowercasing can change UTF-16 length before a hit.
+    if(content.length<=width)return content;const occurrences=new Map<string,number[]>(),anchors:number[]=[];for(const term of terms){const positions:number[]=[];for(const match of content.matchAll(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"giu"))){positions.push(match.index);anchors.push(match.index);}occurrences.set(term,positions);}if(!anchors.length)return sliceText(content,0,width);const separator="\n…\n",chunkCount=3,chunkWidth=Math.floor((width-separator.length*(chunkCount-1))/chunkCount),ranked=anchors.map(anchor=>{const start=Math.max(0,Math.min(content.length-chunkWidth,anchor-Math.floor(chunkWidth/2))),end=start+chunkWidth,near=[...occurrences.values()].flatMap(positions=>{const inside=positions.filter(position=>position>=start&&position<end);return inside.length?[inside.reduce((best,position)=>Math.abs(position-anchor)<Math.abs(best-anchor)?position:best)]:[];}),spread=near.length?Math.max(...near)-Math.min(...near):chunkWidth;return{start,coverage:near.length,spread};}).sort((left,right)=>right.coverage-left.coverage||left.spread-right.spread||left.start-right.start),selected:Array<{start:number;coverage:number;spread:number}>=[];for(const candidate of ranked){if(selected.every(existing=>Math.abs(existing.start-candidate.start)>=chunkWidth)){selected.push(candidate);if(selected.length===chunkCount)break;}}while(selected.length<chunkCount){const fallback=Math.floor((content.length-chunkWidth)*selected.length/(chunkCount-1));if(selected.every(existing=>Math.abs(existing.start-fallback)>=chunkWidth/2))selected.push({start:fallback,coverage:0,spread:chunkWidth});else break;}return selected.sort((a,b)=>a.start-b.start).map(candidate=>sliceText(content,candidate.start,candidate.start+chunkWidth)).join(separator);
   }
 
   private nodeItem(db:DatabaseSync,ref:string,score:number):ExploreItem|undefined{
@@ -708,23 +723,23 @@ export class WritingStore {
       const next:string[]=[];
       for(const ownerRef of frontier){
         const edges=byOwner.get(ownerRef)??[],state=states.get(ownerRef)!;if(edges.length>fanOut){truncated=true;omittedEstimate+=edges.length-fanOut;}
-        for(const edge of edges.slice(0,fanOut)){const outgoing=String(edge.source_ref)===ownerRef,nextRef=String(outgoing?edge.target_ref:edge.source_ref);if(visited.has(nextRef))continue;if(visited.size>=globalLimit){truncated=true;omittedEstimate++;continue;}const node=nodesByKey.has(nextRef)?nodesByKey.get(nextRef):this.nodeItem(db,nextRef,1/(hop+2));if(!node)continue;const locators=edgeLocators.get(String(edge.span_ref))??[],excerpt=String(edge.content).slice(0,900);const pathEvidence=[...state.pathEvidence,{edgeRef:String(edge.edge_ref),edgeKind:String(edge.kind),direction:outgoing?"outgoing" as const:"incoming" as const,sourceRef:String(edge.source_ref),targetRef:String(edge.target_ref),sourceKind:String(edge.source_kind) as ExploreItem["sourceKind"],confidence:Number(edge.confidence),evidence:{documentRef:String(edge.document_ref),relativePath:String(edge.relative_path),startLine:asNumber(edge.start_line),endLine:asNumber(edge.end_line),excerpt,evidenceHash:hash(excerpt),revision:asNumber(edge.revision),...(locators.length?{locators}:{})}}];visited.add(nextRef);maxActualHops=Math.max(maxActualHops,hop+1);results.push({...node,path:[...state.path,String(edge.kind),nextRef],pathEvidence});states.set(nextRef,{hop:hop+1,path:[...state.path,String(edge.kind),nextRef],pathEvidence});next.push(nextRef);}
+        for(const edge of edges.slice(0,fanOut)){const outgoing=String(edge.source_ref)===ownerRef,nextRef=String(outgoing?edge.target_ref:edge.source_ref);if(visited.has(nextRef))continue;if(visited.size>=globalLimit){truncated=true;omittedEstimate++;continue;}const node=nodesByKey.has(nextRef)?nodesByKey.get(nextRef):this.nodeItem(db,nextRef,1/(hop+2));if(!node)continue;const locators=edgeLocators.get(String(edge.span_ref))??[],excerpt=sliceText(String(edge.content),0,900);const pathEvidence=[...state.pathEvidence,{edgeRef:String(edge.edge_ref),edgeKind:String(edge.kind),direction:outgoing?"outgoing" as const:"incoming" as const,sourceRef:String(edge.source_ref),targetRef:String(edge.target_ref),sourceKind:String(edge.source_kind) as ExploreItem["sourceKind"],confidence:Number(edge.confidence),evidence:{documentRef:String(edge.document_ref),relativePath:String(edge.relative_path),startLine:asNumber(edge.start_line),endLine:asNumber(edge.end_line),excerpt,evidenceHash:hash(excerpt),revision:asNumber(edge.revision),...(locators.length?{locators}:{})}}];visited.add(nextRef);maxActualHops=Math.max(maxActualHops,hop+1);results.push({...node,path:[...state.path,String(edge.kind),nextRef],pathEvidence});states.set(nextRef,{hop:hop+1,path:[...state.path,String(edge.kind),nextRef],pathEvidence});next.push(nextRef);}
       }
       frontier=next;
     }
     return{results:results.sort((a,b)=>b.score-a.score||a.ref.localeCompare(b.ref)).slice(0,Math.max(limit,1)+globalLimit),visitedNodes:visited.size,maxActualHops,omittedEstimate,truncated};
   }
-  async context(query:string,budgetTokens:number,requiredRefs:string[]=[],options:ContextOptions={}):Promise<ContextPacket>{const refLists=[requiredRefs,options.excludeRefs??[],options.entityRefs??[],options.documentRefs??[]];for(const list of refLists)if(list.length>128||list.some(ref=>ref.length>256))throw codedError("CONTEXT_REFS_TOO_LARGE","a ref list exceeds 128 items or a 256-character reference");if(!Number.isFinite(budgetTokens)||budgetTokens<1||budgetTokens>1_000_000)throw codedError("BUDGET_OUT_OF_RANGE","budgetTokens must be between 1 and 1000000");const excludeRefs=options.excludeRefs??[],entityRefs=options.entityRefs??[],documentRefs=options.documentRefs??[],targetChapter=options.targetChapter;const explored=await this.explore("search",query,CONTEXT_SEARCH_LIMIT,2);const requiredSet=new Set(requiredRefs),excludedSet=new Set(excludeRefs);const excluded:Array<{ref:string;tokens:number}>=[],candidates:ContextBlock[]=[];for(const r of explored.results){const required=requiredSet.has(r.ref),profile=contextSourceProfile(r.kind,required),block={...r,layer:profile.layer,tokens:estimateTokens(r.evidence.excerpt),required};if(!required&&excludedSet.has(r.ref)){excluded.push({ref:block.ref,tokens:block.tokens});continue;}candidates.push(block);}
-    const{kept,duplicates}=dedupByEvidence([...candidates.filter(c=>c.required),...candidates.filter(c=>!c.required)]);const poolRefs=new Set(kept.map(c=>c.ref)),direct:ContextBlock[]=[],pinned:ContextBlock[]=[],unresolved:string[]=[];const db=await this.open();for(const ref of new Set(requiredRefs)){if(poolRefs.has(ref))continue;const node=this.nodeItem(db,ref,1);if(node)direct.push({...node,layer:"L0",tokens:estimateTokens(node.evidence.excerpt),required:true});else unresolved.push(ref);}
+  async context(query:string,budgetTokens:number,requiredRefs:string[]=[],options:ContextOptions={}):Promise<ContextPacket>{const refLists=[requiredRefs,options.excludeRefs??[],options.entityRefs??[],options.documentRefs??[]];for(const list of refLists)if(list.length>128||list.some(ref=>exceedsCodePointLimit(ref,256)))throw codedError("CONTEXT_REFS_TOO_LARGE","a ref list exceeds 128 items or a 256-character reference");if(!Number.isFinite(budgetTokens)||budgetTokens<1||budgetTokens>1_000_000)throw codedError("BUDGET_OUT_OF_RANGE","budgetTokens must be between 1 and 1000000");const excludeRefs=options.excludeRefs??[],entityRefs=options.entityRefs??[],documentRefs=options.documentRefs??[],targetChapter=options.targetChapter;const explored=await this.explore("search",query,CONTEXT_SEARCH_LIMIT,2);const requiredSet=new Set(requiredRefs),excludedSet=new Set(excludeRefs);const excluded:Array<{ref:string;tokens:number}>=[],candidates:ContextBlock[]=[];for(const r of explored.results){const required=requiredSet.has(r.ref),profile=contextSourceProfile(r.kind,required),block={...r,layer:profile.layer,tokens:estimateTokens(r.evidence.excerpt),required};if(!required&&excludedSet.has(r.ref)){excluded.push({ref:block.ref,tokens:block.tokens});continue;}candidates.push(block);}
+    const{kept,duplicates:folded}=dedupByEvidence([...candidates.filter(c=>c.required),...candidates.filter(c=>!c.required)]);const poolRefs=new Set(kept.map(c=>c.ref)),direct:ContextBlock[]=[],pinned:ContextBlock[]=[],unresolved:string[]=[];const db=await this.open();for(const ref of new Set(requiredRefs)){if(poolRefs.has(ref))continue;const node=this.nodeItem(db,ref,1);if(node)direct.push({...node,layer:"L0",tokens:estimateTokens(node.evidence.excerpt),required:true});else unresolved.push(ref);}
     // AUD-012 pinned boundaries (2026-08-18 review): pinned refs resolve directly
     // and are NOT folded by evidence dedup (explicit requests survive, like
     // requiredRefs); a pinned ref already in the kept pool is skipped here and
     // keeps its search-hit rank. Documented in the writing_context description.
     for(const ref of new Set([...entityRefs,...documentRefs])){if(poolRefs.has(ref)||requiredSet.has(ref))continue;if(excludedSet.has(ref)){excluded.push({ref,tokens:0});continue;}const node=this.nodeItem(db,ref,1);if(node){const profile=contextSourceProfile(node.kind,false);pinned.push({...node,layer:profile.layer,tokens:estimateTokens(node.evidence.excerpt),required:false});}else unresolved.push(ref);}
-    const chapterByDoc=new Map<string,number>();if(targetChapter!=null){const docRefs=[...new Set([...kept,...direct,...pinned].map(c=>c.evidence.documentRef))];if(docRefs.length){const placeholders=docRefs.map(()=>"?").join(",");for(const row of db.prepare(`SELECT document_ref,chapter_number FROM documents WHERE document_ref IN (${placeholders})`).all(...docRefs) as Array<Record<string,unknown>>)if(row.chapter_number!=null)chapterByDoc.set(String(row.document_ref),asNumber(row.chapter_number));}}
+    const chapterByDoc=targetChapter==null?new Map<string,number>():this.chapterPositions(db);
     const anchorKey=(c:ContextBlock):[number,number]=>{if(targetChapter==null)return[0,0];const n=chapterByDoc.get(c.evidence.documentRef);if(n==null)return[3,0];if(n===targetChapter)return[0,0];return n<targetChapter?[1,targetChapter-n]:[2,n-targetChapter];};
-    const pinnedRefs=new Set(pinned.map(c=>c.ref)),byFill=(a:ContextBlock,b:ContextBlock)=>layerRank(a.layer)-layerRank(b.layer)||(pinnedRefs.has(a.ref)?0:1)-(pinnedRefs.has(b.ref)?0:1)||anchorKey(a)[0]-anchorKey(b)[0]||anchorKey(a)[1]-anchorKey(b)[1]||b.score-a.score||contextSourceProfile(a.kind,false).priority-contextSourceProfile(b.kind,false).priority||compareText(a.ref,b.ref);
-    const required=[...kept.filter(c=>c.required),...direct],min=required.reduce((n,c)=>n+c.tokens,0);if(min>budgetTokens)return{status:"budget_unsatisfiable",workRef:this.work.workRef,revision:explored.revision,budgetTokens,usedTokens:0,estimated:true,estimator:"mixed-cjk-v1",accountingScope:"evidence_excerpts_only",blocks:[],omitted:[...kept.map(c=>({ref:c.ref,reason:"required_minimum_exceeds_budget",tokens:c.tokens})),...direct.map(c=>({ref:c.ref,reason:"required_minimum_exceeds_budget",tokens:c.tokens})),...pinned.map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...duplicates.map(c=>({ref:c.ref,reason:"duplicate_evidence",tokens:c.tokens})),...excluded.map(c=>({ref:c.ref,reason:"excluded",tokens:c.tokens})),...unresolved.map(ref=>({ref,reason:"not_found",tokens:0}))],diagnostics:[]};const optional=[...pinned,...kept.filter(c=>!c.required)].sort(byFill);const blocks:ContextBlock[]=[];let used=0;for(const c of [...required,...optional]){if(blocks.some(b=>b.ref===c.ref))continue;if(used+c.tokens<=budgetTokens){blocks.push(c);used+=c.tokens;}}const omitted=[...excluded.map(c=>({ref:c.ref,reason:"excluded",tokens:c.tokens})),...duplicates.map(c=>({ref:c.ref,reason:"duplicate_evidence",tokens:c.tokens})),...[...pinned,...kept].filter(c=>!c.required&&!blocks.some(b=>b.ref===c.ref)).map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...direct.filter(c=>!blocks.some(b=>b.ref===c.ref)).map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...unresolved.map(ref=>({ref,reason:"not_found",tokens:0}))];return{status:omitted.length?"truncated":"complete",workRef:this.work.workRef,revision:explored.revision,budgetTokens,usedTokens:used,estimated:true,estimator:"mixed-cjk-v1",accountingScope:"evidence_excerpts_only",blocks,omitted,diagnostics:explored.diagnostics};}
+    const pinnedRefs=new Set(pinned.map(c=>c.ref)),duplicates=folded.filter(c=>!requiredSet.has(c.ref)&&!pinnedRefs.has(c.ref)),byFill=(a:ContextBlock,b:ContextBlock)=>layerRank(a.layer)-layerRank(b.layer)||(pinnedRefs.has(a.ref)?0:1)-(pinnedRefs.has(b.ref)?0:1)||anchorKey(a)[0]-anchorKey(b)[0]||anchorKey(a)[1]-anchorKey(b)[1]||b.score-a.score||contextSourceProfile(a.kind,false).priority-contextSourceProfile(b.kind,false).priority||compareText(a.ref,b.ref);
+    const required=[...kept.filter(c=>c.required),...direct],min=required.reduce((n,c)=>n+c.tokens,0);if(min>budgetTokens)return{status:"budget_unsatisfiable",workRef:this.work.workRef,revision:explored.revision,budgetTokens,usedTokens:0,estimated:true,estimator:"mixed-cjk-v1",accountingScope:"evidence_excerpts_only",blocks:[],omitted:[...kept.map(c=>({ref:c.ref,reason:c.required?"required_minimum_exceeds_budget":"budget_limit",tokens:c.tokens})),...direct.map(c=>({ref:c.ref,reason:"required_minimum_exceeds_budget",tokens:c.tokens})),...pinned.map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...duplicates.map(c=>({ref:c.ref,reason:"duplicate_evidence",tokens:c.tokens})),...excluded.map(c=>({ref:c.ref,reason:"excluded",tokens:c.tokens})),...unresolved.map(ref=>({ref,reason:"not_found",tokens:0}))],diagnostics:[]};const optional=[...pinned,...kept.filter(c=>!c.required)].sort(byFill);const blocks:ContextBlock[]=[];let used=0;for(const c of [...required,...optional]){if(blocks.some(b=>b.ref===c.ref))continue;if(used+c.tokens<=budgetTokens){blocks.push(c);used+=c.tokens;}}const omitted=[...excluded.map(c=>({ref:c.ref,reason:"excluded",tokens:c.tokens})),...duplicates.map(c=>({ref:c.ref,reason:"duplicate_evidence",tokens:c.tokens})),...[...pinned,...kept].filter(c=>!c.required&&!blocks.some(b=>b.ref===c.ref)).map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...direct.filter(c=>!blocks.some(b=>b.ref===c.ref)).map(c=>({ref:c.ref,reason:"budget_limit",tokens:c.tokens})),...unresolved.map(ref=>({ref,reason:"not_found",tokens:0}))];return{status:omitted.length?"truncated":"complete",workRef:this.work.workRef,revision:explored.revision,budgetTokens,usedTokens:used,estimated:true,estimator:"mixed-cjk-v1",accountingScope:"evidence_excerpts_only",blocks,omitted,diagnostics:explored.diagnostics};}
   private clearSearchCaches(){this.productionSearchCache.clear();this.prfDocumentFrequencyCache.clear();this.prfTermCache.clear();this.prfVocabularyReady=false;}
   close(){this.db?.close();this.db=undefined;this.clearSearchCaches();}
 }

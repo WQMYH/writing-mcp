@@ -36,6 +36,207 @@ const document = (
 const indexPath = (work: ParsedWork) => join(work.rootPath, ".writing-index", work.workRef.replace(":", "-"), "index.sqlite");
 
 describe("schema v4 graph identity and evidence", () => {
+  test.each(["alice", "ALICE", "aLiCe"])("refreshes unchanged [[%s]] references when owners are added/deleted/renamed (W-MCP-009)", async name => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-owner-refresh-")), ref = stableId("work", "graph-test", root);
+    const character = document(ref, "role.md", "Alice", "character", "# Alice");
+    const chapter = document(ref, "one.md", "Arrival", "chapter", `# Arrival\n[[${name}]] arrives.`, 1);
+    const other = document(ref, "location.md", "Location: ALICE", "document", "# Location: ALICE");
+    const work = workAt(root, [character, chapter]), store = new WritingStore(work);
+    const references = (path: string) => {
+      const db = new DatabaseSync(path, { readOnly: true });
+      try { return {
+        edges: db.prepare("SELECT e.edge_ref,e.source_ref,e.target_ref,e.confidence,ee.span_ref,ee.start_offset,ee.end_offset,ee.evidence_hash FROM edges e JOIN edge_evidence ee ON ee.edge_ref=e.edge_ref WHERE e.kind='mentions' ORDER BY e.edge_ref,ee.span_ref").all(),
+        unresolved: db.prepare("SELECT text,reason FROM unresolved_mentions ORDER BY text,span_ref").all(),
+      }; } finally { db.close(); }
+    };
+    try {
+      await store.index("rebuild");
+      expect(references(indexPath(work)).edges).toHaveLength(1);
+      for (const phase of ["add", "delete", "rename", "restore"]) {
+        if (phase === "add") work.documents.push(other);
+        if (phase === "delete") work.documents.splice(work.documents.indexOf(other), 1);
+        if (phase === "rename" || phase === "restore") {
+          character.title = phase === "rename" ? "Beryl" : "Alice";
+          character.content = `# ${character.title}`; character.sourceSize = Buffer.byteLength(character.content);
+        }
+        await store.index("incremental");
+        const state = references(indexPath(work));
+        if (phase === "add" || phase === "rename") {
+          expect(state.edges).toHaveLength(0);
+          expect(state.unresolved).toEqual([{ text: name, reason: phase === "add" ? "AMBIGUOUS_ALIAS" : "NO_MATCHING_ENTITY" }]);
+        } else { expect(state.edges).toHaveLength(1); expect(state.unresolved).toEqual([]); }
+        const cold = new WritingStore(work, join(root, "cold.sqlite"));
+        try { await cold.index("rebuild"); expect(state).toEqual(references(join(root, "cold.sqlite"))); } finally { cold.close(); }
+        await store.index("incremental"); expect(references(indexPath(work))).toEqual(state);
+      }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("invalidates references to an old persisted alias when its owner disappears (W-MCP-009)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-old-alias-refresh-")), ref = stableId("work", "graph-test", root);
+    const character = document(ref, "role.md", "Alice", "character", "# Alice"), chapter = document(ref, "one.md", "Arrival", "chapter", "# Arrival", 1);
+    const work = workAt(root, [character, chapter]), store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const db = new DatabaseSync(indexPath(work));
+      try {
+        const owner = String(db.prepare("SELECT entity_ref FROM entities WHERE name='Alice'").get()!.entity_ref);
+        db.prepare("INSERT INTO aliases VALUES(?,?,?)").run(owner, "Scout", "scout");
+        chapter.content += "\n[[scout]] arrives."; chapter.sourceSize = Buffer.byteLength(chapter.content);
+        await store.index("incremental");
+        expect(db.prepare("SELECT COUNT(*) count FROM edges WHERE kind='mentions'").get()).toEqual({ count: 1 });
+        character.title = "Beryl"; character.content = "# Beryl"; character.sourceSize = Buffer.byteLength(character.content);
+        await store.index("incremental");
+        expect(db.prepare("SELECT text,reason FROM unresolved_mentions").all()).toEqual([{ text: "scout", reason: "NO_MATCHING_ENTITY" }]);
+        expect(db.prepare("SELECT COUNT(*) count FROM edges WHERE kind='mentions'").get()).toEqual({ count: 0 });
+      } finally { db.close(); }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("normalizes canonical-equivalent entity names and native references consistently (W-MCP-005)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-nfc-owner-")), ref = stableId("work", "graph-test", root);
+    const work = workAt(root, [
+      document(ref, "a.md", "Café", "character", "# Café\nFirst definition."),
+      document(ref, "b.md", "Cafe\u0301", "character", "# Cafe\u0301\nSecond definition."),
+      document(ref, "one.md", "Arrival", "chapter", "# Arrival\n[[CAFE\u0301]] arrives.", 1),
+    ]);
+    const store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const db = new DatabaseSync(indexPath(work), { readOnly: true });
+      try {
+        expect(db.prepare("SELECT name,normalized_name FROM entities WHERE kind='Character'").all()).toEqual([{ name: "Café", normalized_name: "café" }]);
+        expect(db.prepare("SELECT COUNT(*) count FROM edges WHERE kind='mentions' AND source_ref=?").get(work.documents[2]!.documentRef)).toEqual({ count: 1 });
+      } finally { db.close(); }
+      for (const query of ["Café", "Cafe\u0301", "CAFÉ"]) {
+        const result = await store.explore("entity", query, 20, 0);
+        expect(result.results.map(item => item.title)).toEqual(["Café"]);
+        expect(result.ambiguous.map(item => item.title)).toEqual(["Cafe\u0301"]);
+      }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("keeps compatibility-distinct owners addressable by their original names and stable refs (W-MCP-005)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-compat-owner-")), ref = stableId("work", "graph-test", root);
+    const work = workAt(root, [document(ref, "ascii.md", "Alice", "character", "# Alice"), document(ref, "wide.md", "Ａlice", "character", "# Ａlice")]);
+    const store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const db = new DatabaseSync(indexPath(work), { readOnly: true });
+      let owners: Array<{ entity_ref: string; name: string }>;
+      try { owners = db.prepare("SELECT entity_ref,name FROM entities WHERE kind='Character'").all() as typeof owners; } finally { db.close(); }
+      expect(owners).toHaveLength(2);
+      for (const owner of owners) {
+        expect((await store.explore("entity", owner.name, 20, 0)).results.map(item => item.ref)).toEqual([owner.entity_ref]);
+        expect((await store.explore("neighborhood", owner.entity_ref, 20, 0)).results.map(item => item.title)).toEqual([owner.name]);
+      }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("finds canonically equivalent unresolved references without rewriting source evidence (W-MCP-005)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-unresolved-nfc-")), ref = stableId("work", "graph-test", root);
+    const work = workAt(root, [document(ref, "one.md", "Waiting", "chapter", "# Waiting\n[[E\u0301LODIE]] is unknown.", 1)]), store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const result = await store.explore("entity", "Élodie", 20, 0);
+      expect(result.results).toHaveLength(0);
+      expect(result.diagnostics.map(item => item.code)).toContain("UNRESOLVED_REFERENCE");
+      expect(result.ambiguous.map(item => item.title)).toEqual(["E\u0301LODIE"]);
+      expect(result.ambiguous[0]!.evidence.excerpt).toContain("[[E\u0301LODIE]]");
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test("recomputes Chapter title aliases without dropping other persisted aliases (W-MCP-013)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-title-alias-")), ref = stableId("work", "graph-test", root);
+    const chapter = document(ref, "one.md", "Opening Gate", "chapter", "# Opening Gate\nDawn.", 1);
+    const witness = document(ref, "two.md", "After", "chapter", "# After\n[[Opening Gate]] and [[Opening]].", 2);
+    const work = workAt(root, [document(ref, "role.md", "Iona", "character", "# Iona"), chapter, witness]);
+    const store = new WritingStore(work);
+    const chapterState = (path: string) => {
+      const db = new DatabaseSync(path, { readOnly: true });
+      try {
+        return {
+          aliases: db.prepare("SELECT e.entity_ref,a.alias,a.normalized_alias FROM aliases a JOIN entities e ON e.entity_ref=a.entity_ref WHERE e.kind='Chapter' ORDER BY e.entity_ref,a.normalized_alias").all(),
+          references: db.prepare("SELECT source_ref,target_ref FROM edges WHERE kind='mentions' ORDER BY source_ref,target_ref").all(),
+          unresolved: db.prepare("SELECT text,reason FROM unresolved_mentions ORDER BY text").all(),
+        };
+      } finally { db.close(); }
+    };
+    try {
+      await store.index("rebuild");
+      const identity = (await store.explore("entity", "Opening Gate", 20, 0)).results[0]!.ref;
+      const db = new DatabaseSync(indexPath(work));
+      try {
+        const owner = db.prepare("SELECT entity_ref FROM entities WHERE name='Iona'").get()!;
+        db.prepare("INSERT INTO aliases VALUES(?,?,?)").run(String(owner.entity_ref), "Nightbird", "nightbird");
+        db.prepare("INSERT INTO aliases VALUES(?,?,?)").run(identity, "Ancient title", "ancient title");
+      } finally { db.close(); }
+      for (const title of ["Opening", "Opening Gate"]) {
+        chapter.title = title; chapter.content = `# ${title}\nDawn.`; chapter.sourceSize = Buffer.byteLength(chapter.content);
+        await store.index("incremental");
+        const state = chapterState(indexPath(work));
+        expect(state.aliases.filter(row => row.entity_ref === identity)).toEqual([{ entity_ref: identity, alias: title, normalized_alias: title.toLowerCase() }]);
+        expect((await store.explore("entity", "Nightbird", 20, 0)).results.map(item => item.title)).toEqual(["Iona"]);
+        const cold = new WritingStore(work, join(root, "cold.sqlite"));
+        try { await cold.index("rebuild"); expect(state).toEqual(chapterState(join(root, "cold.sqlite"))); } finally { cold.close(); }
+        await store.index("incremental");
+        expect(chapterState(indexPath(work))).toEqual(state);
+        store.close();
+        expect((await store.explore("entity", title, 20, 0)).results[0]!.ref).toBe(identity);
+      }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test.each([
+    { kind: "character", title: "Iona" },
+    { kind: "foreshadow", title: "Iona" },
+    { kind: "outline", title: "Iona" },
+    { kind: "state", title: "Iona" },
+    { kind: "document", title: "Location: Iona" },
+    { kind: "document", title: "Location: Unreferenced" },
+  ] as const)("preserves chapter sequence after a $kind dossier edit ($title), W-MCP-012", async ({ kind, title }) => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-precedes-edit-"));
+    const ref = stableId("work", "graph-test", root);
+    const dossier = document(ref, "dossier.md", title, kind, `# ${title}\nInitial dossier.`);
+    const work = workAt(root, [
+      dossier,
+      document(ref, "chapter-01.md", "Chapter 1 Dawn", "chapter", "# Chapter 1 Dawn\nThe sky lightens.", 1),
+      document(ref, "chapter-02.md", "Chapter 2 Gate", "chapter", "# Chapter 2 Gate\nIona opens the gate.", 2),
+      document(ref, "chapter-03.md", "Chapter 3 Night", "chapter", "# Chapter 3 Night\nThe lamps go out.", 3),
+    ]);
+    const sequence = async (store: WritingStore) => (await store.explore("timeline", "", 100, 0)).results
+      .filter(item => item.kind === "precedes-relation")
+      .map(item => ({ ref: item.ref, title: item.title }));
+    const store = new WritingStore(work);
+    try {
+      await store.index("incremental");
+      const before = await sequence(store);
+      expect(before.map(item => item.title)).toEqual([
+        "precedes: Chapter 1 Dawn → Chapter 2 Gate",
+        "precedes: Chapter 2 Gate → Chapter 3 Night",
+      ]);
+      dossier.content = `# ${title}\nA revised dossier with a longer biography.`;
+      dossier.sourceSize = Buffer.byteLength(dossier.content);
+      const updated = await store.index("incremental");
+      expect(updated.stats).toMatchObject({ updated: 1, skipped: 3 });
+      expect(await sequence(store)).toEqual(before);
+      const db = new DatabaseSync(indexPath(work), { readOnly: true });
+      try {
+        expect(db.prepare("SELECT COUNT(*) AS count FROM edge_evidence ee JOIN edges e ON e.edge_ref=ee.edge_ref WHERE e.kind='precedes'").get()).toEqual({ count: 2 });
+      } finally { db.close(); }
+      await store.index("incremental");
+      expect(await sequence(store)).toEqual(before);
+      store.close();
+      const reopened = new WritingStore(work);
+      try { expect(await sequence(reopened)).toEqual(before); } finally { reopened.close(); }
+      const cold = new WritingStore(work, join(root, "cold.sqlite"));
+      try {
+        await cold.index("rebuild");
+        expect(await sequence(cold)).toEqual(before);
+      } finally { cold.close(); }
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
   test("keeps duplicate chapter titles distinct and orders them by source ordinal", async () => {
     const root = await mkdtemp(join(tmpdir(), "writing-mcp-chapter-identity-"));
     const ref = stableId("work", "graph-test", root);

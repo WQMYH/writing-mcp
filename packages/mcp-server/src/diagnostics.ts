@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DiagnosticRetention, type DiagnosticRetentionOptions, type RetentionStats } from "./diagnostic-retention.js";
 
@@ -120,6 +120,7 @@ export interface InspectResult {
   readonly purpose: DiagnosticPurpose;
   readonly status: "healthy" | "degraded";
   readonly eventHistoryAvailable: boolean;
+  readonly activeCaptureCount: number;
   readonly recentEvents: ReadonlyArray<unknown>;
   readonly diagnosticsDirectory: string;
   readonly observationScope: "mcp_calls_only";
@@ -251,12 +252,27 @@ export class DiagnosticRecorder {
     const directory = this.requireDirectory(workRef);
     const events = await readJsonLines(join(directory, "diagnostics.jsonl"));
     const recent = events.slice(-Math.max(1, Math.min(limit, 100)));
+    let captures: string[];
+    try { captures = await readdir(join(directory, "runs")); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; captures = []; }
+    let activeCaptureCount = 0;
+    // Persisted metadata, not the rotating event history, owns capture lifecycle.
+    for (const filename of captures) {
+      const runRef = /^(diag-[a-f0-9]{24})\.meta\.json$/.exec(filename)?.[1];
+      if (!runRef) continue;
+      const meta = await this.readCaptureMeta(workRef, runRef);
+      if (meta.schemaVersion !== REPORT_SCHEMA_VERSION || meta.diagnosticRunRef !== runRef || !["active", "closed"].includes(meta.status)) {
+        throw codedError("DIAGNOSTIC_RUN_NOT_FOUND", "Capture metadata cannot be verified");
+      }
+      if (meta.status === "active") activeCaptureCount++;
+    }
     return {
       action: "inspect",
       workRef,
       purpose,
       status: recent.some(event => asRecord(event)?.outcome === "failure") ? "degraded" : "healthy",
       eventHistoryAvailable: events.length > 0,
+      activeCaptureCount,
       recentEvents: purpose === "development" ? recent : recent.map(effectView),
       diagnosticsDirectory: "diagnostics/",
       observationScope: "mcp_calls_only",
@@ -481,7 +497,7 @@ function effectView(value: unknown): unknown {
 
 function stringField(value: Readonly<Record<string, unknown>> | undefined, key: string): string | undefined { const field = value?.[key]; return typeof field === "string" ? field : undefined; }
 function numberField(value: Readonly<Record<string, unknown>> | undefined, key: string): number | undefined { const field = value?.[key]; return typeof field === "number" ? field : undefined; }
-function sanitizeLabel(value: string): string { return value.trim().replace(/[\r\n\t]/g, " ").slice(0, 80); }
+function sanitizeLabel(value: string): string { return Array.from(value.trim().replace(/[\r\n\t]/g, " ").slice(0, 160)).slice(0, 80).join(""); }
 
 function codedError(code: string, message: string): Error {
   return Object.assign(new Error(message), { code });

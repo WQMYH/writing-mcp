@@ -30,6 +30,13 @@ Moving a work or document intentionally changes its reference. Editing content w
 - MVP neighborhood expansion: maximum `limit - 1` adjacent results.
 - Initial ranking: exact entity match 2; partial entity match 1; FTS uses BM25; graph expansion result 0.5.
 - Source trust order: native > deterministic > heuristic.
+- Candidate scoring compares lowercased query terms and source text consistently. Evidence windows locate case-insensitive literal matches in the original text using original UTF-16 offsets (not offsets from a lowercased copy whose length may differ); returned excerpts preserve source spelling/case. This corrects the single-proper-noun support-window failure without changing candidate generation, PRF configuration, or promising general transliteration/compatibility normalization (MR4 W006, 2026-10-17).
+
+### MR5 Unicode input-length amendment (2026-10-17, W025)
+
+- Published JSON Schema `maxLength` and SDK/Zod/core validation share Unicode code-point units: query 2048, taskType 64, label 80, and each entry of requiredRefs/entityRefs/documentRefs/excludeRefs 256. Supplementary/BMP/mixed strings use the same boundaries; list item-count limits are unchanged.
+- The Zod input schemas publish those same bounds via metadata and validate code points, rather than using UTF-16 `.max`. A cheap UTF-16 precheck bounds counting allocations; direct store query/evaluator/ref guards use the same helper. Diagnostic labels retain at most 80 complete code points after existing whitespace sanitation.
+- This amendment does not change source/span/excerpt UTF-16 offsets/caps, EPUB/HTTP resource byte limits, response UTF-8 byte caps, or excerpt-only estimated token accounting.
 
 ### M3 query-limit amendment (2026-08-14)
 
@@ -51,6 +58,24 @@ Moving a work or document intentionally changes its reference. Editing content w
 - LIKE and document candidates are ordered by stable source/span keys before `LIMIT`; final ties use ordinal bytewise string comparison rather than host locale.
 - `timeline` is an independent deterministic projection, not full-text search: it returns entities carrying temporal attributes (`valid_from_chapter`, `valid_to_chapter`, or `narrative_time`) plus `precedes` sequence relations, ordered by chapter position, then `valid_to_chapter` position, then `narrative_time`, then reference. An optional query filters the projection by name substring. Results report `TIMELINE_PROJECTION`; an empty projection reports `NO_RESULTS`.
 - Chapter-tense filtering against a target chapter anchor is deferred until the target-chapter input exists (AUD-012); no new public parameter is introduced by this amendment.
+
+### MR3 entity-owner lookup amendment (2026-10-16, W008/W015/W021/W024)
+
+- Matching aliases are grouped by entity identity before ranking or display limits. Multiple aliases for one owner produce one result; exact-name/alias owner counts are computed before `limit`, so `AMBIGUOUS_ENTITY` and the refusal to expand an ambiguous neighborhood do not disappear at `limit=1`. Displayed ambiguous candidates remain bounded by the requested limit.
+- Exact canonical/alias matches score 2, partial matches score 1; an explicit stable entity/document neighborhood seed scores 2. Existing graph scores remain 0.5 for the first hop, with no generic seed-first override or change to search ranking.
+- Name lookup treats backslash, percent and underscore literally using the same escaped LIKE policy as document lookup. Stable refs still let callers select a particular owner explicitly.
+
+### MR3 entity-name normalization amendment (2026-10-16, W005)
+
+- Entity identity keys, exact/partial entity lookup and native/unresolved bracket-reference matching share NFC + trim + JavaScript lowercase. Canonically equivalent NFC/NFD spellings share an identity and retain alternative source definitions; compatibility-distinct spellings (for example `Alice` and `Ａlice`) remain distinct owners. Entity lookup no longer applies NFKC to choose a different identity silently. Search's separate linguistic analysis is unchanged.
+- Display names, source text, native reference offsets and evidence remain verbatim. Corrected identity derivations invalidate legacy caches; named entity refs may change for previously unnormalized names, while document-scoped Chapter refs remain stable. No raw-source migration occurs.
+- Incremental owner changes invalidate resolved and unresolved references using this same normalization. Before replacing/removing definitions, dependencies include all persisted aliases of every affected owner, not only its canonical source span. Adding/deleting/renaming owners must yield the same native edges/evidence and unresolved reasons as a cold index of current sources (W009).
+
+### MR3 Chapter title-alias lifecycle amendment (2026-10-16, W013)
+
+- Chapter identity remains document-scoped across title edits. Its automatic alias is derived from the current canonical title, not a cumulative history of former titles. Incremental indexing, noop/reopen and cold rebuild therefore agree on current Chapter aliases and native references.
+- v1 has no explicit source declaration or write API for Chapter aliases. Only Chapter title-derived aliases are recomputed; other entities' persisted aliases survive ordinary incremental reconciliation. Manual cache edits are not a source of truth and are not promised to survive deleting/rebuilding the index. No source alias grammar or alias CRUD API is introduced.
+- The existing semantic derivation version invalidates legacy cached derivations once; original files and schema-v4 storage remain unchanged.
 
 ### M3 deterministic PRF candidate-expansion amendment (2026-08-21)
 
@@ -76,10 +101,12 @@ Moving a work or document intentionally changes its reference. Editing content w
 - `writing_context` now wires the previously reserved inputs into assembly, superseding the "validated but do not change assembly yet" clause of the M3 timeline/reserved-inputs amendment:
   - `excludeRefs` removes matching candidates from the search pool before dedup; excluded refs are reported in `omitted` with reason `excluded`. `requiredRefs` win over `excludeRefs` when both name the same ref.
   - `entityRefs` and `documentRefs` resolve directly against the index (entity, then span, then document) like `requiredRefs`, enter `blocks` as non-required blocks with their semantic layer, and rank ahead of search hits within their layer. Review clarification (2026-08-18): explicit pins outrank `targetChapter` anchor proximity within a layer; a pinned ref already in the search pool keeps its search-hit rank; pinned blocks are not folded by evidence dedup. All four ref lists share the existing 128-item / 256-character validation (`CONTEXT_REFS_TOO_LARGE`).
-  - `targetChapter` anchors assembly ordering: within each layer, blocks from the anchor chapter fill first, then earlier chapters by distance, then later chapters by distance, then blocks whose document carries no chapter number. Layer rank (L0 → L1 → L2 → L3) dominates; anchoring is a deterministic tie-breaker, not a filter.
+  - `targetChapter` anchors assembly ordering: within each layer, blocks from the anchor chapter fill first, then earlier chapters by distance, then later chapters by distance, then non-chapter documents. Layer rank (L0 → L1 → L2 → L3) dominates; anchoring is a deterministic tie-breaker, not a filter.
+  - Chapter position is shared with timeline: the 1-based position among `kind=chapter` documents in source order, not a display chapter number or volume-local reset. Gaps, missing numbers and repeated local numbers do not change this ordering. Timeline anchors filter temporal validity; context anchors only rank and never globally filter candidates (MR4 W018, 2026-10-17).
   - `taskType` stays a reserved hint, value-open: its schema changed from a five-value enum to an open string (the five values `answer`/`revise`/`custom`/`continue_chapter`/`draft_chapter` remain documented conventions); unknown values are accepted, validated, and recorded in diagnostics, and never drive assembly (2026-08-17 direction: no taskType strategy engine).
 - The previously drafted per-taskType layer-order strategy engine is intentionally absent from `@writing-mcp/core`; assembly fills L0 → L1 → L2 → L3 deterministically, with targetChapter anchoring and explicit pinning as tie-breakers.
 - Omitted reasons always reflect the true omission cause. In `budget_unsatisfiable` only required candidates (pool hits and direct-resolved `requiredRefs`) carry `required_minimum_exceeds_budget`; excluded, folded, pinned, and unresolved entries keep their own reasons `excluded`, `duplicate_evidence`, `budget_limit`, and `not_found`.
+- An explicit required/pinned ref restored after evidence dedup is no longer a folded omission. Returned refs and omitted refs are disjoint; restored refs that cannot fit carry their actual budget reason once, not a second `duplicate_evidence` entry (MR4 W003/W004 clarification, 2026-10-16).
 - The `writing_context` tool description states the real precedence rule: `requiredRefs` win over `excludeRefs`, and `excludeRefs` win over `entityRefs`/`documentRefs` pins.
 - No packet shape, status vocabulary, or estimator changes.
 - Superseded by the 2026-08-21 context accounting-scope amendment: source-catalog observability is complete, and `mixed-cjk-v1` remains an explicit estimate rather than a model-token claim.
@@ -209,6 +236,22 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - `writing_diagnose` may write disposable diagnostic artifacts but cannot modify source works or index semantics and cannot automatically invoke index repair.
 - Stable diagnostic errors include `INVALID_DIAGNOSTIC_REQUEST`, `DIAGNOSTIC_RUN_NOT_FOUND`, and `DIAGNOSTIC_RUN_CLOSED`. The former hard-cap error `DIAGNOSTIC_STORAGE_LIMIT` is superseded by the 2026-08-21 retention amendment below.
 
+### M0.1 persisted capture inspection amendment (2026-10-17, W-MCP-017)
+
+- `writing_diagnose(inspect)` adds nonnegative integer `activeCaptureCount` in both purposes. It counts this work's persisted active capture metadata, independently of `limit` and rotating event history; a fresh process observes the same unfinished captures. Missing capture directories mean zero, but unreadable, foreign, or malformed native capture metadata causes an error, not a falsely safe zero.
+- The production host-bridge CLI consults that project-scoped count inside the existing deletion mutex. An active capture or unverifiable capture state returns `DERIVED_DATA_BUSY` without deleting project data. Captures in another project do not block deletion; absent project data remains a no-op. This check is not a cross-process transaction between external capture writers and deletion.
+
+### M0.1 same-bridge capture/deletion ordering amendment (2026-10-17, W-MCP-017 reopened)
+
+- The initial capture count is only an early rejection. After maintenance admission closes and all admitted MCP calls drain, deletion rechecks the count through the still-live, exclusively held child before stopping it or mutating project files. A capture persisted in the first-read window causes `DERIVED_DATA_BUSY`; the project, index, metadata and original child remain available and the capture can still finish.
+- If deletion seals admission first, new tool requests are rejected with the existing HTTP 503 / `BRIDGE_MCP_UNAVAILABLE`, without starting a capture. They are not generic snapshot-validation failures. A final-check failure releases admission without stopping/replacing the child; normal calls can continue.
+- The final check is project-scoped: another project's active capture survives maintenance and does not veto deletion. The same-Bridge race is covered; only independent external writers remain outside this process-local ordering boundary.
+
+### M0.1 bridge capture restart amendment (2026-10-17, W-MCP-019)
+
+- Before forwarding any call carrying `diagnosticRunRef`, the bridge resolves its own project source in the current MCP child. This restores the in-memory work registry before the existing pre-handler capture validation, including when the first call after child/full-CLI restart is `finish_capture`.
+- Browser-provided `workRef`/`sourcePath` never choose that source. The existing single `WORK_REF_NOT_FOUND` recovery stays bounded; `DIAGNOSTIC_RUN_NOT_FOUND` and `DIAGNOSTIC_RUN_CLOSED` are not retry signals and never trigger capture recreation or a child restart.
+
 ### M0.1 capture bounded-refs amendment (2026-08-16)
 
 - Development capture events additionally store a bounded `outputHits` view of which refs a call returned: for `results`/`ambiguous`/`blocks` each entry keeps `ref`, `kind`, `sourceKind`, `score`, a SHA-256 hash of its locators, and for blocks the assembly fields `layer`/`tokens`/`required`; `omitted` entries keep `ref`/`reason`/`tokens`; resolve candidates keep `workRef`/`adapter`.
@@ -256,6 +299,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Every breach is a stable coded error — `EPUB_TOO_MANY_ENTRIES`, `EPUB_DOCUMENT_TOO_LARGE`, `EPUB_TOTAL_TOO_LARGE` — never a hang or unbounded memory growth.
 - Limits are injectable for tests via `new GenericAdapter({ epub: Partial<EpubLimits> })`; `DEFAULT_EPUB_LIMITS` is exported from `@writing-mcp/adapter-generic`. No other interface changes.
 
+### MR1 EPUB spine integrity amendment (2026-10-16, W-MCP-014)
+
+- Package/container attributes match their opening quote, including the opposite quote and `>` inside values. Attribute values decode XML predefined/numeric entities exactly once before href fragment splitting, percent decoding and the existing package-root check. This does not change the separate XHTML body decoder or promise general XML/DTD support.
+- A required (not `linear="no"`) spine entry without an idref or declared manifest href fails with `EPUB_SPINE_ITEM_MISSING`. A declared required resource absent from the ZIP fails with `EPUB_SPINE_RESOURCE_MISSING`, even if earlier chapters were readable; no partial work/index is published as fresh. This supersedes `EPUB_NO_READABLE_SPINE` for absent ZIP resources; that code remains for present but wholly empty/filtered readable content. Invalid numeric attribute characters fail with `EPUB_ATTRIBUTE_INVALID`.
+- Non-linear, navigation and cover filtering, resource limits, ordering and source locators are unchanged. Tool shapes and SQLite schema are unchanged.
+
 ### M1 snapshot consistency amendment (2026-08-17)
 
 - Every adapter read is bracketed by source fingerprint checks (names + mtime + size of all files under the work root): if the fingerprint differs after the read, the service retries the read exactly once, then fails with stable code `SOURCE_CHANGED_DURING_READ`. A snapshot is never built from mixed-time source state; the client should retry the operation.
@@ -268,11 +317,34 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - Per-work active state separates `loaded` (the parsed work held by the current store) from `indexed` (the source snapshot proven represented by a valid index). Only a successful incremental/rebuild or a fresh status advances `indexed`; stale, missing, and incompatible status may advance `loaded` only. Explore and context re-index whenever `indexed` differs from the current snapshot, while an unchanged indexed snapshot takes the fast path. A failed status/index operation closes the new store and retains the prior usable store and both freshness values.
 - This is metadata freshness, not content-hash freshness. An in-place replacement that preserves both mtime and size can remain undetected until a later source change or process restart; no stronger detection is claimed. Tool shapes and derived-index schema are unchanged.
 
+### MR1 managed connection publication amendment (2026-10-16, W-MCP-007)
+
+- After a consistent source load and before a replacement store indexes, the service closes its previous managed store connection inside the existing per-work serialized operation. No previous managed connection is closed after the new database has been published; this prevents that connection from retaining old-file/sidecar state across replacement.
+- The active store and loaded/indexed fingerprints are still committed only after successful indexing. On failure the previous state is retained, its connection can reopen the preserved database, and changed sources remain stale until a successful refresh. Existing writer-lock/atomic-replacement recovery and external-handle `INDEX_BUSY` behavior are unchanged; this is not cross-process reader coordination.
+- Acceptance checks the same hot service plus an independent read of the published spans, not a newly created service or the `fresh` flag alone. No tool shape or SQLite schema changes.
+
 ### M1 span hard cap amendment (2026-08-17)
 
 - `splitDocument` enforces the span size cap as a hard limit: a single line longer than `maxChars` is hard-split into bounded chunk spans that all share that one source line (startLine = endLine, locators included); no span content can ever exceed `maxChars`.
 - Locator exactness: blank lines trimmed from span edges are excluded from startLine/endLine and all locators; a locator range always covers exactly the lines its content contains.
 - Boundary evidence is contiguous without overlap: adjacent spans tile the document's non-blank content with `next.startLine = previous.endLine + 1` (blank-only gaps excepted), and concatenating span contents reconstructs the trimmed document content. Overlap was evaluated and rejected because duplicating lines double-counts deterministic mentions/edge evidence.
+
+### MR2 text derivation amendment (2026-10-16, W-MCP-001)
+
+- The span cap includes intervening LF separators and is checked before appending an ordinary source line, not after an oversized span has already formed. Existing blank-edge trimming, heading boundaries and source-segment locators remain in force.
+- A text-derivation version participates in each document semantic fingerprint. Upgrading from pre-MR2 fingerprints therefore reports stale and re-derives unchanged documents on the next incremental/query refresh; raw sources are never migrated. This is a derived-data invalidation within schema v4, not a SQLite schema migration.
+- Corrected splitting may change span ordinals/refs. Clients must use the returned revision and re-resolve old refs; a stable source path does not promise an eternal span ordinal. Repeated incremental indexing after the upgrade remains a no-op.
+
+### MR2 Unicode boundary amendment (2026-10-16, W-MCP-002)
+
+- For well-formed Unicode source, span hard cuts, 900-unit excerpts, 298-unit search windows, graph path evidence and 100-unit EPUB fallback titles never return half a UTF-16 surrogate pair. Existing caps remain UTF-16-unit caps, not code-point or grapheme-cluster promises.
+- A clipped excerpt omits a partially intersecting boundary code point; a hard-split source span instead carries the entire code point into the next span, so concatenating same-line chunks preserves the source. A custom cap too small for the next code point fails with RangeError rather than dropping data or looping; MCP uses its unchanged 2400-unit default.
+- The text-derivation fingerprint advances for corrected hard splitting; existing indices re-derive as specified above. Raw source text is not repaired, replaced or rewritten.
+
+### MR2 TXT preface locator amendment (2026-10-16, W-MCP-010)
+
+- Trimming a chaptered TXT preface retains the original line offset of its first nonblank source line. Span start/end and nested source locators use that offset; BOM removal and CRLF normalization do not invent or remove source lines.
+- Preface/chapter content and document identity rules are unchanged. The corrected sourceStartLine participates in the existing semantic fingerprint, so affected prefaces refresh without rewriting the source file.
 
 ### M1 process lifecycle amendment (2026-08-17)
 
@@ -313,6 +385,12 @@ See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 - `writing_diagnose` with `action: "inspect"` now includes `contextSources` in its `index` summary digest (same shape, sourced from the status call it already performs). No new diagnose actions, inputs, or artifacts.
 - Status mtime/size fast path: when the source fingerprint (file name+mtime+size directory, the same AUD-021 fingerprint that guards explore/context reuse) is unchanged since the store was last loaded, `status` reuses the existing store instead of re-reading every source file. Under normal operation the fingerprint change captures all parse-input changes, so reuse is best-effort safe; known edge cases (mtime granularity, sub-millisecond file replacement) can let content changes slip through until the next file modification or process restart. Any file change, first call in a process, or non-status mode falls through to the full semantic path; the store-level semantic snapshot comparison remains the sole authority for `stale`/`fresh` and is unchanged.
 - No schema, error-code, freshness-vocabulary, or `IndexStats` shape changes; `contextSources` is additive and optional.
+
+### MR2 EPUB text fidelity amendment (2026-10-16, W011/W016/W020)
+
+- Body and metadata text decode each original supported named/numeric character reference once. Escaped literal entity spellings are not recursively decoded; unknown references remain literal. Invalid numeric text references (zero, surrogate values or values above U+10FFFF) fail with `EPUB_TEXT_INVALID`, without publishing a partial work. Attribute errors retain `EPUB_ATTRIBUTE_INVALID`.
+- Tag boundaries respect matched attribute quotes, including `>` inside attributes in body, headings and metadata. Attributed/self-closing/multiline `br` elements preserve an explicit LF; existing script/style/nav/comment filtering remains. This is bounded EPUB text extraction, not a general DOM/DTD implementation.
+- Corrected parsed text/title/segments participate in the existing semantic fingerprint and trigger re-derivation where changed. Original EPUB files are never migrated or rewritten; locators describe the corrected extracted text, not HTML byte offsets.
 
 ## Benchmark gate
 

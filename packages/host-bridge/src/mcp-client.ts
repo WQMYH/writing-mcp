@@ -28,8 +28,8 @@ export interface McpClient {
 }
 
 export interface RestartableMcpClient extends McpClient {
-  /** Run one Bridge-owned maintenance action while no MCP child or tool call is active. */
-  restartAround<T>(operation: () => Promise<T>): Promise<T>;
+  /** Check after admission closes and calls drain; only then stop the child and mutate files. */
+  restartAround<T>(operation: () => Promise<T>, beforeStop?: (client: Pick<McpClient, "callTool">) => Promise<void>): Promise<T>;
 }
 
 function unavailable(detail: string): McpUnavailableError {
@@ -212,7 +212,7 @@ export function createRestartableMcpClient(options: McpClientOptions): Restartab
     callTool(name, args, timeoutMs): Promise<unknown> {
       return admitted((child) => child.callTool(name, args, timeoutMs));
     },
-    async restartAround<T>(operation: () => Promise<T>): Promise<T> {
+    async restartAround<T>(operation: () => Promise<T>, beforeStop?: (client: Pick<McpClient, "callTool">) => Promise<void>): Promise<T> {
       let releaseQueue!: () => void;
       const previous = maintenanceQueue;
       maintenanceQueue = new Promise<void>((resolve) => { releaseQueue = resolve; });
@@ -223,6 +223,7 @@ export function createRestartableMcpClient(options: McpClientOptions): Restartab
       let restartError: unknown;
       try {
         await waitForDrain();
+        await beforeStop?.(current);
         const oldChild = current;
         plannedStops.add(oldChild);
         await oldChild.stop();

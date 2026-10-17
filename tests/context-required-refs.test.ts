@@ -15,6 +15,58 @@ const makeWork=(rootPath:string):ParsedWork=>{
 };
 
 describe("AUD-005 requiredRefs resolve outside the search candidate pool",()=>{
+  test("preserves each true omission cause when required minimum exceeds budget (W-MCP-003)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-omission-reasons-")), work = makeWork(root);
+    const first = work.documents[0]!;
+    work.documents.push(
+      { ...first, documentRef: stableId("doc", work.workRef, "copy.md"), relativePath: "copy.md", absolutePath: "copy.md" },
+      { ...first, documentRef: stableId("doc", work.workRef, "optional.md"), relativePath: "optional.md", absolutePath: "optional.md", title: "Optional", content: "# Optional\n铜钥匙也有线索。" },
+    );
+    const store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const ref = async (path: string) => (await store.explore("document", path, 20, 0)).results[0]!.ref;
+      const [required, excluded, duplicate, optional] = [await ref("alpha.md"), await ref("beta.md"), await ref("copy.md"), await ref("optional.md")];
+      const options = { excludeRefs: [excluded!], documentRefs: ["doc:missing"] };
+      const roomy = await store.context("铜钥匙 银铃铛", 10_000, [required!, "entity:missing"], options);
+      const minimum = roomy.blocks.find(block => block.ref === required)!.tokens;
+      const packet = await store.context("铜钥匙 银铃铛", minimum - 1, [required!, "entity:missing"], options);
+      expect(packet.status).toBe("budget_unsatisfiable");
+      expect(packet.blocks).toEqual([]);
+      const reasons = new Map(packet.omitted.map(item => [item.ref, item.reason]));
+      expect(reasons.get(required!)).toBe("required_minimum_exceeds_budget");
+      expect(reasons.get(optional!)).toBe("budget_limit");
+      expect(reasons.get(excluded!)).toBe("excluded");
+      expect(reasons.get(duplicate!)).toBe("duplicate_evidence");
+      expect(reasons.get("entity:missing")).toBe("not_found");
+      expect(reasons.get("doc:missing")).toBe("not_found");
+      const exact = await store.context("铜钥匙 银铃铛", minimum, [required!], options);
+      expect(exact.status).not.toBe("budget_unsatisfiable");
+      expect(exact.blocks.map(block => block.ref)).toEqual([required]);
+      expect(exact.usedTokens).toBe(minimum);
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  test.each(["required", "pin"])("restores an explicitly requested duplicate %s without contradictory omissions (W-MCP-004)", async mode => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-restored-duplicate-")), work = makeWork(root);
+    work.documents[1] = { ...work.documents[1]!, title: work.documents[0]!.title, content: work.documents[0]!.content };
+    const store = new WritingStore(work);
+    try {
+      await store.index("rebuild");
+      const baseline = await store.context("铜钥匙", 10_000);
+      const kept = baseline.blocks[0]!.ref, folded = baseline.omitted.find(item => item.reason === "duplicate_evidence")!.ref;
+      const required = mode === "required" ? [kept, folded] : [], options = mode === "pin" ? { entityRefs: [folded] } : {};
+      const packet = await store.context("铜钥匙", 10_000, required, options);
+      expect(packet.blocks.map(block => block.ref).sort()).toEqual([kept, folded].sort());
+      expect(packet.omitted).toEqual([]);
+      const tight = await store.context("铜钥匙", 1, required, options);
+      expect(tight.blocks).toEqual([]);
+      expect(tight.omitted).toHaveLength(2);
+      expect(new Set(tight.omitted.map(item => item.ref)).size).toBe(2);
+      expect(tight.omitted.every(item => item.reason === (mode === "required" ? "required_minimum_exceeds_budget" : "budget_limit"))).toBe(true);
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
   test("resolves a required span ref that the search pool does not contain",async()=>{
     const root=await mkdtemp(join(tmpdir(),"writing-mcp-required-span-")),work=makeWork(root),store=new WritingStore(work);
     try{

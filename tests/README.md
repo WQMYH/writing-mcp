@@ -12,22 +12,22 @@
 | `benchmark.test.ts` | 30 个机器可读基准任务的确定性门禁 |
 | `diagnostics.test.ts` | 诊断链：脱敏、显式 query 策略、捕获序号、JSON/Markdown 产物、SHA-256、幂等 finish、关闭运行引用、不可持久化降级、AUD-023 开发捕获有界命中 ref/score/locator 哈希（不存正文）、AUD-024 general JSONL 串行轮转/并发不丢不乱/写失败降级、Task 5B 当前返回 artifact 保护/清理延迟披露/capture truncate 写入计数 |
 | `diagnostic-retention.test.ts` | Task 5B 诊断保留：默认 64 次写入/1 MiB 扫描门槛、同目录扫描合并、稳定 mtime→Unicode code-point 文件排序、报告优先/closed capture 组清理、active capture 保护、协作锁延迟/死进程与畸形锁回收、ENOENT 与替换锁竞态 |
-| `epub.test.ts` | EPUB：正常双章节 spine、OPF 属性顺序变化、元数据标题、封面过滤、跨 spine 续章、单作品多 EPUB 引用隔离、损坏 ZIP/缺 container/缺 OPF/无可读 spine 四类失败 |
+| `epub.test.ts` | EPUB：正常双章节 spine、元数据、封面过滤、跨 spine 续章、独立作品引用；W-MCP-014 属性匹配引号/引号内 >、XML 单层实体与 URL 编码、container/spine id 解码、章节顺序/search/context/locator；缺失必需声明/资源拒绝部分 fresh，非线性/nav/cover/空内容过滤及无可读内容、路径/属性错误；W002 heading/正文 fallback 标题代理对边界；W011 正文/元数据实体单层解码与非法数字实体错误，W016 属性 br 保留换行，W020 正文/标题/过滤标签引号内 > 保真 |
 | `epub-resource-limits.test.ts` | AUD-028/Task 5A EPUB 资源上限：entry 数超限 `EPUB_TOO_MANY_ENTRIES`、OPF/单 spine/累计 spine 按解码 UTF-8 bytes 的中文多字节精确边界、总量超限 `EPUB_TOTAL_TOO_LARGE`（均可经构造器注入）、EPUB 2.0 包在默认上限下正常加载 |
 | `explore-bfs.test.ts` | 0~3 跳 BFS、fan-out/全局上限、逐边 pathEvidence、截断 |
-| `generic-txt.test.ts` | TXT：GBK/GB18030 解码、章节切分、章节编号重置推断新卷、原始文件行号偏移 |
+| `generic-txt.test.ts` | TXT：GBK/GB18030 解码、章节/分卷；W010 前言 trim 后原始行号，0/1/3 个前导空行 × LF/CRLF × BOM，主/子 locator 及后续章节定位 |
 | `host-bridge-protocol.test.ts` | HB-M0 协议冻结：strict 拒绝未知字段、hostProjectId 字符集、chapter ordinal 连续/唯一（与 chapterKey 值解耦）、relativePath 逃逸拒绝（Unicode 合法）、sha256/协议版本/pluginId 校验、鉴权矩阵仅 OPTIONS/health/pair 免 Bearer、错误码/限额/超时/桥常量与规范 fixture 一致、computeProjectKey/computeContentHash/computeSnapshotHash 独立向量与顺序稳定性、规范快照 draft fixture 解析 |
 | `host-bridge-auth.test.ts` | HB-M1 配对与令牌：初始 code ≥128-bit 熵、错误 code 拒绝、code 单次使用且成功/过期/unpair 后轮换、过期 code 返回 EXPIRED、60 分钟 token TTL 边界（差 1ms）、双标签页独立 token、unpair 仅吊销当前会话、revoked 全部吊销、缺失/畸形 Bearer 冻结错误、日志只含 hash 前缀 |
-| `host-bridge-lifecycle.test.ts` | HB-M1 安全边界与生命周期：loopback 分类器、health 免 Bearer 且投影进程/配对状态、伪造 Host（node:http）与错误/缺失 Origin 的冻结错误码、PNA 预检仅按请求回显、pair 校验/大小限制 413、业务路由先 Bearer 后 404、单实例锁（活 pid 拒绝/死 pid 同内容清理/不可解析不清理）、CLI stdin EOF 幂等关机与锁释放且 health 不泄露 code、MCP 子进程异常死亡转 degraded 不假 ready、runCli 锁占用退出码 3 |
+| `host-bridge-lifecycle.test.ts` | loopback/Host/Origin/PNA/pair/Bearer 边界、单实例锁与异常 child degraded；W022 编译后 CLI 默认/显式入口 × 仓库/外部 cwd，真实 ready/EOF/退出 0/锁释放且不泄露 code；runCli 占锁退出 3 |
 | `host-bridge-mcp-client.test.ts` | HB-M1/HB-M6 MCP stdio 客户端：initialize 握手 + 真实 writing_resolve 调用（信封 structuredContent.result.data.status）、stderr 有界且确实保留最新尾部（含溢出后的末尾 marker）、stdout 非 JSON 噪声不影响协议通道、子进程中途退出拒绝挂起请求为 BRIDGE_MCP_UNAVAILABLE、stop 幂等且子进程终止；计划内维护会排空调用、停止旧 child、拒绝维护期请求、重启新 child 且不误报 degraded |
 | `host-bridge-snapshot.test.ts` | HB-M2 快照事务：激活写 source + resolve(adapterHint=generic)→index(status→incremental/rebuild 分支且每次 index 使用冻结的 120 秒超时)→fresh binding 七字段 manifest、同快照 fresh 时 no-op 零 MCP 调用、伪造文档哈希拒绝而 claimedSnapshotHash 忽略、16 MiB/64 MiB/4096 文档限额、逃逸路径不入盘、EBUSY 有界重试、索引不 fresh 回滚旧 source 且 binding 保持 fresh、恢复失败转 degraded、重启后 manifest 装载为 stale 需重激活、禁用/撤销拒绝新快照但不删派生数据、路由与 draft 的 hostProjectId 不一致拒绝 |
 | `host-bridge-binding.test.ts` | HB-M2 binding 生命周期：规范 draft 经 HTTP + 真实 MCP stdio 激活为 fresh（Bearer 门禁内）、未认证 snapshot/status 拒绝、畸形 hostProjectId 拒绝、binding manifest 最后原子写（失败激活不覆盖旧 manifest、no-op 后不同内容失败仍保旧 manifest） |
-| `host-bridge-derived-data.test.ts` | HB-M2 派生数据删除：删 source/项目 .bridge/.writing-index 且保留全局 plugin-state.json、状态转 empty、active capture 守卫返回 DERIVED_DATA_BUSY 且不改动、未知项目 no-op 成功 |
+| `host-bridge-derived-data.test.ts` | HB-M2 派生数据删除：删 source/项目 .bridge/.writing-index 且保留全局 plugin-state.json、状态转 empty、active capture 守卫返回 DERIVED_DATA_BUSY 且不改动、未知项目 no-op 成功；W017 异步项目级捕获检查失败关闭且保留数据 |
 | `host-bridge-tools.test.ts` | HB-M3/HB-M6 五工具代理：五个 Bearer 项目路由与 strict proxy envelope、独立 `BRIDGE_TOOL_REQUEST_INVALID`；Bridge 强制项目 sourcePath/workRef、`WORK_REF_NOT_FOUND` 单次 resolve+retry、index 120 秒与其余工具 15 秒、所有返回层级递归移除本机路径字段；真实 MCP stdio 子进程完成 resolve→index→explore→context→diagnose 全链 fixture |
-| `host-bridge-cli-boot.test.ts` | HB-M5 启动接线：`--host-origin` 可重复且仅接受精确 loopback http Origin（`*`/非 loopback/https/带路径一律退出码 2 且不监听）、配对后的 Origin 白名单内外 200/403 冻结码、冷启动 bridgeRoot 也静态注册 storyforge manifest（项目路由不再 `BRIDGE_PLUGIN_DISABLED`） |
-| `host-bridge-e2e.test.ts` | HB-M6 Bridge 侧真实链：loopback 启动/配对、快照 activate/no-op、真实 MCP 五工具、ContextPacket 证据、重启恢复、失败回滚、活跃 SQLite 下的维护式派生删除、重新快照/重建、授权目录约束，以及未认证/恶意 Origin 负矩阵 |
+| `host-bridge-cli-boot.test.ts` | HB-M5 真实编译 CLI 子进程接线：`--host-origin` 精确 loopback 校验/退出码 2、配对 Origin 白名单、冷启动插件注册；W017 两个活动捕获拒删/其他项目可删/关闭后可删；W019 full-CLI 与 child 重启后首个相关 explore、再次重启后首个 finish_capture、真实 missing/closed 不重试不重启；真实 PID 退出/EOF/锁释放 |
+| `host-bridge-e2e.test.ts` | Bridge 真实链：配对/快照/五工具/证据、重启/回滚/SQLite 维护删除/重建/授权负矩阵；W023 strict HTTP status；W017 race 真实 inspect 后 barrier 固定同 Bridge 捕获落盘后拒删/保留 index+meta+child，反向最终检查已封 admission 拒绝新捕获为 503、其他项目活动捕获不误挡且可关闭 |
 | `host-plugin-manifest.test.ts` | HB-M0 插件 manifest 冻结：七字段（id/apiVersion/hostCompatibility/minimumPermissions/exportCategories/license/testMatrix）齐全且 strict、错误身份/apiVersion/枚举/空权限拒绝、最小权限词表冻结并覆盖 fixture、生成 fixture 与运行期注册常量一致 |
-| `graph-identity-evidence.test.ts` | schema v4 图：重复 Chapter 标题独立身份、按源 ordinal 排序、同名实体全部定义、规范来源晋升、多次 mention、多 span 关系证据 |
+| `graph-identity-evidence.test.ts` | schema v4 图：Chapter 身份/顺序、规范定义、多次 mention/关系证据；W012 非章节编辑保留 precedes/证据；W013 当前标题别名与冷建一致且保留其他别名；W005 NFC/NFD 身份/定义/引用一致，兼容 owner 不误选、未解析证据保真；W009 大小写引用在 owner 新增/删除/改名/恢复后与冷建一致，旧持久化别名依赖也失效 |
 | `index-lifecycle.test.ts` | 索引生命周期：不兼容 schema 只读报告/显式重建、失败事务保留上一 revision、未解析引用入库、status stale 语义、源顺序 snapshot、中断恢复、writer lock、增量影响范围、实体变化刷新引用 |
 | `inkos-fixture.test.ts` | InkOS：静态最小 fixture 的稳定作品引用、原生文档类型、章节编号 |
 | `mcp-stdio.test.ts` | MCP stdio：枚举五工具、顺序调用 resolve/index/explore/context/diagnose、诊断 hook、结构化错误信封 |
@@ -36,7 +36,7 @@
 | `path-security.test.ts` | 授权 roots 缺失/越界、symlink/junction 越界、service 层强制 roots |
 | `resolve-matrix.test.ts` | 作品识别矩阵：空目录、不支持扩展名、多书歧义、同目录直接文件隔离、InkOS 新旧结构 |
 | `response-limits.test.ts` | Task 4 server 最终响应门禁：中文 UTF-8 byte accounting、8,192-byte 诊断预留、explore/context/resolve/diagnose/index 确定性 reducer、完整 L3→L2→L1→optional L0 次序、budget-unsatisfiable required 事实保护、真实 WritingStore→server omission 守恒、recorder 只见最终 data/error、动态 Markdown 防 CR/LF/控制字符伪造与 16,384-byte 上限、输出 schema 保真 |
-| `search-correctness.test.ts` | 检索正确性：无分词中文问句、空分析、真无结果、别名、重复 Chapter、替代定义、未解析引用、重复运行排序、输入上限、长词 FTS 满池时的短原词候选、revision-scoped 暖查询复用与 rebuild 失效、core UTF-8 响应预裁剪（ambiguous tail 先于 results、omittedEstimate 守恒、evaluator 同口径） |
+| `search-correctness.test.ts` | 中文问句/诊断、替代定义/未解析引用、排序/缓存/上限及短词候选；W002 SQLite/摘录/BFS/context 代理对保真；W008 limit 1/2/100 保留真实歧义，W021 单 owner 去重/多 owner 保护，W015 精确/部分/稳定 seed 评分，W024 字面 LIKE；W006 大写/混合专名的 search/context 支撑窗口，含小写变长前缀，原文不改写 |
 | `document-literal-search.test.ts` | document 查询字面子串语义：`%`、`_`、`\` 在相对路径和标题中仅匹配自身，不得被 SQLite LIKE 解释为通配符或转义符 |
 | `search-prf.test.ts` | Task 6 PRF 纯逻辑：冻结生产配置 `12/8/0.35`、原词/别名/停用词/单字/单 span 过滤、双字/三字/四字候选、bytewise tie-break、128 预频率池与单批调用、非法网格拒绝 |
 | `evaluator-isolation.test.ts` | evaluator-only 搜索隔离：环境变量不影响生产查询、调用级 ablation/PRF 不重建索引且不污染普通路径、生产配置与显式评测一致、非法网格拒绝、重复双字中文词可扩展真实候选 |
@@ -44,26 +44,27 @@
 | `corpus-gate-scripts.test.ts` | corpus 门禁脚本：显式/默认报告目录、暖查询预热/测量轮廓、匿名逐样本耗时、完整 token-evaluation-materials、外部 tokenizer `not_evaluated`、阈值失败与输出目录隔离 |
 | `private-script-mode.test.ts` | 私有验收 report-only 与 enforce 模式边界，已知 required miss 只能在前置测量阶段记录，PRF 完成后 enforce 为硬门禁 |
 | `privacy-gate.test.ts` | 公开前隐私门禁：tracked/历史 blob/commit message 命中检测、history 口径（工作树已删仍被抓）、输出不回显匹配文本、泄露仅存于 refs/remotes 过期缓存不算 FAIL 而同泄露在本地分支必 FAIL |
-| `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见；AUD-018 真实响应 deadline 覆盖 explore/context/evaluator，超时后底层操作仍保持逐作品串行 |
+| `service-reuse.test.ts` | AUD-021 源复用：未变化源连续 explore/context 零重载（计数适配器）、源编辑可见；W-MCP-007 热 rebuild 后同一服务新/旧正文、context、磁盘 spans、重复 rebuild 一致；AUD-018 真实响应 deadline 覆盖 explore/context/evaluator，超时后底层操作仍保持逐作品串行 |
 | `source-directory-observable.test.ts` | AUD-012 来源目录可观测：explore stats 的 contextSources（byLayer L1/L2/L3 + byKind）复用 AUD-013 注册表 |
 | `status-fast-path.test.ts` | status mtime/size 快速路径：指纹未变时重复 status 零 adapter.load（计数适配器）且结果与全路径语义一致、源编辑击穿快速路径报 stale、status 返回 contextSources |
-| `context-required-refs.test.ts` | AUD-005 requiredRefs 直接解析：池外 span/entity 强制命中、不存在 ref 进 omitted（not_found）、直解 ref 触发 budget_unsatisfiable、池内去重与优先；所有 ContextPacket 路径声明 excerpt-only accountingScope，usedTokens 等于返回块 tokens 之和 |
+| `context-required-refs.test.ts` | requiredRefs 池外 span/entity 直解、缺失/预算/优先与 excerpt-only accounting；W003 不可满足时 required/optional/excluded/duplicate/not-found 原因及预算恰好/少一；W004 去重后恢复 required/pin，不与 omitted 冲突，低预算时每 ref 只保留真实原因 |
+| `unicode-input-limits.test.ts` | W025 真实 SDK stdio 下 BMP/补充字符/混合文本的 query=2048、taskType=64、label=80、四份 ref=256 的下界/恰好/超一，与发布 JSON Schema 对齐；标签持久化不切半，store explore/evaluator/context/ref guard 同域 |
 | `context-source-registry.test.ts` | AUD-013 来源提供器注册表：ENTITY_KINDS 全覆盖的语义分层映射、小写文档类型归一、required 晋升 L0、evidenceHash 去重、L3→低层预算裁剪、真实路径 L1 归属；Task 6 后 Context 内部搜索池固定为 12，requiredRefs 仍走独立直解 |
 | `bfs-batching.test.ts` | AUD-020 批量化护栏：宽图每节点 fan-out 确定性截断与重复运行一致、宽图 BFS 在确定性耗时预算内完成 |
 | `timeline.test.ts` | AUD-015 timeline 独立投影：章节+precedes 时序按章节位置排序、名称过滤、未知章节锚点稳定殿后、无时态数据 NO_RESULTS |
 | `graph-vocabulary.test.ts` | AUD-022 词汇表冻结：索引实体 kind 含 OutlineNode 且不超出 ENTITY_KINDS、边 kind（含原生 `mentions`）不超出 EDGE_KINDS、唯一持久化别名 `[[alias]]` 生成 Document→Entity 边并从双端 BFS 保留精确 alias-capture 证据，多 owner alias 保持 `AMBIGUOUS_ALIAS` 未解析、InkOS/generic 能力声明不超出 WORK_CAPABILITIES |
 | `timeline-tense-filter.test.ts` | AUD-012 章节时态过滤：targetChapter 锚点只保留当时态有效的实体/边（无界 from/to 视为书首/书尾）、锚点外章节排除、与名称过滤组合、重复运行确定性 |
 | `context-reserved-params.test.ts` | AUD-012/Task 3 约束接口 MCP 契约（stdio）：explore schema 暴露 targetChapter 且锚定 timeline 排除锚点外章节实体；context schema 暴露四约束参数、taskType 值域开放（无 enum）且保留非驱动；输出 schema/描述冻结 excerpt-only accountingScope 与外部 Token 复核语义；描述声明 requiredRefs 胜出 excludeRefs 的优先级；exclude/pin 经 MCP 生效；未知 taskType 被接受且输出不变 |
-| `context-constraint-wiring.test.ts` | AUD-012 约束接口接线（store 级）：excludeRefs 过滤与 excluded 报告、requiredRefs 胜出 excludeRefs、entityRefs/documentRefs 直解入 blocks 及层归属、targetChapter 锚定层内排序（同章→前距→后距）且无锚点时不生效、taskType 值域开放且任意值输出恒等、共享数据库句柄不被 context 误关、四份 ref 列表均受 CONTEXT_REFS_TOO_LARGE 校验、budget_unsatisfiable 保留各类真实 omitted 原因（excluded/not_found 不冒充预算原因） |
+| `context-constraint-wiring.test.ts` | 约束接线：exclude/required/pin 优先级、层内锚定、开放 taskType 不驱动、共享句柄、引用上限与真实遗漏原因；W018 缺号/卷内重置/缺失显示号时与 timeline 共用 source-order 位置，越过末章仍只排序、不全局过滤 |
 | `search-source-trust.test.ts` | AUD-012 残留（M3 期）source-trust 排序因子：命中查询词的 deterministic 行获 +0.25 信任加分，反超原始分更高的 alias-only heuristic 行，重复运行确定性 |
 | `protocol-boundary.test.ts` | AUD-025 协议错误边界：数据 schema 单一真相源、输出失配记 failure 并返回 OUTPUT_SCHEMA_MISMATCH 一致信封、正常路径无协议错误、SDK 输入拒绝裸文本且无诊断记录、协议层未知消息经 onerror 上报 |
 | `generic-work-boundary.test.ts` | AUD-026 通用作品边界：双 EPUB 目录产生两个候选并返回 ambiguous、EPUB 候选与直接解析文件同 workRef/rootPath、capabilities 由实际输入决定（纯文本目录不含 epub）、纯文本目录仍为单一作品 |
 | `txt-numbering.test.ts` | AUD-027 章节编号语法：罗马数字章节不再被 Number("iv") 丢弃、中文数字支持到九百九十九（百位合成）、罗马数字重置推断新卷、非法罗马数字确定性跳过并入上一章、Markdown 中文数字章名识别为 chapter |
 | `snapshot-consistency.test.ts` | AUD-029 snapshot 一致性：读取期间源持续变化拒绝 `SOURCE_CHANGED_DURING_READ`（有界重试后仍不一致）、一次性写入稳定后有界重试成功、单文件超限 `SOURCE_FILE_TOO_LARGE`、作品总量超限 `SOURCE_TOTAL_TOO_LARGE`、默认上限正常加载 |
 | `adapter-pre-read-limits.test.ts` | AUD-029 读取前资源门禁：单文件 snapshot size 超限时 0 次 `readFile`；累计 size 将越界时不读取下一文件，防止“读入内存后才拒绝” |
-| `source-snapshot-reliability.test.ts` | Task 1 SourceSnapshot：完整相对路径避免重名碰撞、超过 12 层的精确枚举、单文件与增删指纹变化、越界 symlink 拒绝、status stale 后 explore 先增量索引、未变化快路径，以及失败增量不推进 freshness 并可恢复查询 |
+| `source-snapshot-reliability.test.ts` | Task 1 SourceSnapshot：完整相对路径避免重名碰撞、超过 12 层的精确枚举、单文件与增删指纹变化、越界 symlink 拒绝、status stale 后 explore 先增量索引、未变化快路径；W-MCP-007 incremental/rebuild 失败保留旧正文/revision、status stale 且可增量恢复 |
 | `fts-cold-init.test.ts` | R4 SQLite/FTS 冷启动：12 个独立进程经共享屏障并发打开同一新索引，验证 WAL 配置的有界 busy 重试与 `BEGIN IMMEDIATE` schema 双检不会暴露 `database is locked`，最终 schema v4/FTS 表唯一且完整 |
-| `span-hard-split.test.ts` | AUD-030 span 硬上限与边界规则：超长单行硬切为共享同一源行的有界 chunk、locator 不含被裁空行、相邻 span 连续平铺无重叠无遗漏且内容可重组、硬切后后续 span 行号连续、heading 边界 locator 精确 |
+| `span-hard-split.test.ts` | AUD-030 边界/定位/重组；W001 多行追加前计入 LF、cap−1/cap/cap+1、旧指纹增量升级/noop；W002 emoji/补充汉字/BMP 硬切保真与原行定位，不可容纳码点的 cap 明确拒绝 |
 | `lifecycle.test.ts` | AUD-032/Task 5C 进程生命周期：SIGTERM/SIGINT 在时限内终止进程（POSIX 优雅 exit 0 / Windows 信号终止）、stdin EOF 优雅退出 exit 0、完整会话 stdout 只输出 JSON-RPC；runtime/termination promise 身份幂等、server→service 失败后置、5 秒悬挂兜底/成功取消、错误报告失败仍完成且零 stdout 写入 |
 
 ## 评测脚本（非 CI，本地评测用）
@@ -82,6 +83,8 @@
 | `scripts/prf-calibration.mjs` | 冻结 27 组 PRF 网格；train 先执行 recall@5/@10/MRR/@50/required@50 不回退资格筛选，再按 recall@5→MRR→低复杂度选择；holdout 只验证，另执行私有 top-20/required 门禁 |
 
 ## 覆盖清单（按能力域）
+
+MR6 的 `mcp-stdio.test.ts` 另从真实 SDK 子进程执行 source edit → status stale → incremental → current evidence/context → rebuild → restart/resolve → 删除自有索引后重建，逐次检查 revision、稳定 ref、原文证据与诊断，非 store 直调替代。
 
 ### 通用文本链路
 

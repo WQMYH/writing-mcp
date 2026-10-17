@@ -1,4 +1,5 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -10,7 +11,7 @@ import { createBridgeServer, type BridgeServer } from "../packages/host-bridge/s
 import { createPairingManager } from "../packages/host-bridge/src/auth.js";
 import { createProjectToolProxy } from "../packages/host-bridge/src/tool-proxy.js";
 import { storyforgePluginManifest } from "@writing-mcp/host-plugin-storyforge";
-import { computeContentHash, computeSnapshotHash } from "../packages/host-bridge-protocol/src/index.js";
+import { computeContentHash, computeProjectKey, computeSnapshotHash, projectStatusDataSchema } from "../packages/host-bridge-protocol/src/index.js";
 
 const MCP_ENTRY = resolve("packages/mcp-server/dist/index.js");
 const ORIGIN = "http://127.0.0.1:1111";
@@ -67,7 +68,7 @@ interface Stack {
   close(): Promise<void>;
 }
 
-async function openStack(bridgeRoot: string, options: { restore?: boolean } = {}): Promise<Stack> {
+async function openStack(bridgeRoot: string, options: { restore?: boolean; afterCaptureInspection?: (count: number) => Promise<void> } = {}): Promise<Stack> {
   const state = createBridgeState();
   const registry = createPluginRegistry({ bridgeRoot, state });
   await registry.register(storyforgePluginManifest);
@@ -77,7 +78,14 @@ async function openStack(bridgeRoot: string, options: { restore?: boolean } = {}
     args: [MCP_ENTRY],
     env: { ...process.env, WRITING_MCP_ROOTS: join(bridgeRoot, "projects") } as NodeJS.ProcessEnv,
   });
-  const pipeline = createSnapshotPipeline({ bridgeRoot, registry, state, mcp, mcpMaintenance: mcp });
+  const pipeline = createSnapshotPipeline({ bridgeRoot, registry, state, mcp, mcpMaintenance: mcp, hasActiveCapture: async (project, origin, invoker = mcp) => {
+    const inspector = createProjectToolProxy({ bridgeRoot, mcp: invoker, pipeline });
+    const inspected = await inspector.invoke("diagnose", project, origin, { action: "inspect", purpose: "development", limit: 1 }) as { ok: boolean; data?: { activeCaptureCount?: unknown } };
+    const count = inspected.data?.activeCaptureCount;
+    if (!inspected.ok || typeof count !== "number") throw new Error("capture state unavailable");
+    await options.afterCaptureInspection?.(count);
+    return count > 0;
+  } });
   if (options.restore) await pipeline.restoreFromManifests();
   const toolProxy = createProjectToolProxy({ bridgeRoot, mcp, pipeline, isPluginAvailable: () => registry.isAvailable() });
   const server = createBridgeServer({ auth, state, pipeline, toolProxy, config: { port: 0, allowedOrigins: [ORIGIN] } });
@@ -126,6 +134,79 @@ async function openStack(bridgeRoot: string, options: { restore?: boolean } = {}
 }
 
 describe("host bridge M5 acceptance chain (HB-M6)", () => {
+  test("deletion seals capture admission before its final inspection without blocking another project's capture (W-MCP-017 race)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "hb-delete-admission-"));
+    let releaseInspection!: () => void, reachedInspection!: () => void, inspections = 0;
+    const inspectionReached = new Promise<void>(resolve => { reachedInspection = resolve; });
+    const inspectionReleased = new Promise<void>(resolve => { releaseInspection = resolve; });
+    const stack = await openStack(root, { afterCaptureInspection: async () => {
+      if (++inspections !== 2) return;
+      reachedInspection();
+      await inspectionReleased;
+    } });
+    let deleting: Promise<Envelope> | undefined;
+    try {
+      for (const project of [PROJECT, "other"]) expect((await stack.call("POST", `/v1/projects/${project}/snapshot`, { body: draft(project, documents("admission")) })).status).toBe(200);
+      const otherStarted = await stack.call("POST", "/v1/projects/other/diagnose", { body: { protocolVersion: 1, arguments: { action: "start_capture", purpose: "development" } } });
+      expect(otherStarted.data).toMatchObject({ ok: true });
+      deleting = stack.call("DELETE", `/v1/projects/${PROJECT}/derived-data`);
+      await Promise.race([inspectionReached, deleting.then(() => { throw new Error("deletion skipped the sealed-admission inspection"); })]);
+      const denied = await stack.tool("diagnose", { action: "start_capture", purpose: "development" });
+      expect(denied).toMatchObject({ status: 503, code: "BRIDGE_MCP_UNAVAILABLE" });
+      const projectDir = join(root, "projects", computeProjectKey("storyforge", ORIGIN, PROJECT));
+      expect(existsSync(projectDir)).toBe(true);
+      releaseInspection();
+      expect((await deleting).status).toBe(200);
+      expect(existsSync(projectDir)).toBe(false);
+      const otherFinished = await stack.call("POST", "/v1/projects/other/diagnose", { body: { protocolVersion: 1, arguments: { action: "finish_capture", purpose: "development", diagnosticRunRef: otherStarted.inner!.diagnosticRunRef } } });
+      expect(otherFinished.data).toMatchObject({ ok: true });
+      expect((await stack.call("GET", "/v1/projects/other/status")).data?.bindingState).not.toBe("empty");
+    } finally {
+      releaseInspection();
+      await deleting;
+      await stack.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("a capture persisted after the first empty inspection still blocks same-bridge deletion (W-MCP-017 race)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "hb-capture-delete-race-"));
+    let releaseInspection!: () => void, reachedInspection!: () => void, pause = true;
+    const inspectionReached = new Promise<void>(resolve => { reachedInspection = resolve; });
+    const inspectionReleased = new Promise<void>(resolve => { releaseInspection = resolve; });
+    const stack = await openStack(root, { afterCaptureInspection: async count => {
+      if (!pause) return;
+      pause = false;
+      expect(count).toBe(0);
+      reachedInspection();
+      await inspectionReleased;
+    } });
+    let deleting: Promise<Envelope> | undefined;
+    try {
+      expect((await stack.call("POST", `/v1/projects/${PROJECT}/snapshot`, { body: draft(PROJECT, documents("race")) })).status).toBe(200);
+      const oldPid = stack.mcp.pid;
+      expect(Number.isInteger(oldPid) && oldPid > 0).toBe(true);
+      deleting = stack.call("DELETE", `/v1/projects/${PROJECT}/derived-data`);
+      await Promise.race([inspectionReached, deleting.then(() => { throw new Error("deletion completed before the initial capture inspection barrier"); })]);
+      const started = await stack.tool("diagnose", { action: "start_capture", purpose: "development" });
+      expect(started).toMatchObject({ status: 200, data: { ok: true } });
+      const diagnosticRunRef = String(started.inner!.diagnosticRunRef), workRef = String(started.inner!.workRef);
+      const projectDir = join(root, "projects", computeProjectKey("storyforge", ORIGIN, PROJECT));
+      const indexDir = join(projectDir, ".writing-index", workRef.replaceAll(":", "-"));
+      const metaPath = join(indexDir, "diagnostics", "runs", `${diagnosticRunRef}.meta.json`);
+      expect(JSON.parse(await readFile(metaPath, "utf8"))).toMatchObject({ status: "active", diagnosticRunRef, workRef });
+      releaseInspection();
+      const deleted = await deleting;
+      expect({ status: deleted.status, code: deleted.code, project: existsSync(projectDir), index: existsSync(join(indexDir, "index.sqlite")), capture: existsSync(metaPath), sameChild: stack.mcp.pid === oldPid }).toEqual({ status: 409, code: "DERIVED_DATA_BUSY", project: true, index: true, capture: true, sameChild: true });
+      expect((await stack.tool("diagnose", { action: "finish_capture", purpose: "development", diagnosticRunRef })).data).toMatchObject({ ok: true });
+    } finally {
+      releaseInspection();
+      await deleting;
+      await stack.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("pairs, snapshots, runs the five tools, survives restart, rolls back, deletes derived data and rebuilds", async () => {
     const bridgeRoot = await mkdtemp(join(tmpdir(), "hb-e2e-"));
     let stack = await openStack(bridgeRoot, { restore: true });
@@ -144,6 +225,7 @@ describe("host bridge M5 acceptance chain (HB-M6)", () => {
       expect(activated.data).toMatchObject({ outcome: "activated", bindingState: "fresh" });
       activatedHash = String(activated.data?.snapshotHash);
       expect(activatedHash).toBe(computeSnapshotHash(1, first as never));
+      expect(projectStatusDataSchema.safeParse((await stack.call("GET", `/v1/projects/${PROJECT}/status`)).data).success, "fresh HTTP status must match the strict public projection (W-MCP-023)").toBe(true);
       expect((await stack.call("POST", `/v1/projects/${PROJECT}/snapshot`, { body: draft(PROJECT, first) })).data).toMatchObject({ outcome: "noop" });
 
       // 4 resolve and index against the bridge-owned derived directory
@@ -188,6 +270,7 @@ describe("host bridge M5 acceptance chain (HB-M6)", () => {
       await stack.close();
       stack = await openStack(bridgeRoot, { restore: true });
       expect((await stack.call("GET", `/v1/projects/${PROJECT}/status`)).data).toMatchObject({ bindingState: "stale", snapshotHash: activatedHash });
+      expect(projectStatusDataSchema.safeParse((await stack.call("GET", `/v1/projects/${PROJECT}/status`)).data).success, "restored HTTP status must match the same strict projection (W-MCP-023)").toBe(true);
       expect((await stack.call("POST", `/v1/projects/${PROJECT}/snapshot`, { body: draft(PROJECT, first) })).data).toMatchObject({ outcome: "activated", bindingState: "fresh" });
       expect(JSON.stringify((await stack.tool("explore", { operation: "search", query: "苍梧山", limit: 5 })).data)).toContain("第二章");
 

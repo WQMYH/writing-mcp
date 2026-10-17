@@ -7,7 +7,7 @@ import { acquireInstanceLock, InstanceLockError } from "./instance-lock.js";
 import { createRestartableMcpClient } from "./mcp-client.js";
 import { createPluginRegistry } from "./plugins.js";
 import { createBridgeServer } from "./server.js";
-import { createSnapshotPipeline } from "./snapshot.js";
+import { BridgeError, createSnapshotPipeline } from "./snapshot.js";
 import { createBridgeState } from "./state.js";
 import { createProjectToolProxy } from "./tool-proxy.js";
 
@@ -60,7 +60,7 @@ function parseArgs(argv: string[]): ParsedCliArgs | null {
   return {
     root: resolve(root),
     port,
-    mcpEntry: mcpEntryRaw !== undefined ? resolve(mcpEntryRaw) : resolve(dirname(fileURLToPath(import.meta.url)), "../mcp-server/dist/index.js"),
+    mcpEntry: mcpEntryRaw !== undefined ? resolve(mcpEntryRaw) : resolve(dirname(fileURLToPath(import.meta.url)), "../../mcp-server/dist/index.js"),
     mcpRoot: mcpRootRaw !== undefined ? resolve(mcpRootRaw) : join(resolve(root), "projects"),
     hostOrigins,
   };
@@ -133,6 +133,16 @@ export async function runCli(argv: string[] = process.argv.slice(2), io: CliIo =
     state,
     mcp,
     mcpMaintenance: mcp,
+    hasActiveCapture: async (hostProjectId, origin, invoker = mcp): Promise<boolean> => {
+      // Maintenance supplies its live child; using the normal proxy here would hit our own closed admission.
+      const inspector = createProjectToolProxy({ bridgeRoot: args.root, mcp: invoker, pipeline, isPluginAvailable: () => registry.isAvailable() });
+      const result = await inspector.invoke("diagnose", hostProjectId, origin, { action: "inspect", purpose: "development", limit: 1 }) as { ok?: boolean; data?: { activeCaptureCount?: unknown } };
+      const count = result.data?.activeCaptureCount;
+      if (!result.ok || typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
+        throw new BridgeError("DERIVED_DATA_BUSY", "capture state could not be verified");
+      }
+      return count > 0;
+    },
     log: (line) => io.stderr.write(`writing-mcp-host-bridge: ${line}\n`),
   });
   await pipeline.restoreFromManifests();

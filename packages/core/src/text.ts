@@ -2,6 +2,13 @@ import type { EvidenceLocator, SourceDocument } from "./types.js";
 
 export interface Span { spanRef: string; documentRef: string; ordinal: number; startLine: number; endLine: number; heading: string; content: string; locators: EvidenceLocator[] }
 
+// Bound allocation before counting supplementary code points; BMP inputs need no array.
+export const exceedsCodePointLimit=(value:string,limit:number):boolean=>value.length>limit*2||(value.length>limit&&Array.from(value).length>limit);
+
+// UTF-16 offsets and caps; omit only a surrogate pair split by a slice boundary.
+export const sliceText = (value: string, start = 0, end = value.length): string =>
+  value.slice(start, end).replace(/^[\udc00-\udfff]|[\ud800-\udbff]$/g, "");
+
 export function splitDocument(document: SourceDocument, makeId: (ordinal: number) => string, maxChars = 2400): Span[] {
   const lines = document.content.replace(/\r\n?/g, "\n").split("\n");
   const sourceLineOffset = (document.sourceStartLine ?? 1) - 1;
@@ -40,13 +47,16 @@ export function splitDocument(document: SourceDocument, makeId: (ordinal: number
     if (line.length > maxChars) {
       if (buffer.some(v => v.trim())) flush();
       const documentLine = i + 1;
-      for (let offset = 0; offset < line.length; offset += maxChars) {
-        const chunk = line.slice(offset, offset + maxChars);
+      for (let offset = 0; offset < line.length;) {
+        const chunk = sliceText(line, offset, offset + maxChars);
+        if (!chunk.length) throw new RangeError("maxChars cannot contain the next Unicode code point");
         spans.push({ spanRef: makeId(spans.length), documentRef: document.documentRef, ordinal: spans.length, startLine: sourceLineOffset + documentLine, endLine: sourceLineOffset + documentLine, heading, content: chunk, locators: mapLocators(documentLine, documentLine) });
+        offset += chunk.length;
       }
       buffer = [];
       continue;
     }
+    if (buffer.length && buffer.join("\n").length + 1 + line.length > maxChars) { flush(); start = i; }
     buffer.push(line);
     if (buffer.join("\n").length >= maxChars) flush();
   }

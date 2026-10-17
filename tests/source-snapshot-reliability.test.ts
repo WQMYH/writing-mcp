@@ -1,6 +1,7 @@
 import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, test } from "vitest";
 import { GenericAdapter } from "@writing-mcp/adapter-generic";
 import { WritingService, type ParsedWork, type WorkAdapter, type WorkCandidate } from "@writing-mcp/core";
@@ -154,7 +155,7 @@ describe("Task 1 SourceSnapshot reliability", () => {
     } finally { service.close(); await rm(dir, { recursive: true, force: true }); }
   });
 
-  test("an incremental failure retains the old usable index and does not advance freshness", async () => {
+  test.each(["incremental", "rebuild"] as const)("a %s failure retains the old usable index and does not advance freshness (W-MCP-007)", async mode => {
     const dir = await mkdtemp(join(tmpdir(), "writing-mcp-source-snapshot-rollback-"));
     const source = join(dir, "novel");
     const adapter = new IncrementalFailureAdapter();
@@ -162,11 +163,20 @@ describe("Task 1 SourceSnapshot reliability", () => {
     try {
       await cp(new URL("../fixtures/generic-novel", import.meta.url), source, { recursive: true });
       const workRef = (await service.resolve(source, "generic")).workRef!;
-      await service.index(workRef, "rebuild");
+      const initial = await service.index(workRef, "rebuild");
+      await service.explore(workRef, "search", "铜钥匙");
       const marker = `recovered-after-failure-${Date.now()}`;
       await writeFile(join(source, "chapter-01.md"), `# 第一章\n${marker}`);
       adapter.failIncremental = true;
-      await expect(service.index(workRef, "incremental")).rejects.toThrow();
+      await expect(service.index(workRef, mode)).rejects.toThrow();
+      const db = new DatabaseSync(join(source, ".writing-index", workRef.replace(":", "-"), "index.sqlite"), { readOnly: true });
+      try {
+        const contents = db.prepare("SELECT content FROM spans").all().map(row => String(row.content)).join("\n");
+        expect(contents).toContain("铜钥匙");
+        expect(contents).not.toContain(marker);
+        expect(db.prepare("SELECT MAX(revision) AS revision FROM index_revisions WHERE status='valid'").get()).toEqual({ revision: initial.revision });
+      } finally { db.close(); }
+      expect(await service.index(workRef, "status")).toMatchObject({ freshness: "stale", revision: initial.revision });
       adapter.failIncremental = false;
       const found = await service.explore(workRef, "search", marker);
       expect(found.results.some(result => result.evidence.excerpt.includes(marker))).toBe(true);

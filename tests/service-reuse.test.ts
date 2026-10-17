@@ -1,6 +1,7 @@
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, test } from "vitest";
 import { WritingService } from "@writing-mcp/core";
 import { GenericAdapter } from "@writing-mcp/adapter-generic";
@@ -16,6 +17,40 @@ class CountingGenericAdapter extends GenericAdapter {
 }
 
 describe("AUD-021: explore/context reuse the store when the source is unchanged", () => {
+  test("hot rebuild publishes the edited source to the same service and on-disk index (W-MCP-007)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "writing-mcp-hot-rebuild-")), source = join(dir, "novel");
+    const service = new WritingService([new GenericAdapter()]);
+    try {
+      await cp(new URL("../fixtures/generic-novel", import.meta.url), source, { recursive: true });
+      const chapter = join(source, "chapter-01.md"), oldMarker = "oldcanaryunique", newMarker = "newcanaryuniquereplacement";
+      await writeFile(chapter, `# 第一章 北塔\n${oldMarker}`);
+      const workRef = (await service.resolve(source, "generic")).workRef!;
+      await service.index(workRef, "incremental");
+      expect((await service.explore(workRef, "search", oldMarker)).results[0]?.evidence.excerpt).toContain(oldMarker);
+      await service.context(workRef, oldMarker, 2000);
+      await writeFile(chapter, `# 第一章 北塔\n${newMarker}`);
+      const rebuilt = await service.index(workRef, "rebuild");
+      expect(rebuilt.freshness).toBe("fresh");
+      for (let call = 0; call < 2; call++) {
+        const found = await service.explore(workRef, "search", newMarker);
+        expect(found).toMatchObject({ freshness: "fresh", revision: rebuilt.revision });
+        expect(found.results[0]?.evidence.excerpt).toContain(newMarker);
+        expect((await service.explore(workRef, "search", oldMarker)).results).toEqual([]);
+      }
+      const packet = await service.context(workRef, newMarker, 2000);
+      expect(packet.blocks.some(block => block.evidence.excerpt.includes(newMarker))).toBe(true);
+      const db = new DatabaseSync(join(source, ".writing-index", workRef.replace(":", "-"), "index.sqlite"), { readOnly: true });
+      try {
+        const contents = db.prepare("SELECT content FROM spans").all().map(row => String(row.content)).join("\n");
+        expect(contents).toContain(newMarker);
+        expect(contents).not.toContain(oldMarker);
+      } finally { db.close(); }
+      expect((await service.index(workRef, "status")).freshness).toBe("fresh");
+      expect((await service.index(workRef, "rebuild")).freshness).toBe("fresh");
+      expect((await service.explore(workRef, "search", newMarker)).results[0]?.evidence.excerpt).toContain(newMarker);
+    } finally { await service.close(); await rm(dir, { recursive: true, force: true }); }
+  });
+
   test("repeated explore does not reload source files", async () => {
     const dir = await mkdtemp(join(tmpdir(), "writing-mcp-aud021-"));
     const adapter = new CountingGenericAdapter();

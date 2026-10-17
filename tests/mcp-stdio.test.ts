@@ -1,9 +1,10 @@
-import { cp, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { ContextPacket, ExploreResult, IndexResult } from "@writing-mcp/core";
 
 interface DiagnosticResult {
   traceId: string;
@@ -21,6 +22,71 @@ const success = <T>(call: { structuredContent?: unknown }): SuccessEnvelope<T>["
 const failure = (call: { structuredContent?: unknown }): FailureEnvelope["result"] => (call.structuredContent as FailureEnvelope).result;
 
 describe("MCP stdio transport", () => {
+  test("real SDK calls keep current evidence through edit, incremental, rebuild, restart and index deletion (MR6)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-acceptance-")), source = join(root, "novel");
+    await cp(new URL("../fixtures/generic-novel", import.meta.url), source, { recursive: true });
+    const chapterPath = join(source, "chapter-01.md"), original = await readFile(chapterPath, "utf8");
+    await writeFile(chapterPath, original + "\nOnlyOldBeacon marks the entrance.\n");
+    let client: Client | undefined;
+    const connect = async () => {
+      client = new Client({ name: "writing-mcp-recovery-acceptance", version: "0.1.0" });
+      await client.connect(new StdioClientTransport({ command: process.execPath, args: [resolve("packages/mcp-server/dist/index.js")], env: { ...process.env, WRITING_MCP_ROOTS: root } as Record<string, string> }));
+    };
+    const call = async <T,>(name: string, args: Record<string, unknown>) => {
+      const result = success<T>(await client!.callTool({ name, arguments: args }));
+      expect(result.ok).toBe(true);
+      expect(result.diagnostic).toMatchObject({ outcome: "success", persistence: "persisted" });
+      return result.data;
+    };
+    try {
+      await connect();
+      const { workRef } = await call<{ workRef: string }>("writing_resolve", { sourcePath: source });
+      const initial = await call<IndexResult>("writing_index", { workRef, mode: "rebuild" });
+      const old = await call<ExploreResult>("writing_explore", { workRef, operation: "search", query: "OnlyOldBeacon" });
+      expect(old.results.some(row => row.evidence.excerpt.includes("OnlyOldBeacon"))).toBe(true);
+      await writeFile(chapterPath, original + "\nOnlyNewBeacon marks the repaired entrance.\n");
+      const stale = await call<IndexResult>("writing_index", { workRef, mode: "status" });
+      expect(stale.freshness).toBe("stale");
+      expect(stale.revision).toBe(initial.revision);
+      const incremental = await call<IndexResult>("writing_index", { workRef, mode: "incremental" });
+      expect(incremental.freshness).toBe("fresh");
+      expect(incremental.revision).toBeGreaterThan(initial.revision);
+      const verifyCurrent = async () => {
+        const indexed = await call<IndexResult>("writing_index", { workRef, mode: "status" });
+        expect(indexed.freshness).toBe("fresh");
+        const explored = await call<ExploreResult>("writing_explore", { workRef, operation: "search", query: "OnlyNewBeacon" });
+        const hit = explored.results.find(row => row.evidence.excerpt.includes("OnlyNewBeacon"));
+        expect(hit).toBeDefined();
+        expect(hit!.evidence.revision).toBe(indexed.revision);
+        const currentSource = (await readFile(join(source, hit!.evidence.relativePath), "utf8")).replaceAll("\r\n", "\n");
+        expect(currentSource).toContain(hit!.evidence.excerpt);
+        const packet = await call<ContextPacket>("writing_context", { workRef, query: "OnlyNewBeacon", budgetTokens: 1000, requiredRefs: [hit!.ref] });
+        expect(packet).toMatchObject({ revision: indexed.revision, accountingScope: "evidence_excerpts_only" });
+        expect(packet.blocks.some(block => block.ref === hit!.ref && block.evidence.excerpt.includes("OnlyNewBeacon"))).toBe(true);
+        expect(JSON.stringify(packet.blocks)).not.toContain("OnlyOldBeacon");
+        const inspected = await call<{ activeCaptureCount: number; index: { revision: number; freshness: string } }>("writing_diagnose", { workRef });
+        expect(inspected).toMatchObject({ activeCaptureCount: 0, index: { revision: indexed.revision, freshness: "fresh" } });
+        return hit!.ref;
+      };
+      const ref = await verifyCurrent();
+      expect(await verifyCurrent()).toBe(ref);
+      await call<IndexResult>("writing_index", { workRef, mode: "rebuild" });
+      expect(await verifyCurrent()).toBe(ref);
+      await client!.close();
+      await connect();
+      expect((await call<{ workRef: string }>("writing_resolve", { sourcePath: source })).workRef).toBe(workRef);
+      expect(await verifyCurrent()).toBe(ref);
+      await client!.close();
+      // Only this test's disposable index is removed, after its real client closes.
+      await rm(join(source, ".writing-index"), { recursive: true, force: true });
+      await connect();
+      expect((await call<{ workRef: string }>("writing_resolve", { sourcePath: source })).workRef).toBe(workRef);
+      expect((await call<IndexResult>("writing_index", { workRef, mode: "status" })).freshness).toBe("missing");
+      await call<IndexResult>("writing_index", { workRef, mode: "rebuild" });
+      expect(await verifyCurrent()).toBe(ref);
+    } finally { await client?.close(); await rm(root, { recursive: true, force: true }); }
+  }, 30_000);
+
   test("all five tools pass through diagnostics and explicit captures produce artifacts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "writing-mcp-stdio-"));
     const source = join(dir, "novel");

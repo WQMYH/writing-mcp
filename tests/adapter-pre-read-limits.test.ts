@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, test, vi } from "vitest";
@@ -41,7 +41,7 @@ describe("generic adapter pre-read text limits", () => {
 
       await expect(adapter.load(candidate, snapshot)).rejects.toMatchObject({ code: "SOURCE_TOTAL_TOO_LARGE" });
       expect(reader).toHaveBeenCalledTimes(1);
-      expect(reader).toHaveBeenCalledWith(join(dir, "a.md"));
+      expect(reader).toHaveBeenCalledWith(await realpath(join(dir, "a.md")));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

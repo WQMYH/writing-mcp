@@ -35,6 +35,26 @@ const refsFromDb = async (root: string, indexPath: string) => {
 };
 
 describe("AUD-012 constraint interface wiring (store level)", () => {
+  test.each([
+    { name: "display gaps", numbers: [10, 20, 30] },
+    { name: "volume resets", numbers: [1, 1, 2] },
+    { name: "missing/display-mixed", numbers: [undefined, 42, 1] },
+  ])("shares source-order chapter positions with timeline despite $name (W-MCP-018)", async ({ numbers }) => {
+    const root = await mkdtemp(join(tmpdir(), "writing-mcp-source-anchor-")), work = makeWork(root);
+    work.documents.slice(1).forEach((doc, index) => { if (numbers[index] == null) delete doc.chapterNumber; else doc.chapterNumber = numbers[index]; });
+    const store = new WritingStore(work), [first, second, third] = work.documents.slice(1).map(doc => doc.documentRef);
+    try {
+      await store.index("rebuild");
+      const packet = await store.context("林秋", 1_000_000, [], { targetChapter: 2 });
+      expect(packet.blocks.filter(block => block.layer === "L2").map(block => block.evidence.documentRef)).toEqual([second, first, third]);
+      expect(packet.blocks.some(block => block.layer === "L1")).toBe(true);
+      const timeline = await store.explore("timeline", "", 100, 2, 2);
+      expect(timeline.results.filter(item => item.kind === "Chapter").map(item => item.evidence.documentRef)).toEqual([second]);
+      const tail = await store.context("林秋", 1_000_000, [], { targetChapter: 99 });
+      expect(tail.blocks.filter(block => block.layer === "L2").map(block => block.evidence.documentRef)).toEqual([third, second, first]);
+    } finally { store.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
   test("excludeRefs removes matching candidates and reports them as excluded", async () => {
     const root = await mkdtemp(join(tmpdir(), "writing-mcp-wire-excl-")), store = new WritingStore(makeWork(root), join(root, "idx.sqlite"));
     try {

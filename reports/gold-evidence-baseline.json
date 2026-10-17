@@ -6,21 +6,21 @@
     "recall50Min": 0.9,
     "requiredRecall50": 1
   },
-  "gitCommit": "7ba73852862b6d459ab0bd439407c3d5c6752639",
+  "gitCommit": "8595bee05d097967393c31fa3712c8a45ca3f51c",
   "train": {
     "count": 18,
     "recallAt5": 0.7778,
     "recallAt10": 0.8333,
     "recallAt50": 1,
-    "mrr": 0.5821,
+    "mrr": 0.5827,
     "requiredRecallAt50": 1
   },
   "holdout": {
     "count": 24,
-    "recallAt5": 0.8333,
+    "recallAt5": 0.7917,
     "recallAt10": 0.9583,
     "recallAt50": 1,
-    "mrr": 0.6941,
+    "mrr": 0.691,
     "requiredRecallAt50": 1
   },
   "territories": [
