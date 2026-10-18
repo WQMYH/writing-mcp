@@ -177,10 +177,10 @@ Your AI agent                          (does the writing; MCP never does)
 |---|---|---|
 | Publication privacy gate | `pnpm privacy:gate` | Fails if any object reachable from local branches/tags contains a banned privacy marker; runs *first*, so a leak cannot be one commit away from `main` |
 | Strict typecheck | `pnpm check` | `tsc -b` with `strict: true`; the package sources carry zero `any` annotations and zero `@ts-ignore`, both greppable claims |
-| Zero-warning lint | `pnpm lint` | `oxlint --deny-warnings` over `packages`, `tests`, `scripts` — with `packages/core/src/store.ts` still ignored, because its dense formatting trips oxlint's minified-file heuristic (tracked as AUD-035, whose fix is to split the file) |
+| Zero-warning lint | `pnpm lint` | `oxlint --deny-warnings` over `packages`, `tests`, `scripts` — `oxlintrc.json` has `ignorePatterns: []`, with no configured exemption for `packages/core/src/store.ts` |
 | Tests | `pnpm test` | Suite plus the documentation contract tests; file → topic map in [tests/README.md](tests/README.md) |
 | Frozen public benchmark | `pnpm benchmark` | 30 tasks; minimum fact recall 0.90, minimum evidence coverage 1.00, minimum token reduction 0.60 |
-| Coverage ratchet | `pnpm coverage` | lines 90%, statements 87%, functions 85%, branches 73% |
+| Coverage ratchet | `pnpm coverage` | Global thresholds: lines 90%, statements 87%, functions 85%, branches 75% |
 
 `pnpm benchmark` on the repository fixture is deterministic and currently reports **30/30 tasks passed, 30/30 evidence-covered, fact recall 10/10, token reduction 0.669** against the 0.60 gate — the average context packet costs 55 estimated tokens where the whole fixture costs 166. Reproduce it with `pnpm build && pnpm benchmark`.
 

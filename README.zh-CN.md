@@ -177,10 +177,10 @@ MCP stdio 工具                         （resolve → index → explore → co
 |---|---|---|
 | 发布隐私门禁 | `pnpm privacy:gate` | 本地分支/标签可达的任一对象含被禁隐私标记即失败；*最先*运行，因此泄漏不可能只离 `main` 一个提交 |
 | 严格类型检查 | `pnpm check` | `tsc -b` 且 `strict: true`；包源码中 `any` 注解为零、`@ts-ignore` 为零，两者都可 grep 核验 |
-| 零警告 lint | `pnpm lint` | 对 `packages`、`tests`、`scripts` 运行 `oxlint --deny-warnings`——其中 `packages/core/src/store.ts` 仍在忽略清单里（它的密集排版触发了 oxlint 的压缩文件启发式；记为 AUD-035，解法是拆分该文件） |
+| 零警告 lint | `pnpm lint` | 对 `packages`、`tests`、`scripts` 运行 `oxlint --deny-warnings`——`oxlintrc.json` 的 `ignorePatterns: []`，未对 `packages/core/src/store.ts` 配置豁免 |
 | 测试 | `pnpm test` | 全量测试加文档契约测试；文件 → 主题映射见 [tests/README.md](tests/README.md) |
 | 冻结公共基准 | `pnpm benchmark` | 30 个任务；事实召回下限 0.90、证据覆盖下限 1.00、Token 降幅下限 0.60 |
-| 覆盖率棘轮 | `pnpm coverage` | lines 90%、statements 87%、functions 85%、branches 73% |
+| 覆盖率棘轮 | `pnpm coverage` | 全局阈值：lines 90%、statements 87%、functions 85%、branches 75% |
 
 `pnpm benchmark` 在仓库 fixture 上是确定的，当前结果为 **30/30 任务通过、30/30 证据覆盖、事实召回 10/10、Token 降幅 0.669**（门禁为 0.60）——平均一个上下文包估算 55 Token，而整部 fixture 是 166 Token。用 `pnpm build && pnpm benchmark` 复现。
 
