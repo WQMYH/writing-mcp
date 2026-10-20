@@ -206,6 +206,14 @@ Schema v4 is the active implementation contract. It is an incompatible derived-i
 
 See `docs/adr/0005-schema-v4-graph-identity-and-segmented-evidence.md`.
 
+### EXT-OBS-001 excerpt-window locator amendment (2026-10-20)
+
+- Evidence adds optional `excerptSegments: Array<{ excerptStart: number; excerptEnd: number; locators: EvidenceLocator[] }>`. Offsets are UTF-16 half-open intervals in the **returned** `excerpt`, not original-document offsets or Unicode code-point counts. Each non-empty selected window has one segment; inserted `\n…\n` separators occupy uncovered gaps, whereas an identical sequence present in the source remains part of its segment. Repeated/overlapping source windows remain distinct and ordered as returned.
+- Each segment's locators give inclusive source line ranges for that window. A terminal LF belongs to its preceding line, not a following empty line. TXT chapter offsets and EPUB `sourceSegments` use the same mapping as span derivation; a window crossing XHTML entries lists each overlapping source path/range instead of adding line numbers across files. EPUB locations still refer to extracted text, not HTML bytes or columns.
+- Search results and context blocks carry these segments, including direct-resolved `requiredRefs`, `entityRefs` and `documentRefs` prefix excerpts. Selection retains source offsets before slicing and adjusts for clipped surrogate pairs; it never reconstructs offsets by matching returned text or splitting ellipses. Synthetic statistics and existing graph `pathEvidence` may omit the optional field; absence does not imply a contiguous full-span excerpt.
+- Existing `excerpt`, concatenation order, excerpt hash calculation, span `startLine/endLine` and span-level `locators` retain their semantics. The old locators are **span envelopes**, not exact window ranges. No source rewrite, index/schema version change, ranking change or new tool is introduced; older consumers may ignore the additive field.
+- The complete metadata participates in core UTF-8 pretrim and the server's existing structured-result byte cap. Optional items/blocks are dropped whole with existing truncation/omission reporting; required context that cannot fit returns `RESPONSE_TOO_LARGE`. Never strip segments or clip excerpts independently to fit. `usedTokens`/`accountingScope: evidence_excerpts_only` still cover excerpt text only, not locator metadata.
+
 ## MCP result rules
 
 - Every call returns Markdown `content` and a JSON `structuredContent` envelope.

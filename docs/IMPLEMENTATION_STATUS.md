@@ -2,8 +2,9 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-17 09:49 +08:00（PR #1 合并 main、合并结果验收与 worktree 清理）
-> 当前状态：按用户最新明确授权，[PR #1](https://github.com/WQMYH/writing-mcp/pull/1) 已由 merge commit `e0d8ee1` 保留完整阶段历史合入 main 并推送；GitHub 已读回 `MERGED`，本地 main 与 origin/main 一致。MR1～MR6 的 25 类修复、W017 再开后的 `9d3ada3`、契约、回归、经批准的黄金基线校准及验收映射均已核对进入 main。合并前本机 58 文件/411 项通过；合并后重新执行完整 `pnpm verify`，隐私/check/lint、58 文件/411 项、公开 30/30、coverage lines 91.32%/branches 80.16% 全部通过，无阈值放宽。PR 最终头 `4356552` 的 Windows/Linux CI `38942991163` 均已成功。本仓库三个完全合并且无未提交内容的 worktree 已清除，Git worktree 登记仅余 main；依赖 junction 只解绑，不遍历目标，清理后 main 依赖导入正常。未改产品代码、未重测私有/语料/tokenizer，既有证据仍绑定原被测提交；私有材料、本地报告和分支引用保留，不宣称发布或真实宿主 UI 验收。
+> 检查点时间：2026-10-20（EXT-OBS-001 本地兼容修复候选）
+> 当前状态：以 main `d82ffdf` 为基线，在隔离分支 `fix/ext-obs-001-excerpt-segments` 提交代码候选 `5da4160`，实现可选 `excerptSegments`；保留旧摘录、顺序、哈希计算及 span locator，复用 sourceSegments 提供逐窗口定位。新增 9 项先红后绿；本次相关 6 文件/121 项、单选既有哈希回归 1 项、增强后的摘录/EPUB 2 文件/62 项以及 check、lint 通过（测试集合有重叠，不相加）。当前只完成本地定向验证，待独立复核；未合并、push、安装或替换现用服务，未重跑完整 411 项/私有材料/模型/外部 tokenizer。M0 契约和测试映射已同步；历史云端 19+6、window-aware 7/7 不是本候选验收，旧连续子串断言错误不计作产品缺陷。
+> 上次集成验收（2026-10-17，历史记录）：[PR #1](https://github.com/WQMYH/writing-mcp/pull/1) 已由 merge commit `e0d8ee1` 保留完整阶段历史合入 main 并推送；GitHub 已读回 `MERGED`。MR1～MR6 的 25 类修复、W017 再开后的 `9d3ada3`、契约、回归、经批准的黄金基线校准及验收映射均已核对进入 main。合并前本机 58 文件/411 项通过；合并后完整 `pnpm verify`，隐私/check/lint、58 文件/411 项、公开 30/30、coverage lines 91.32%/branches 80.16% 全部通过，无阈值放宽。PR 最终头 `4356552` 的 Windows/Linux CI `38942991163` 均已成功。当时三个完全合并且无未提交内容的 worktree 已清除，依赖 junction 只解绑、不遍历目标。私有/语料/tokenizer 既有证据仍绑定原被测提交；私有材料、本地报告和分支引用保留，不宣称发布或真实宿主 UI 验收。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
 ## 恢复入口
@@ -101,6 +102,7 @@ MR5 增至 58 文件/408 项，包含真实默认入口/严格状态、Unicode �
 
 ## 已知限制
 
+- EXT-OBS-001 已补逐窗口 `excerptSegments`，但仍为行级、非列/字节级来源定位；旧 `locators` 保留 span 包络，synthetic stats/既有 pathEvidence 可无新字段。元数据占响应字节预算，不占 excerpt-only Token 估算；预算不够只做整项裁剪或 required 稳定错误。
 - `timeline` 已实现为携带时态属性实体与 precedes 时序边的确定性投影，支持 targetChapter 章节时态过滤（AUD-012 M3 范围）。
 - context 的 `targetChapter`/`entityRefs`/`documentRefs`/`excludeRefs` 已接线（AUD-012，`732df85`）：targetChapter 锚定层内排序、entityRefs/documentRefs 直解入 blocks、excludeRefs 过滤；`taskType` 仍为保留 hint——值域开放（未知值接受并记录）、**永不影响装配**（2026-08-17 方向：无 taskType 策略引擎）。
 - 角色实体提取只覆盖角色类文档 heading；原生 `[[alias]]` 会查询持久化 aliases，唯一 owner 才形成 `mentions`，多 owner 保持 `AMBIGUOUS_ALIAS` 未解析；查询期另提供透明的中文称呼形态扩展。
@@ -115,6 +117,7 @@ MR5 增至 58 文件/408 项，包含真实默认入口/严格状态、Unicode �
 
 ## 下一步
 
+- EXT-OBS-001 候选待独立复核，重点核 UTF-16 半开区间、跨 XHTML/sourceStartLine、预算整项处理及旧字段兼容；本次未安排新 Work/子智能体，后续由现有调用方安排复核。原始定向命令：`pnpm exec vitest run tests/excerpt-segments.test.ts tests/search-correctness.test.ts tests/span-hard-split.test.ts tests/epub.test.ts tests/context-required-refs.test.ts tests/response-limits.test.ts`（121/121，exit 0）；`pnpm exec vitest run tests/graph-identity-evidence.test.ts -t 'separates stable identity hashes from verifiable evidence hashes'`（1 通过、17 未选，exit 0）；`pnpm check`、`pnpm lint` 均 exit 0。旧版本 `pnpm exec vitest run tests/excerpt-segments.test.ts` 为 9/9 缺少元数据失败；中间修正两处测试前提（MCP 必填 operation、required true/false 序列化长度差）及按错误 code 而非 message 断言，未将其登记为产品缺陷。
 - MR1～MR6、W017 再开修复及 main 集成已收口；[验收映射](REPAIR_ACCEPTANCE_2026-10-17.md) 保留初次验收、反例及修复补遗。此前 Draft/不合 main 的限制已由本次用户明确合并授权取代；发布、下一轮功能和真实 UI 测试未在本次集成中执行。
 
 - Host Bridge：Storyforge 首宿主 HB-M0～HB-M6 已关闭；维持静态单宿主、loopback、显式配对、失败关闭和零自动写回边界，不在本轮扩成动态插件市场。下一步先把真实使用反馈转成协议兼容性回归，再决定第二宿主或可配置端口等扩展。
@@ -196,6 +199,7 @@ MR5 增至 58 文件/408 项，包含真实默认入口/严格状态、Unicode �
 
 ## 可追溯提交清单
 
+- `5da4160` — EXT-OBS-001 本地候选：保留窗口偏移，新增返回摘录 UTF-16 半开区间及 source-map 行定位；旧 excerpt/顺序/evidenceHash/span 包络不改，索引无迁移。新增 9 项先红后绿；6 文件/121 项、单选哈希回归 1 项通过，补强 `sourceStartLine + XHTML` 和真实合成 EPUB 导入元数据后执行 `pnpm exec vitest run tests/excerpt-segments.test.ts tests/epub.test.ts`，2 文件/62 项、exit 0；check/lint/diff-check 通过。仅本地待独审，不部署、不 push。
 - `e0d8ee1` — merge(PR #1)：保留 MR1～MR6、W017 再开修复及验收记录的全部提交历史；合并树与 PR 最终头内容一致，合并后完整 verify 58/411、公开 30/30、coverage 91.32%/80.16% 通过，已推送并读回 GitHub MERGED；main 的 [CI 38992198751](https://github.com/WQMYH/writing-mcp/actions/runs/38992198751) Windows/Linux 均 completed/success。确认祖先关系、干净状态及无独有本地材料后，清除 `wm-publish-verify`、`writing-mcp-canary-m5`、`writing-mcp-mr1` 三个 worktree；main 依赖、分支引用及工作区私有证据保留。
 - `9d3ada3` — fix(bridge)：重新打开 W017 后，通过真实 inspect/barrier 复现 capture 成功落盘后仍被删除；封 admission/drain 后独占活 child 复查，拒删保留 project/index/meta/child，反向请求 503，其他项目 capture 保留；24 项针对性与完整 58/411、30/30、coverage 91.32%/80.16%，双平台 CI `38942293970` 通过，PR 正文已修正，已推送。
 - `d457e07` — docs(mr6)：初次固定验收归档；后来 W017 同 Bridge 反例推翻了当时的全面关闭声明，原证据保留并由本轮补遗更正。
