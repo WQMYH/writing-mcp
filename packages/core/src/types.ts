@@ -45,7 +45,9 @@ export type SearchExperimentFactor = "coverage" | "alias" | "proximity" | "headi
 export interface PrfConfiguration { topK: 5 | 8 | 12; termCount: 4 | 6 | 8; weight: 0.15 | 0.25 | 0.35 }
 export interface SearchExperimentOptions { disabledFactors?: SearchExperimentFactor[]; prf?: PrfConfiguration }
 export interface EvidenceLocator { relativePath: string; startLine: number; endLine: number }
-export interface Evidence { documentRef: string; relativePath: string; startLine: number; endLine: number; excerpt: string; evidenceHash: string; revision: number; locators?: EvidenceLocator[] }
+/** UTF-16 half-open offsets in the returned excerpt; inserted separators have no source segment. */
+export interface ExcerptSegment { excerptStart: number; excerptEnd: number; locators: EvidenceLocator[] }
+export interface Evidence { documentRef: string; relativePath: string; startLine: number; endLine: number; excerpt: string; evidenceHash: string; revision: number; locators?: EvidenceLocator[]; excerptSegments?: ExcerptSegment[] }
 export interface PathEvidence { edgeRef: string; edgeKind: string; direction: "outgoing" | "incoming"; sourceRef: string; targetRef: string; sourceKind: SourceKind; confidence: number; evidence: Evidence }
 export interface ExploreItem { ref: string; kind: string; title: string; score: number; sourceKind: SourceKind; confidence: number; evidence: Evidence; path?: string[]; pathEvidence?: PathEvidence[] }
 export interface ExploreMetrics { candidateCount: number; returnedCount: number; visitedNodes: number; maxActualHops: number; omittedEstimate: number; elapsedMs: number }
