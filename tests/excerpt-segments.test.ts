@@ -32,6 +32,36 @@ async function withStore(content: string, check: (store: WritingStore, doc: Sour
 }
 
 describe("EXT-OBS-001 returned excerpt source segments", () => {
+  test.each([
+    ["search", false], ["search", true], ["context", false], ["context", true],
+  ] as const)("isolates mutable segments from the core cache (%s, cache hit %s)", async (operation, cacheHit) => {
+    await withStore(dualLines().join("\n"), async store => {
+      const query = "anchorone anchortwo";
+      const read = async () => operation === "search"
+        ? (await store.explore("search", query, 12, 0)).results[0]!.evidence
+        : (await store.context(query, 5_000)).blocks[0]!.evidence;
+      if (cacheHit) await read();
+      const evidence = await read();
+      expect(segments(evidence)).toEqual([
+        { excerptStart: 0, excerptEnd: 298, locators: [locator(15, 25)] },
+        { excerptStart: 301, excerptEnd: 599, locators: [locator(51, 60)] },
+      ]);
+      const expected = structuredClone(evidence);
+      const mutable = segments(evidence)!;
+      mutable[0]!.excerptStart = 9999;
+      mutable[0]!.locators[0]!.startLine = 9999;
+      mutable[0]!.locators.push(locator(9999, 9999));
+      mutable[1]!.excerptEnd = 9999;
+      mutable[1]!.locators[0]!.endLine = 9999;
+      mutable.push({ excerptStart: 9999, excerptEnd: 9999, locators: [] });
+      evidence.locators![0]!.startLine = 9999;
+      for (const next of [
+        (await store.explore("search", query, 12, 0)).results[0]!.evidence,
+        (await store.context(query, 5_000)).blocks[0]!.evidence,
+      ]) expect(next).toEqual(expected);
+    });
+  });
+
   test.each(["\n", "\r\n"])("keeps dual windows while locating each window (%j and terminal newline)", async newline => {
     const normalized = dualLines().join("\n");
     await withStore(dualLines().join(newline) + newline, async store => {
