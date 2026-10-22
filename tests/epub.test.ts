@@ -218,6 +218,8 @@ describe("generic EPUB technical validation",()=>{
           "unknown.epub#part-1.html",
           "unknown.epub#part-2.html",
         ]);
+        const evidence=explored.results[0]!.evidence;
+        expect(evidence.excerptSegments).toEqual([{excerptStart:0,excerptEnd:evidence.excerpt.length,locators:evidence.locators}]);
       }finally{store.close();}
     }finally{await rm(dir,{recursive:true,force:true});}
   });

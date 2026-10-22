@@ -37,6 +37,7 @@
 | `resolve-matrix.test.ts` | 作品识别矩阵：空目录、不支持扩展名、多书歧义、同目录直接文件隔离、InkOS 新旧结构 |
 | `response-limits.test.ts` | Task 4 server 最终响应门禁：中文 UTF-8 byte accounting、8,192-byte 诊断预留、explore/context/resolve/diagnose/index 确定性 reducer、完整 L3→L2→L1→optional L0 次序、budget-unsatisfiable required 事实保护、真实 WritingStore→server omission 守恒、recorder 只见最终 data/error、动态 Markdown 防 CR/LF/控制字符伪造与 16,384-byte 上限、输出 schema 保真 |
 | `search-correctness.test.ts` | 中文问句/诊断、替代定义/未解析引用、排序/缓存/上限及短词候选；W002 SQLite/摘录/BFS/context 代理对保真；W008 limit 1/2/100 保留真实歧义，W021 单 owner 去重/多 owner 保护，W015 精确/部分/稳定 seed 评分，W024 字面 LIKE；W006 大写/混合专名的 search/context 支撑窗口，含小写变长前缀，原文不改写 |
+| `excerpt-segments.test.ts` | EXT-OBS-001：先复现旧版本缺少窗口定位；双窗口/重复文本/原文省略号、中文与非 BMP 双边截断、LF/CRLF/末尾换行、跨 XHTML source-map、TXT 章节偏移、required/entity/document refs、search/context schema 与真实内存 MCP 返回、元数据字节预算整项裁剪及 required 错误；WM-EXP-001：直接 core search/context 首次填充与缓存命中的嵌套片段修改隔离，同缓存键交叉读取；不使用私有稿件 |
 | `document-literal-search.test.ts` | document 查询字面子串语义：`%`、`_`、`\` 在相对路径和标题中仅匹配自身，不得被 SQLite LIKE 解释为通配符或转义符 |
 | `search-prf.test.ts` | Task 6 PRF 纯逻辑：冻结生产配置 `12/8/0.35`、原词/别名/停用词/单字/单 span 过滤、双字/三字/四字候选、bytewise tie-break、128 预频率池与单批调用、非法网格拒绝 |
 | `evaluator-isolation.test.ts` | evaluator-only 搜索隔离：环境变量不影响生产查询、调用级 ablation/PRF 不重建索引且不污染普通路径、生产配置与显式评测一致、非法网格拒绝、重复双字中文词可扩展真实候选 |
