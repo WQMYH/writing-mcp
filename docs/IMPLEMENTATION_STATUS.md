@@ -2,8 +2,8 @@
 
 > **本文档是 Writing MCP 实施状态的唯一事实源。** v2 计划、README、REVIEW 文档均只引用本文件，不维护状态副本；任何"当前做到哪、多少测试、哪些 AUD 已关闭"的判断以本文为准。发现其他文件记载状态时，以本文为准并修正该文件。
 >
-> 检查点时间：2026-10-20（EXT-OBS-001 本地兼容修复候选）
-> 当前状态：以 main `d82ffdf` 为基线，在隔离分支 `fix/ext-obs-001-excerpt-segments` 提交代码候选 `5da4160`，实现可选 `excerptSegments`；保留旧摘录、顺序、哈希计算及 span locator，复用 sourceSegments 提供逐窗口定位。新增 9 项先红后绿；本次相关 6 文件/121 项、单选既有哈希回归 1 项、增强后的摘录/EPUB 2 文件/62 项以及 check、lint 通过（测试集合有重叠，不相加）。当前只完成本地定向验证，待独立复核；未合并、push、安装或替换现用服务，未重跑完整 411 项/私有材料/模型/外部 tokenizer。M0 契约和测试映射已同步；历史云端 19+6、window-aware 7/7 不是本候选验收，旧连续子串断言错误不计作产品缺陷。
+> 检查点时间：2026-10-22（WM-EXP-001 缓存隔离修复）
+> 当前状态：EXT-OBS-001 的逐窗口定位候选 `ddc053d` 已交付 [PR #2](https://github.com/WQMYH/writing-mcp/pull/2)，其 Windows/Ubuntu CI 成功；Yumi 对该确切版本回传的独立源码/stdio 扩测保留为版本限定证据，不冒充本机读取过云端原件或新代码独审。扩测发现的 WM-EXP-001 已由 `60493ac` 最小修复：在共同 item 返回边界深拷贝 excerptSegments、片段和嵌套 locators，隔离直接 core 调用者的修改。四项回归先失败（原九项通过），修复后相关四文件/56 项、check、lint 通过；旧 excerpt/顺序/evidenceHash/span locator、schema、索引和字节预算不变。用户已授权正常 CI 后合并及清理，仅保留 main；动态集成回执见 PR #2 最终状态和实际 Git，不再沿用“仅本地、未 push”的旧阶段判断。未安装或替换现用服务，未重跑本机完整 411 项、私有材料、模型或外部 tokenizer，未启动性能重构。
 > 上次集成验收（2026-10-17，历史记录）：[PR #1](https://github.com/WQMYH/writing-mcp/pull/1) 已由 merge commit `e0d8ee1` 保留完整阶段历史合入 main 并推送；GitHub 已读回 `MERGED`。MR1～MR6 的 25 类修复、W017 再开后的 `9d3ada3`、契约、回归、经批准的黄金基线校准及验收映射均已核对进入 main。合并前本机 58 文件/411 项通过；合并后完整 `pnpm verify`，隐私/check/lint、58 文件/411 项、公开 30/30、coverage lines 91.32%/branches 80.16% 全部通过，无阈值放宽。PR 最终头 `4356552` 的 Windows/Linux CI `38942991163` 均已成功。当时三个完全合并且无未提交内容的 worktree 已清除，依赖 junction 只解绑、不遍历目标。私有/语料/tokenizer 既有证据仍绑定原被测提交；私有材料、本地报告和分支引用保留，不宣称发布或真实宿主 UI 验收。
 > HB-M4 复审修正：`eca7b3e` 只建立了纵向切片，完成声明由后续 Storyforge `0aa1ca4` 才真正闭合。该修复确保当前快照先激活再查询、MCP 工具信封 typed 解包、真实 `evidence.excerpt`/locator/path 注入、只替换快照覆盖的长期来源并保留用户消息/连续性/当前事实/未知来源、`budget_unsatisfiable` 阻断 provider，以及生产或未显式启用环境不初始化 localhost client。新鲜门禁：6 个 Bridge 测试文件/30 项、eslint、tsc、生产 build 全绿；Writing MCP `pnpm verify` 52 文件/271 项、公共基准 30/30、coverage lines 91.39%。
 
@@ -102,7 +102,7 @@ MR5 增至 58 文件/408 项，包含真实默认入口/严格状态、Unicode �
 
 ## 已知限制
 
-- EXT-OBS-001 已补逐窗口 `excerptSegments`，但仍为行级、非列/字节级来源定位；旧 `locators` 保留 span 包络，synthetic stats/既有 pathEvidence 可无新字段。元数据占响应字节预算，不占 excerpt-only Token 估算；预算不够只做整项裁剪或 required 稳定错误。
+- EXT-OBS-001 已补逐窗口 `excerptSegments`，但仍为行级、非列/字节级来源定位；旧 `locators` 保留 span 包络，synthetic stats/既有 pathEvidence 可无新字段。元数据占响应字节预算，不占 excerpt-only Token 估算；预算不够只做整项裁剪或 required 稳定错误。WM-EXP-001 已保护直接 core 返回值与查询缓存的嵌套引用隔离；普通 MCP JSON 客户端此前亦不共享服务端引用，不将该缺陷表述为远程证据篡改漏洞。
 - `timeline` 已实现为携带时态属性实体与 precedes 时序边的确定性投影，支持 targetChapter 章节时态过滤（AUD-012 M3 范围）。
 - context 的 `targetChapter`/`entityRefs`/`documentRefs`/`excludeRefs` 已接线（AUD-012，`732df85`）：targetChapter 锚定层内排序、entityRefs/documentRefs 直解入 blocks、excludeRefs 过滤；`taskType` 仍为保留 hint——值域开放（未知值接受并记录）、**永不影响装配**（2026-08-17 方向：无 taskType 策略引擎）。
 - 角色实体提取只覆盖角色类文档 heading；原生 `[[alias]]` 会查询持久化 aliases，唯一 owner 才形成 `mentions`，多 owner 保持 `AMBIGUOUS_ALIAS` 未解析；查询期另提供透明的中文称呼形态扩展。
@@ -117,7 +117,7 @@ MR5 增至 58 文件/408 项，包含真实默认入口/严格状态、Unicode �
 
 ## 下一步
 
-- EXT-OBS-001 候选待独立复核，重点核 UTF-16 半开区间、跨 XHTML/sourceStartLine、预算整项处理及旧字段兼容；本次未安排新 Work/子智能体，后续由现有调用方安排复核。原始定向命令：`pnpm exec vitest run tests/excerpt-segments.test.ts tests/search-correctness.test.ts tests/span-hard-split.test.ts tests/epub.test.ts tests/context-required-refs.test.ts tests/response-limits.test.ts`（121/121，exit 0）；`pnpm exec vitest run tests/graph-identity-evidence.test.ts -t 'separates stable identity hashes from verifiable evidence hashes'`（1 通过、17 未选，exit 0）；`pnpm check`、`pnpm lint` 均 exit 0。旧版本 `pnpm exec vitest run tests/excerpt-segments.test.ts` 为 9/9 缺少元数据失败；中间修正两处测试前提（MCP 必填 operation、required true/false 序列化长度差）及按错误 code 而非 message 断言，未将其登记为产品缺陷。
+- 本轮集成门禁：WM-EXP-001 本机定向回归完成后，由 PR #2 现有 Windows/Ubuntu CI 执行完整公共 verify；通过后按用户授权合入 main，确认提交可达且无用户改动后清理完全合并的分支/worktree。Yumi 对 `ddc053d` 的独立测试不替代 `60493ac` 的复核；本轮作者回归不是独审。逐候选 document 查找与大语料耗时只保留为后续观测，不启动性能重构；下一个功能方向仍是下述 M5 格式/客户端验收，而非增加新工具。原候选的 121/1/62 项结果集合重叠，原始命令与测试前提修正见 `5da4160` 的历史提交条目；云端早期 19+6、window-aware 7/7 不是新版本验收，旧连续子串断言错误不计作产品缺陷。
 - MR1～MR6、W017 再开修复及 main 集成已收口；[验收映射](REPAIR_ACCEPTANCE_2026-10-17.md) 保留初次验收、反例及修复补遗。此前 Draft/不合 main 的限制已由本次用户明确合并授权取代；发布、下一轮功能和真实 UI 测试未在本次集成中执行。
 
 - Host Bridge：Storyforge 首宿主 HB-M0～HB-M6 已关闭；维持静态单宿主、loopback、显式配对、失败关闭和零自动写回边界，不在本轮扩成动态插件市场。下一步先把真实使用反馈转成协议兼容性回归，再决定第二宿主或可配置端口等扩展。
@@ -199,6 +199,7 @@ MR5 增至 58 文件/408 项，包含真实默认入口/严格状态、Unicode �
 
 ## 可追溯提交清单
 
+- `60493ac` — fix(core)，WM-EXP-001：仅在 item 返回边界以 structuredClone 隔离缓存片段、locators 数组及 locator 对象；不冻结公共返回值、不复制整个 packet，不改 schema/索引/排序/摘录/哈希。新增 search/context 首次填充与 cache hit 四项嵌套修改回归，以同 query/limit=12 跨 API 回读；修复前 `pnpm exec vitest run tests/excerpt-segments.test.ts` 为 4 失败、9 通过（exit 1），修复后 `pnpm exec vitest run tests/excerpt-segments.test.ts tests/search-correctness.test.ts tests/context-required-refs.test.ts tests/response-limits.test.ts` 为 4 文件/56 通过（exit 0），check/lint/diff-check 均通过。首次沙箱运行因 Vitest 临时缓存 rename EPERM 而未发现用例，获批沙箱外定向运行后才取得红/绿证据，不计作产品失败；无真实稿件/模型/新哈希计算。仅作者定向验证，独审结果仍绑定此前 `ddc053d`。
 - `5da4160` — EXT-OBS-001 本地候选：保留窗口偏移，新增返回摘录 UTF-16 半开区间及 source-map 行定位；旧 excerpt/顺序/evidenceHash/span 包络不改，索引无迁移。新增 9 项先红后绿；6 文件/121 项、单选哈希回归 1 项通过，补强 `sourceStartLine + XHTML` 和真实合成 EPUB 导入元数据后执行 `pnpm exec vitest run tests/excerpt-segments.test.ts tests/epub.test.ts`，2 文件/62 项、exit 0；check/lint/diff-check 通过。仅本地待独审，不部署、不 push。
 - `e0d8ee1` — merge(PR #1)：保留 MR1～MR6、W017 再开修复及验收记录的全部提交历史；合并树与 PR 最终头内容一致，合并后完整 verify 58/411、公开 30/30、coverage 91.32%/80.16% 通过，已推送并读回 GitHub MERGED；main 的 [CI 38992198751](https://github.com/WQMYH/writing-mcp/actions/runs/38992198751) Windows/Linux 均 completed/success。确认祖先关系、干净状态及无独有本地材料后，清除 `wm-publish-verify`、`writing-mcp-canary-m5`、`writing-mcp-mr1` 三个 worktree；main 依赖、分支引用及工作区私有证据保留。
 - `9d3ada3` — fix(bridge)：重新打开 W017 后，通过真实 inspect/barrier 复现 capture 成功落盘后仍被删除；封 admission/drain 后独占活 child 复查，拒删保留 project/index/meta/child，反向请求 503，其他项目 capture 保留；24 项针对性与完整 58/411、30/30、coverage 91.32%/80.16%，双平台 CI `38942293970` 通过，PR 正文已修正，已推送。
